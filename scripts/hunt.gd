@@ -21,6 +21,10 @@ var target_kills := 0
 var target_total := 0
 var exit_spawned := false
 
+# Tap-to-move
+var move_path: Array[Vector2i] = []
+var _pending_step: bool = false
+
 # UI references
 @onready var grid_container: Control = $GridViewport/GridRoot
 @onready var hud_label: Label = $HUD/HUDLabel
@@ -37,23 +41,147 @@ func _ready() -> void:
 	_center_camera()
 	queue_redraw()
 	_update_hud()
-	_connect_dpad()
+	pass  # D-pad buttons exist in scene but are unused
 
-func _connect_dpad() -> void:
-	dpad_up.pressed.connect(_move.bind(Vector2i(0, -1)))
-	dpad_down.pressed.connect(_move.bind(Vector2i(0, 1)))
-	dpad_left.pressed.connect(_move.bind(Vector2i(-1, 0)))
-	dpad_right.pressed.connect(_move.bind(Vector2i(1, 0)))
+func _process(_delta: float) -> void:
+	if _pending_step and not move_path.is_empty():
+		_pending_step = false
+		var dir: Vector2i = move_path.pop_front()
+		_move(dir)
+	elif _pending_step:
+		_pending_step = false
 
 func _input(event: InputEvent) -> void:
+	# Keyboard movement cancels any path and moves one step
 	if event.is_action_pressed("move_up"):
+		move_path.clear()
 		_move(Vector2i(0, -1))
+		return
 	elif event.is_action_pressed("move_down"):
+		move_path.clear()
 		_move(Vector2i(0, 1))
+		return
 	elif event.is_action_pressed("move_left"):
+		move_path.clear()
 		_move(Vector2i(-1, 0))
+		return
 	elif event.is_action_pressed("move_right"):
+		move_path.clear()
 		_move(Vector2i(1, 0))
+		return
+
+	# Tap-to-move: detect touch release or mouse left click release
+	var tap_pos: Vector2 = Vector2.ZERO
+	var is_tap := false
+
+	if event is InputEventScreenTouch and not event.pressed:
+		tap_pos = event.position
+		is_tap = true
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		tap_pos = event.position
+		is_tap = true
+
+	if not is_tap:
+		return
+
+	# Convert screen position to grid coordinates
+	var grid_local: Vector2 = tap_pos - grid_container.global_position
+	var gx: int = int(floor(grid_local.x / TILE_SIZE))
+	var gy: int = int(floor(grid_local.y / TILE_SIZE))
+
+	# Bounds check
+	if gx < 0 or gx >= GRID_SIZE or gy < 0 or gy >= GRID_SIZE:
+		return
+	# Must be revealed
+	if not revealed[gx][gy]:
+		return
+	# Can't tap walls
+	if grid[gx][gy] == Tile.WALL:
+		return
+
+	var target := Vector2i(gx, gy)
+
+	# Check if tapped tile has a visible creature — path to adjacent tile
+	var creature_idx := -1
+	for i in creatures.size():
+		if creatures[i]["hp"] > 0 and creatures[i]["pos"] == target and tile_visible[gx][gy]:
+			creature_idx = i
+			break
+
+	if creature_idx >= 0:
+		# Find path to an adjacent tile, then add attack step
+		var adj_dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+		var best_path: Array[Vector2i] = []
+		var already_adjacent := false
+		for adj_dir in adj_dirs:
+			var adj_pos: Vector2i = target + adj_dir
+			if adj_pos == player_pos:
+				already_adjacent = true
+				best_path = [] as Array[Vector2i]
+				break
+			if adj_pos.x < 0 or adj_pos.x >= GRID_SIZE or adj_pos.y < 0 or adj_pos.y >= GRID_SIZE:
+				continue
+			if grid[adj_pos.x][adj_pos.y] == Tile.WALL:
+				continue
+			var path := _bfs_path(player_pos, adj_pos)
+			if not path.is_empty() and (best_path.is_empty() or path.size() < best_path.size()):
+				best_path = path
+		if not already_adjacent and best_path.is_empty():
+			return
+		# Add the attack direction at the end
+		var attack_dir: Vector2i = target - (player_pos if best_path.is_empty() else player_pos + _sum_dirs(best_path))
+		best_path.append(attack_dir)
+		move_path = best_path
+	else:
+		if target == player_pos:
+			return
+		var path := _bfs_path(player_pos, target)
+		if path.is_empty():
+			return
+		move_path = path
+
+	# Execute first step immediately
+	var first_dir: Vector2i = move_path.pop_front()
+	_move(first_dir)
+
+func _sum_dirs(dirs: Array[Vector2i]) -> Vector2i:
+	var total := Vector2i.ZERO
+	for d in dirs:
+		total += d
+	return total
+
+func _bfs_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if from == to:
+		return []
+	var max_len := 50
+	var visited: Dictionary = {}
+	# Queue entries: [position, Array[Vector2i] of directions taken]
+	var queue: Array = []
+	queue.push_back([from, [] as Array[Vector2i]])
+	visited[from] = true
+	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+
+	while not queue.is_empty():
+		var entry: Array = queue.pop_front()
+		var pos: Vector2i = entry[0]
+		var path: Array[Vector2i] = entry[1]
+		if path.size() >= max_len:
+			continue
+		for dir in dirs:
+			var np: Vector2i = pos + dir
+			if np.x < 0 or np.x >= GRID_SIZE or np.y < 0 or np.y >= GRID_SIZE:
+				continue
+			if grid[np.x][np.y] == Tile.WALL:
+				continue
+			if visited.has(np):
+				continue
+			visited[np] = true
+			var new_path: Array[Vector2i] = path.duplicate()
+			new_path.append(dir)
+			if np == to:
+				return new_path
+			queue.push_back([np, new_path])
+	return [] as Array[Vector2i]
 
 # --- Dungeon Generation ---
 
@@ -234,6 +362,14 @@ func _move(dir: Vector2i) -> void:
 	_center_camera()
 	grid_container.queue_redraw()
 	_update_hud()
+
+	# Auto-step: schedule next path step if path remains
+	if not move_path.is_empty():
+		# Cancel path if player took damage (creature retaliated or attacked)
+		if player_hp <= 0:
+			move_path.clear()
+		else:
+			_pending_step = true
 
 func _move_creatures() -> void:
 	var directions := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
