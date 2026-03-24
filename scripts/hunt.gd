@@ -14,7 +14,7 @@ var tile_visible: Array = []  # 2D bool array — currently in LOS
 # Entities
 var player_pos := Vector2i.ZERO
 var player_hp := 10
-var creatures: Array[Dictionary] = []  # {pos, hp, type, is_target}
+var creatures: Array[Dictionary] = []  # {pos, hp, type, is_target, stunned_turns}
 var turn_count := 0
 var corruption := 0
 var target_kills := 0
@@ -24,6 +24,11 @@ var exit_spawned := false
 # Tap-to-move
 var move_path: Array[Vector2i] = []
 var _pending_step: bool = false
+
+# Inventory (max 3 slots)
+var inventory: Array[Dictionary] = []  # {id, name, symbol, uses}
+var scan_turns_left: int = 0
+var traps: Array[Vector2i] = []  # positions of placed traps
 
 # UI references
 @onready var grid_container: Control = $GridViewport/GridRoot
@@ -41,7 +46,11 @@ func _ready() -> void:
 	_center_camera()
 	queue_redraw()
 	_update_hud()
-	pass  # D-pad buttons exist in scene but are unused
+	# Grab focus so WASD/arrow keys work on this Control node
+	focus_mode = Control.FOCUS_ALL
+	grab_focus()
+	# Start with 1 net in inventory
+	inventory.append({id = "net", name = "Net", symbol = "🕸", uses = 1})
 
 func _process(_delta: float) -> void:
 	if _pending_step and not move_path.is_empty():
@@ -51,24 +60,42 @@ func _process(_delta: float) -> void:
 	elif _pending_step:
 		_pending_step = false
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	# Keyboard movement cancels any path and moves one step
 	if event.is_action_pressed("move_up"):
 		move_path.clear()
 		_move(Vector2i(0, -1))
+		get_viewport().set_input_as_handled()
 		return
 	elif event.is_action_pressed("move_down"):
 		move_path.clear()
 		_move(Vector2i(0, 1))
+		get_viewport().set_input_as_handled()
 		return
 	elif event.is_action_pressed("move_left"):
 		move_path.clear()
 		_move(Vector2i(-1, 0))
+		get_viewport().set_input_as_handled()
 		return
 	elif event.is_action_pressed("move_right"):
 		move_path.clear()
 		_move(Vector2i(1, 0))
+		get_viewport().set_input_as_handled()
 		return
+
+	# Item use: keys 1-3 for inventory slots
+	if event is InputEventKey and event.pressed and not event.echo:
+		var slot := -1
+		if event.keycode == KEY_1:
+			slot = 0
+		elif event.keycode == KEY_2:
+			slot = 1
+		elif event.keycode == KEY_3:
+			slot = 2
+		if slot >= 0:
+			_use_item(slot)
+			get_viewport().set_input_as_handled()
+			return
 
 	# Tap-to-move: detect touch release or mouse left click release
 	var tap_pos: Vector2 = Vector2.ZERO
@@ -354,6 +381,8 @@ func _move(dir: Vector2i) -> void:
 	turn_count += 1
 	if turn_count % 5 == 0:
 		corruption += 1
+	if scan_turns_left > 0:
+		scan_turns_left -= 1
 
 	# Creature AI
 	_move_creatures()
@@ -376,33 +405,104 @@ func _move_creatures() -> void:
 	for creature in creatures:
 		if creature["hp"] <= 0:
 			continue
-		# Random walk
-		directions.shuffle()
-		for dir in directions:
-			var new_pos: Vector2i = creature["pos"] + dir
-			if new_pos.x < 0 or new_pos.x >= GRID_SIZE or new_pos.y < 0 or new_pos.y >= GRID_SIZE:
-				continue
-			if grid[new_pos.x][new_pos.y] == Tile.WALL:
-				continue
-			# Don't walk into other creatures
-			var blocked := false
-			for other in creatures:
-				if other != creature and other["hp"] > 0 and other["pos"] == new_pos:
-					blocked = true
+		# Stunned creatures skip their turn
+		var stunned: int = creature.get("stunned_turns", 0)
+		if stunned > 0:
+			creature["stunned_turns"] = stunned - 1
+			continue
+
+		# Chase if player within 6 tiles (Chebyshev distance)
+		var cpos: Vector2i = creature["pos"]
+		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
+		var chasing := dist <= 6
+
+		if chasing:
+			# Sort directions by distance to player (greedy chase)
+			var sorted_dirs := directions.duplicate()
+			sorted_dirs.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+				var pa: Vector2i = cpos + a
+				var pb: Vector2i = cpos + b
+				var da := maxi(absi(pa.x - player_pos.x), absi(pa.y - player_pos.y))
+				var db := maxi(absi(pb.x - player_pos.x), absi(pb.y - player_pos.y))
+				return da < db
+			)
+			_try_creature_move(creature, sorted_dirs)
+		else:
+			# Random walk
+			directions.shuffle()
+			_try_creature_move(creature, directions)
+
+func _try_creature_move(creature: Dictionary, dirs: Array) -> void:
+	for dir in dirs:
+		var new_pos: Vector2i = creature["pos"] + dir
+		if new_pos.x < 0 or new_pos.x >= GRID_SIZE or new_pos.y < 0 or new_pos.y >= GRID_SIZE:
+			continue
+		if grid[new_pos.x][new_pos.y] == Tile.WALL:
+			continue
+		# Don't walk into other creatures
+		var blocked := false
+		for other in creatures:
+			if other != creature and other["hp"] > 0 and other["pos"] == new_pos:
+				blocked = true
+				break
+		if blocked:
+			continue
+		# Check if walking into player
+		if new_pos == player_pos:
+			player_hp -= 1
+			_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
+			if player_hp <= 0:
+				_show_message("You died!")
+				_game_over()
+				return
+		else:
+			creature["pos"] = new_pos
+			# Check if creature stepped on a trap
+			if new_pos in traps:
+				traps.erase(new_pos)
+				creature["stunned_turns"] = 3
+				_show_message("%s stepped on a trap!" % creature["type"])
+		break
+
+func _use_item(slot: int) -> void:
+	if slot >= inventory.size():
+		_show_message("Empty slot!")
+		return
+	var item: Dictionary = inventory[slot]
+	if item["id"] == "net":
+		# Immobilize adjacent creature for 2 turns
+		var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+		var netted := false
+		for dir in dirs:
+			var adj: Vector2i = player_pos + dir
+			for creature in creatures:
+				if creature["hp"] > 0 and creature["pos"] == adj:
+					creature["stunned_turns"] = 2
+					_show_message("Netted %s!" % creature["type"])
+					netted = true
 					break
-			if blocked:
-				continue
-			# Check if walking into player
-			if new_pos == player_pos:
-				player_hp -= 1
-				_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
-				if player_hp <= 0:
-					_show_message("You died!")
-					_game_over()
-					return
-			else:
-				creature["pos"] = new_pos
-			break
+			if netted:
+				break
+		if not netted:
+			_show_message("No adjacent creature to net!")
+			return
+	elif item["id"] == "trap":
+		# Place trap on current tile
+		if player_pos in traps:
+			_show_message("Trap already here!")
+			return
+		traps.append(player_pos)
+		_show_message("Trap placed!")
+	elif item["id"] == "scan":
+		scan_turns_left = 4
+		_show_message("Scan activated!")
+		grid_container.queue_redraw()
+		_update_hud()
+
+	item["uses"] -= 1
+	if item["uses"] <= 0:
+		inventory.remove_at(slot)
+	_update_hud()
 
 func _check_exit_spawn() -> void:
 	if target_kills >= target_total and not exit_spawned:
@@ -480,14 +580,26 @@ func _draw_grid() -> void:
 
 			grid_container.draw_rect(rect, color)
 
-	# Draw creatures (only if visible)
+	# Draw traps (only if visible or revealed)
+	for trap_pos in traps:
+		if tile_visible[trap_pos.x][trap_pos.y] or revealed[trap_pos.x][trap_pos.y]:
+			var trap_color := Color(0.9, 0.7, 0.1) if tile_visible[trap_pos.x][trap_pos.y] else Color(0.5, 0.4, 0.1)
+			var trap_rect := Rect2(trap_pos.x * TILE_SIZE + 6, trap_pos.y * TILE_SIZE + 6, TILE_SIZE - 13, TILE_SIZE - 13)
+			grid_container.draw_rect(trap_rect, trap_color)
+
+	# Draw creatures (visible, or all if scan active)
 	for creature in creatures:
 		if creature["hp"] <= 0:
 			continue
 		var pos: Vector2i = creature["pos"]
-		if tile_visible[pos.x][pos.y]:
+		if tile_visible[pos.x][pos.y] or scan_turns_left > 0:
+			var creature_color := Color(0.9, 0.2, 0.2)
+			if creature.get("stunned_turns", 0) > 0:
+				creature_color = Color(0.5, 0.5, 0.9)  # Blue tint for stunned
+			elif not tile_visible[pos.x][pos.y]:
+				creature_color = Color(0.7, 0.3, 0.3, 0.6)  # Dimmer for scan-only
 			var rect := Rect2(pos.x * TILE_SIZE + 2, pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
-			grid_container.draw_rect(rect, Color(0.9, 0.2, 0.2))
+			grid_container.draw_rect(rect, creature_color)
 
 	# Draw player
 	var player_rect := Rect2(player_pos.x * TILE_SIZE + 2, player_pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
@@ -495,9 +607,16 @@ func _draw_grid() -> void:
 
 func _update_hud() -> void:
 	var contract := GameData.current_contract
-	hud_label.text = "HP: %d | Turn: %d | Corruption: %d\nTarget: %s (%d/%d)" % [
-		player_hp, turn_count, corruption,
-		contract.get("creature_type", "?"), target_kills, target_total
+	var inv_text := ""
+	for i in 3:
+		if i < inventory.size():
+			inv_text += "[%d]%s " % [i + 1, inventory[i]["symbol"]]
+		else:
+			inv_text += "[%d]- " % [i + 1]
+	var scan_text := " | SCAN:%d" % scan_turns_left if scan_turns_left > 0 else ""
+	hud_label.text = "HP: %d | Turn: %d | Corruption: %d%s\nTarget: %s (%d/%d) | %s" % [
+		player_hp, turn_count, corruption, scan_text,
+		contract.get("creature_type", "?"), target_kills, target_total, inv_text.strip_edges()
 	]
 
 func _show_message(msg: String) -> void:
