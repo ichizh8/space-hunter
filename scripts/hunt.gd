@@ -29,6 +29,7 @@ var _pending_step: bool = false
 var inventory: Array[Dictionary] = []  # {id, name, symbol, uses}
 var scan_turns_left: int = 0
 var traps: Array[Vector2i] = []  # positions of placed traps
+var _action_bar: HBoxContainer
 
 # UI references
 @onready var grid_container: Control = $GridViewport/GridRoot
@@ -46,11 +47,27 @@ func _ready() -> void:
 	_center_camera()
 	queue_redraw()
 	_update_hud()
+	# Hide D-pad so it doesn't consume touch input
+	$DPad.hide()
 	# Grab focus so WASD/arrow keys work on this Control node
 	focus_mode = Control.FOCUS_ALL
 	grab_focus()
 	# Start with 1 net in inventory
 	inventory.append({id = "net", name = "Net", symbol = "🕸", uses = 1})
+	# Action bar
+	var action_bar := HBoxContainer.new()
+	action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	action_bar.offset_top = -180
+	action_bar.z_index = 10
+	action_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	for i in 3:
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(120, 60)
+		btn.name = "ItemBtn%d" % i
+		action_bar.add_child(btn)
+		btn.pressed.connect(_use_item.bind(i))
+	add_child(action_bar)
+	_action_bar = action_bar
 
 func _process(_delta: float) -> void:
 	if _pending_step and not move_path.is_empty():
@@ -86,10 +103,14 @@ func _input(event: InputEvent) -> void:
 	if not is_tap:
 		return
 
-	# Convert to grid coords using grid_container.position (local offset)
-	var grid_local := tap_pos - grid_container.position
-	var gx: int = int(floor(grid_local.x / TILE_SIZE))
-	var gy: int = int(floor(grid_local.y / TILE_SIZE))
+	# Convert screen tap position to canvas/viewport local position
+	var viewport := get_viewport()
+	var transform := viewport.get_screen_transform()
+	var canvas_pos := transform.affine_inverse() * tap_pos
+	# Then convert to grid coords
+	var grid_local := canvas_pos - grid_container.position
+	var gx := int(floor(grid_local.x / TILE_SIZE))
+	var gy := int(floor(grid_local.y / TILE_SIZE))
 
 	# Bounds check
 	if gx < 0 or gx >= GRID_SIZE or gy < 0 or gy >= GRID_SIZE:
@@ -593,6 +614,14 @@ func _update_hud() -> void:
 		player_hp, turn_count, corruption, scan_text,
 		contract.get("creature_type", "?"), target_kills, target_total, inv_text.strip_edges()
 	]
+	# Refresh action bar button labels
+	if _action_bar:
+		for i in 3:
+			var btn: Button = _action_bar.get_child(i)
+			if i < inventory.size():
+				btn.text = "%s %s" % [inventory[i]["symbol"], inventory[i]["name"]]
+			else:
+				btn.text = "[%d] -" % (i + 1)
 
 func _show_message(msg: String) -> void:
 	message_label.text = msg
