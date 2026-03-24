@@ -53,7 +53,7 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	grab_focus()
 	# Start with 1 net in inventory
-	inventory.append({id = "net", name = "Net", symbol = "🕸", uses = 1})
+	inventory.append({id = "net", name = "Net", symbol = "N", uses = 1})
 	# Action bar
 	var action_bar := HBoxContainer.new()
 	action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
@@ -94,21 +94,17 @@ func _input(event: InputEvent) -> void:
 		return
 
 	# Touch/mouse tap
-	var tap_pos := Vector2.ZERO
 	var is_tap := false
 	if event is InputEventScreenTouch and not event.pressed:
-		tap_pos = event.position; is_tap = true
+		is_tap = true
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		tap_pos = event.position; is_tap = true
+		is_tap = true
 	if not is_tap:
 		return
 
-	# Convert screen tap position to canvas/viewport local position
-	var viewport := get_viewport()
-	var transform := viewport.get_screen_transform()
-	var canvas_pos := transform.affine_inverse() * tap_pos
-	# Then convert to grid coords
-	var grid_local := canvas_pos - grid_container.position
+	# Use get_mouse_position() — always correct viewport coords in Godot 4
+	var tap_pos := get_viewport().get_mouse_position()
+	var grid_local := tap_pos - grid_container.position
 	var gx := int(floor(grid_local.x / TILE_SIZE))
 	var gy := int(floor(grid_local.y / TILE_SIZE))
 
@@ -617,11 +613,15 @@ func _update_hud() -> void:
 	# Refresh action bar button labels
 	if _action_bar:
 		for i in 3:
-			var btn: Button = _action_bar.get_child(i)
-			if i < inventory.size():
-				btn.text = "%s %s" % [inventory[i]["symbol"], inventory[i]["name"]]
-			else:
-				btn.text = "[%d] -" % (i + 1)
+			var btn := _action_bar.get_child(i) as Button
+			if btn:
+				if i < inventory.size():
+					var item := inventory[i]
+					btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), item.get("uses",0)]
+					btn.disabled = false
+				else:
+					btn.text = "Empty"
+					btn.disabled = true
 
 func _show_message(msg: String) -> void:
 	message_label.text = msg
