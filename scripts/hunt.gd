@@ -60,59 +60,34 @@ func _process(_delta: float) -> void:
 	elif _pending_step:
 		_pending_step = false
 
-func _unhandled_input(event: InputEvent) -> void:
-	# Keyboard movement cancels any path and moves one step
-	if event.is_action_pressed("move_up"):
-		move_path.clear()
-		_move(Vector2i(0, -1))
-		get_viewport().set_input_as_handled()
-		return
-	elif event.is_action_pressed("move_down"):
-		move_path.clear()
-		_move(Vector2i(0, 1))
-		get_viewport().set_input_as_handled()
-		return
-	elif event.is_action_pressed("move_left"):
-		move_path.clear()
-		_move(Vector2i(-1, 0))
-		get_viewport().set_input_as_handled()
-		return
-	elif event.is_action_pressed("move_right"):
-		move_path.clear()
-		_move(Vector2i(1, 0))
-		get_viewport().set_input_as_handled()
-		return
-
-	# Item use: keys 1-3 for inventory slots
+func _input(event: InputEvent) -> void:
+	# Keyboard movement
 	if event is InputEventKey and event.pressed and not event.echo:
-		var slot := -1
-		if event.keycode == KEY_1:
-			slot = 0
-		elif event.keycode == KEY_2:
-			slot = 1
-		elif event.keycode == KEY_3:
-			slot = 2
-		if slot >= 0:
-			_use_item(slot)
-			get_viewport().set_input_as_handled()
-			return
+		var dir := Vector2i.ZERO
+		if event.keycode == KEY_W or event.keycode == KEY_UP: dir = Vector2i(0, -1)
+		elif event.keycode == KEY_S or event.keycode == KEY_DOWN: dir = Vector2i(0, 1)
+		elif event.keycode == KEY_A or event.keycode == KEY_LEFT: dir = Vector2i(-1, 0)
+		elif event.keycode == KEY_D or event.keycode == KEY_RIGHT: dir = Vector2i(1, 0)
+		elif event.keycode == KEY_1: _use_item(0); return
+		elif event.keycode == KEY_2: _use_item(1); return
+		elif event.keycode == KEY_3: _use_item(2); return
+		if dir != Vector2i.ZERO:
+			move_path.clear()
+			_move(dir)
+		return
 
-	# Tap-to-move: detect touch release or mouse left click release
-	var tap_pos: Vector2 = Vector2.ZERO
+	# Touch/mouse tap
+	var tap_pos := Vector2.ZERO
 	var is_tap := false
-
 	if event is InputEventScreenTouch and not event.pressed:
-		tap_pos = event.position
-		is_tap = true
+		tap_pos = event.position; is_tap = true
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		tap_pos = event.position
-		is_tap = true
-
+		tap_pos = event.position; is_tap = true
 	if not is_tap:
 		return
 
-	# Convert screen position to grid coordinates
-	var grid_local: Vector2 = tap_pos - grid_container.global_position
+	# Convert to grid coords using grid_container.position (local offset)
+	var grid_local := tap_pos - grid_container.position
 	var gx: int = int(floor(grid_local.x / TILE_SIZE))
 	var gy: int = int(floor(grid_local.y / TILE_SIZE))
 
