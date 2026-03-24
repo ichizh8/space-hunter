@@ -1,3 +1,17 @@
 [remap]
 
-importer="keep"
+importer="csv_translation"
+type="Translation"
+uid="uid://dyd1qf0d4mam"
+
+[deps]
+
+files=["res://assets/data/example-scifi-items.type.translation", "res://assets/data/example-scifi-items.sprite.translation", "res://assets/data/example-scifi-items.mass.translation", "res://assets/data/example-scifi-items.ac.translation", "res://assets/data/example-scifi-items.damage.translation", "res://assets/data/example-scifi-items.damage.translation", "res://assets/data/example-scifi-items.skill.translation", "res://assets/data/example-scifi-items.ammo.translation", "res://assets/data/example-scifi-items.power.translation", "res://assets/data/example-scifi-items.probability.translation", "res://assets/data/example-scifi-items.nutrition.translation", "res://assets/data/example-scifi-items.max.translation", "res://assets/data/example-scifi-items.flags.translation", "res://assets/data/example-scifi-items.resistance.translation"]
+
+source_file="res://assets/data/example-scifi-items.csv"
+dest_files=["res://assets/data/example-scifi-items.type.translation", "res://assets/data/example-scifi-items.sprite.translation", "res://assets/data/example-scifi-items.mass.translation", "res://assets/data/example-scifi-items.ac.translation", "res://assets/data/example-scifi-items.damage.translation", "res://assets/data/example-scifi-items.damage.translation", "res://assets/data/example-scifi-items.skill.translation", "res://assets/data/example-scifi-items.ammo.translation", "res://assets/data/example-scifi-items.power.translation", "res://assets/data/example-scifi-items.probability.translation", "res://assets/data/example-scifi-items.nutrition.translation", "res://assets/data/example-scifi-items.max.translation", "res://assets/data/example-scifi-items.flags.translation", "res://assets/data/example-scifi-items.resistance.translation"]
+
+[params]
+
+compress=true
+delimiter=0

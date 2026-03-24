@@ -29,9 +29,12 @@ func _update_status() -> void:
 
 
 func _generate_contracts() -> void:
+	randomize()
 	contracts.clear()
+	var shuffled := CREATURES.duplicate()
+	shuffled.shuffle()
 	for i in range(3):
-		var creature_slug: String = CREATURES[randi() % CREATURES.size()]
+		var creature_slug: String = shuffled[i % shuffled.size()]
 		var creature_name: String = CREATURE_NAMES[creature_slug]
 		var depth: int = randi_range(1, 3)
 		var reward: int = depth * 50 + randi_range(10, 40)
@@ -40,7 +43,7 @@ func _generate_contracts() -> void:
 			"creature_name": creature_name,
 			"depth": depth,
 			"reward": reward,
-			"name": "Hunt the %ss" % creature_name,
+			"name": "Hunt %ss" % creature_name,
 		})
 	_build_buttons()
 
@@ -48,15 +51,14 @@ func _generate_contracts() -> void:
 func _build_buttons() -> void:
 	for child in contract_list.get_children():
 		child.queue_free()
-
 	for i in range(contracts.size()):
 		var contract: Dictionary = contracts[i]
-		var button := Button.new()
-		button.text = "%s  |  Depth: %d  |  Reward: %d credits" % [
-			contract["name"], contract["depth"], contract["reward"]
-		]
-		button.pressed.connect(_on_contract_selected.bind(i))
-		contract_list.add_child(button)
+		var btn := Button.new()
+		btn.text = "%s\nDepth %d  ·  %d credits" % [contract["name"], contract["depth"], contract["reward"]]
+		btn.custom_minimum_size = Vector2(0, 80)
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
+		btn.pressed.connect(_on_contract_selected.bind(i))
+		contract_list.add_child(btn)
 
 
 func _on_contract_selected(index: int) -> void:

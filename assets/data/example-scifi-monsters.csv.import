@@ -1,3 +1,17 @@
 [remap]
 
-importer="keep"
+importer="csv_translation"
+type="Translation"
+uid="uid://cmhpy1w1fm3s1"
+
+[deps]
+
+files=["res://assets/data/example-scifi-monsters.species.translation", "res://assets/data/example-scifi-monsters.name.translation", "res://assets/data/example-scifi-monsters.faction.translation", "res://assets/data/example-scifi-monsters.behavior.translation", "res://assets/data/example-scifi-monsters.appearance.translation", "res://assets/data/example-scifi-monsters.speed.translation", "res://assets/data/example-scifi-monsters.strength.translation", "res://assets/data/example-scifi-monsters.max.translation", "res://assets/data/example-scifi-monsters.sight.translation", "res://assets/data/example-scifi-monsters.hit.translation", "res://assets/data/example-scifi-monsters.intelligence.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation"]
+
+source_file="res://assets/data/example-scifi-monsters.csv"
+dest_files=["res://assets/data/example-scifi-monsters.species.translation", "res://assets/data/example-scifi-monsters.name.translation", "res://assets/data/example-scifi-monsters.faction.translation", "res://assets/data/example-scifi-monsters.behavior.translation", "res://assets/data/example-scifi-monsters.appearance.translation", "res://assets/data/example-scifi-monsters.speed.translation", "res://assets/data/example-scifi-monsters.strength.translation", "res://assets/data/example-scifi-monsters.max.translation", "res://assets/data/example-scifi-monsters.sight.translation", "res://assets/data/example-scifi-monsters.hit.translation", "res://assets/data/example-scifi-monsters.intelligence.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation", "res://assets/data/example-scifi-monsters.has.translation"]
+
+[params]
+
+compress=true
+delimiter=0

@@ -16,7 +16,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="Space Hunter"
 run/main_scene="res://scenes/contract_board/contract_board.tscn"
-config/features=PackedStringArray("4.6", "GL Compatibility")
+config/features=PackedStringArray("4.4", "GL Compatibility")
 boot_splash/bg_color=Color(0.0852449, 0.0852449, 0.0852449, 1)
 
 [autoload]
@@ -38,14 +38,12 @@ gdscript/warnings/unsafe_call_argument=1
 
 [display]
 
-window/size/viewport_width=576
-window/size/viewport_height=324
-window/size/window_width_override=1512
-window/size/window_height_override=949
-window/stretch/aspect="expand"
-window/stretch/scale=2.0
-window/stretch/scale_mode="integer"
-window/dpi/allow_hidpi=false
+window/size/viewport_width=540
+window/size/viewport_height=960
+window/size/window_width_override=540
+window/size/window_height_override=960
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
 
 [file_customization]
 
@@ -60,11 +58,11 @@ folder_colors={
 [gui]
 
 fonts/dynamic_fonts/use_oversampling=false
+theme/custom_font="uid://drct7kk8ym7g7"
 theme/default_font_antialiasing=0
 theme/default_font_hinting=0
 theme/default_font_subpixel_positioning=0
 theme/default_font_multichannel_signed_distance_field=true
-theme/custom_font="uid://drct7kk8ym7g7"
 
 [input]
 

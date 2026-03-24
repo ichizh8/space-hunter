@@ -1,3 +1,17 @@
 [remap]
 
-importer="keep"
+importer="csv_translation"
+type="Translation"
+uid="uid://dkbebbd0x2gvm"
+
+[deps]
+
+files=["res://assets/data/items.sprite.translation", "res://assets/data/items.type.translation", "res://assets/data/items.mass.translation", "res://assets/data/items.ac.translation", "res://assets/data/items.damage.translation", "res://assets/data/items.damage.translation", "res://assets/data/items.skill.translation", "res://assets/data/items.ammo.translation", "res://assets/data/items.probability.translation", "res://assets/data/items.nutrition.translation", "res://assets/data/items.max.translation", "res://assets/data/items.flags.translation", "res://assets/data/items.resistance.translation"]
+
+source_file="res://assets/data/items.csv"
+dest_files=["res://assets/data/items.sprite.translation", "res://assets/data/items.type.translation", "res://assets/data/items.mass.translation", "res://assets/data/items.ac.translation", "res://assets/data/items.damage.translation", "res://assets/data/items.damage.translation", "res://assets/data/items.skill.translation", "res://assets/data/items.ammo.translation", "res://assets/data/items.probability.translation", "res://assets/data/items.nutrition.translation", "res://assets/data/items.max.translation", "res://assets/data/items.flags.translation", "res://assets/data/items.resistance.translation"]
+
+[params]
+
+compress=true
+delimiter=0

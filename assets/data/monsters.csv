@@ -4,3 +4,6 @@ shadow-crawler,void,Shadow Crawler,void_creatures,aggressive,pest-20,fast,12,20,
 abyss-worm,void,Abyss Worm,void_creatures,aggressive,reptile-64,slow,20,40,4,#ff6600,2,false,false,false,false
 nether-stalker,void,Nether Stalker,void_creatures,aggressive,pest-58,normal,15,30,10,#ff0000,6,false,false,false,false
 rift-parasite,void,Rift Parasite,void_creatures,aggressive,pest-18,fast,10,12,6,#00ff88,3,false,false,false,false
+knight,human,Knight,human,passive,player-25,normal,15,50,8,#ff3333,8,true,true,true,true
+monk,human,Monk,human,passive,player-31,normal,15,50,8,#ff3333,8,true,true,true,true
+valkyrie,human,Valkyrie,human,passive,player-4,normal,15,50,8,#ff3333,8,true,true,true,true

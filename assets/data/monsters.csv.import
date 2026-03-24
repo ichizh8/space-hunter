@@ -1,3 +1,17 @@
 [remap]
 
-importer="keep"
+importer="csv_translation"
+type="Translation"
+uid="uid://bgiju2n3m3q1w"
+
+[deps]
+
+files=["res://assets/data/monsters.species.translation", "res://assets/data/monsters.name.translation", "res://assets/data/monsters.faction.translation", "res://assets/data/monsters.behavior.translation", "res://assets/data/monsters.appearance.translation", "res://assets/data/monsters.speed.translation", "res://assets/data/monsters.strength.translation", "res://assets/data/monsters.max.translation", "res://assets/data/monsters.sight.translation", "res://assets/data/monsters.hit.translation", "res://assets/data/monsters.intelligence.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation"]
+
+source_file="res://assets/data/monsters.csv"
+dest_files=["res://assets/data/monsters.species.translation", "res://assets/data/monsters.name.translation", "res://assets/data/monsters.faction.translation", "res://assets/data/monsters.behavior.translation", "res://assets/data/monsters.appearance.translation", "res://assets/data/monsters.speed.translation", "res://assets/data/monsters.strength.translation", "res://assets/data/monsters.max.translation", "res://assets/data/monsters.sight.translation", "res://assets/data/monsters.hit.translation", "res://assets/data/monsters.intelligence.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation", "res://assets/data/monsters.has.translation"]
+
+[params]
+
+compress=true
+delimiter=0
