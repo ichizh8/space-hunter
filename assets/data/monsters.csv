@@ -1,0 +1,6 @@
+slug,species,name,faction,behavior,appearance,speed,strength,max_hp,sight_radius,hit_particles_color,intelligence,has_head,has_torso,has_legs,has_hands
+void-leech,void,Void Leech,void_creatures,aggressive,pest-17,normal,8,15,6,#00ffff,2,false,false,false,false
+shadow-crawler,void,Shadow Crawler,void_creatures,aggressive,pest-20,fast,12,20,8,#8800ff,4,false,false,false,false
+abyss-worm,void,Abyss Worm,void_creatures,aggressive,reptile-64,slow,20,40,4,#ff6600,2,false,false,false,false
+nether-stalker,void,Nether Stalker,void_creatures,aggressive,pest-58,normal,15,30,10,#ff0000,6,false,false,false,false
+rift-parasite,void,Rift Parasite,void_creatures,aggressive,pest-18,fast,10,12,6,#00ff88,3,false,false,false,false
