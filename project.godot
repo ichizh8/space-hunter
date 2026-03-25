@@ -15,7 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Space Hunter"
-run/main_scene="res://scenes/contract_board/contract_board.tscn"
+run/main_scene="res://scenes/ShipHub.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 boot_splash/bg_color=Color(0.0852449, 0.0852449, 0.0852449, 1)
 
@@ -28,6 +28,8 @@ ItemTiles="*res://src/item_tiles.gd"
 WorldTiles="*res://src/world_tiles.gd"
 CharacterTiles="*res://src/character_tiles.gd"
 ContractManager="*res://src/contract_manager.gd"
+GameData="*res://scripts/game_data.gd"
+SaveManager="*res://scripts/save_manager.gd"
 
 [debug]
 

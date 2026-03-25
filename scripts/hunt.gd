@@ -6,6 +6,14 @@ const VIEW_RADIUS := 5
 
 enum Tile { WALL, FLOOR, EXIT }
 
+const CREATURE_INGREDIENTS: Dictionary = {
+	"Void Leech": {id = "ingredient_void_extract", name = "Void Extract", symbol = "V", uses = 1, ingredient = true},
+	"Shadow Crawler": {id = "ingredient_shadow_membrane", name = "Shadow Membrane", symbol = "S", uses = 1, ingredient = true},
+	"Abyss Worm": {id = "ingredient_abyss_flesh", name = "Abyss Flesh", symbol = "A", uses = 1, ingredient = true},
+	"Nether Stalker": {id = "ingredient_nether_bile", name = "Nether Bile", symbol = "N", uses = 1, ingredient = true},
+	"Rift Parasite": {id = "ingredient_rift_spore", name = "Rift Spore", symbol = "R", uses = 1, ingredient = true},
+}
+
 # Grid data
 var grid: Array = []  # 2D array of Tile
 var revealed: Array = []  # 2D bool array — ever seen
@@ -60,9 +68,9 @@ func _ready() -> void:
 	action_bar.offset_top = -180
 	action_bar.z_index = 10
 	action_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	for i in 3:
+	for i in 6:
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(120, 60)
+		btn.custom_minimum_size = Vector2(80, 60)
 		btn.name = "ItemBtn%d" % i
 		action_bar.add_child(btn)
 		btn.pressed.connect(_use_item.bind(i))
@@ -88,6 +96,9 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_1: _use_item(0); return
 		elif event.keycode == KEY_2: _use_item(1); return
 		elif event.keycode == KEY_3: _use_item(2); return
+		elif event.keycode == KEY_4: _use_item(3); return
+		elif event.keycode == KEY_5: _use_item(4); return
+		elif event.keycode == KEY_6: _use_item(5); return
 		if dir != Vector2i.ZERO:
 			move_path.clear()
 			_move(dir)
@@ -351,6 +362,7 @@ func _move(dir: Vector2i) -> void:
 			if c["is_target"]:
 				target_kills += 1
 			_show_message("Killed %s!" % c["type"])
+			_drop_ingredient(c["type"])
 			_check_exit_spawn()
 		else:
 			_show_message("Hit %s! (%d HP left)" % [c["type"], c["hp"]])
@@ -496,6 +508,16 @@ func _use_item(slot: int) -> void:
 		inventory.remove_at(slot)
 	_update_hud()
 
+func _drop_ingredient(creature_type: String) -> void:
+	if not CREATURE_INGREDIENTS.has(creature_type):
+		return
+	if inventory.size() >= 6:
+		return
+	var ingredient: Dictionary = CREATURE_INGREDIENTS[creature_type].duplicate()
+	inventory.append(ingredient)
+	_show_message("%s dropped!" % ingredient["name"])
+	_update_hud()
+
 func _check_exit_spawn() -> void:
 	if target_kills >= target_total and not exit_spawned:
 		exit_spawned = true
@@ -522,7 +544,11 @@ func _check_exit_spawn() -> void:
 func _complete_hunt() -> void:
 	var reward: int = GameData.current_contract.get("reward", 100)
 	SaveManager.complete_contract(reward, corruption)
-	GameData.set_hunt_result(reward, corruption, 0)
+	var ingredients: Array[Dictionary] = []
+	for item in inventory:
+		if item.get("ingredient", false):
+			ingredients.append(item)
+	GameData.set_hunt_result(reward, corruption, 0, ingredients)
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 func _game_over() -> void:
@@ -600,7 +626,7 @@ func _draw_grid() -> void:
 func _update_hud() -> void:
 	var contract := GameData.current_contract
 	var inv_text := ""
-	for i in 3:
+	for i in 6:
 		if i < inventory.size():
 			inv_text += "[%d]%s " % [i + 1, inventory[i]["symbol"]]
 		else:
@@ -612,7 +638,7 @@ func _update_hud() -> void:
 	]
 	# Refresh action bar button labels
 	if _action_bar:
-		for i in 3:
+		for i in 6:
 			var btn := _action_bar.get_child(i) as Button
 			if btn:
 				if i < inventory.size():

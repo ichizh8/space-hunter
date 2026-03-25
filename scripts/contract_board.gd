@@ -9,6 +9,12 @@ func _ready() -> void:
 	contracts = GameData.generate_contracts(3)
 	_update_stats()
 	_build_contract_buttons()
+	# Add "Return to Ship" button at the bottom
+	var ship_btn := Button.new()
+	ship_btn.custom_minimum_size = Vector2(0, 60)
+	ship_btn.text = "Return to Ship"
+	ship_btn.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://scenes/ShipHub.tscn"))
+	contract_container.get_parent().add_child(ship_btn)
 
 func _update_stats() -> void:
 	var d := SaveManager.data

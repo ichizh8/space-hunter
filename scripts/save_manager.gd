@@ -30,3 +30,11 @@ func complete_contract(credits: int, corruption: int) -> void:
 	data.total_corruption += corruption
 	data.contracts_completed += 1
 	save_game()
+
+func add_ingredients(arr: Array) -> void:
+	for item in arr:
+		var ingredient_id: String = item.get("id", "").replace("ingredient_", "")
+		if ingredient_id.is_empty():
+			continue
+		data.ingredients[ingredient_id] = data.ingredients.get(ingredient_id, 0) + 1
+	save_game()

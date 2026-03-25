@@ -24,9 +24,10 @@ func generate_contracts(count: int = 3) -> Array[Dictionary]:
 func set_current_contract(contract: Dictionary) -> void:
 	current_contract = contract
 
-func set_hunt_result(credits: int, corruption: int, items: int) -> void:
+func set_hunt_result(credits: int, corruption: int, items: int, ingredients: Array[Dictionary] = []) -> void:
 	hunt_result = {
 		"credits": credits,
 		"corruption": corruption,
 		"items": items,
+		"ingredients": ingredients,
 	}
