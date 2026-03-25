@@ -21,13 +21,6 @@ boot_splash/bg_color=Color(0.0852449, 0.0852449, 0.0852449, 1)
 
 [autoload]
 
-World="*res://src/world.gd"
-Async="*res://src/async.gd"
-Modals="*res://src/modals.gd"
-ItemTiles="*res://src/item_tiles.gd"
-WorldTiles="*res://src/world_tiles.gd"
-CharacterTiles="*res://src/character_tiles.gd"
-ContractManager="*res://src/contract_manager.gd"
 GameData="*res://scripts/game_data.gd"
 SaveManager="*res://scripts/save_manager.gd"
 
