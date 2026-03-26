@@ -191,12 +191,14 @@ func _spawn_enemies(depth: int) -> void:
 	for i in range(target_count):
 		_spawn_single_enemy(contract_type, true, rng)
 
-	# Spawn 4 filler creatures of other types
+	# Spawn filler creatures — scales with depth for map density
+	# Depth 1: ~12, Depth 2: ~18, Depth 3: ~24 fillers
+	var filler_count: int = 10 + depth * 6 + rng.randi_range(0, 4)
 	var filler_types: Array = []
 	for t in types_list:
 		if t != contract_type:
 			filler_types.append(t)
-	for i in range(4):
+	for i in range(filler_count):
 		var ft: String = filler_types[rng.randi_range(0, filler_types.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
@@ -703,6 +705,12 @@ func _drop_ingredient(enemy: Dictionary) -> void:
 
 	var is_void_creature: bool = enemy.get("void_type", false)
 	var is_pristine: bool = false
+
+	# Drop chance — not every kill yields an ingredient
+	# Common creatures: 30% base. Void creatures: 20% (dangerous, rare reward).
+	var drop_chance: float = 0.20 if is_void_creature else 0.30
+	if randf() > drop_chance:
+		return
 
 	if not is_void_creature and corruption < 15.0:
 		is_pristine = randf() < 0.4
