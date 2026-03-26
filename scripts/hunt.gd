@@ -101,7 +101,7 @@ const INGREDIENT_COLORS: Dictionary = {
 }
 
 const ALL_UPGRADES: Array = [
-	{id = "ammo", label = "More Ammo (+4)"},
+	{id = "ammo", label = "Piercing Rounds (+1 dmg)"},
 	{id = "reload", label = "Quick Reload"},
 	{id = "tough", label = "Tougher (+2 HP)"},
 	{id = "speed", label = "Speed Boost"},
@@ -311,9 +311,6 @@ func _auto_attack(delta: float) -> void:
 	if attack_cooldown_timer > 0.0:
 		return
 
-	if sidearm_ammo <= 0:
-		return
-
 	# Find nearest enemy
 	var nearest_dist := 999999.0
 	var nearest_pos := Vector2.ZERO
@@ -331,7 +328,6 @@ func _auto_attack(delta: float) -> void:
 		return
 
 	# Fire bullet
-	sidearm_ammo -= 1
 	attack_cooldown_timer = attack_cooldown_base
 	var dir: Vector2 = (nearest_pos - player_pos).normalized()
 	bullets.append({
@@ -343,9 +339,6 @@ func _auto_attack(delta: float) -> void:
 		lifetime = 0.8,
 		from_player = true,
 	})
-
-	if sidearm_ammo <= 0:
-		_show_message("No ammo!")
 
 # =========================================================
 # ENEMIES
@@ -620,7 +613,7 @@ func _on_upgrade_chosen(idx: int) -> void:
 	var choice: Dictionary = upgrade_choices[idx]
 	match choice.id:
 		"ammo":
-			sidearm_ammo += 4
+			bullet_damage += 1
 		"reload":
 			attack_cooldown_base = maxf(attack_cooldown_base - 0.05, 0.2)
 		"tough":
@@ -762,7 +755,7 @@ func _draw() -> void:
 	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
 
 	# Ammo text
-	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), "Ammo: %d" % sidearm_ammo, Color.WHITE, 14)
+	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), "LV %d" % player_level, Color(0.7, 0.9, 1.0), 14)
 
 	# Target counter (top center)
 	var target_text := "Targets: %d/%d" % [target_kills, target_total]
