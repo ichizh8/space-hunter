@@ -6,6 +6,8 @@ const VIEW_RADIUS := 5
 
 enum Tile { WALL, FLOOR, EXIT }
 
+const RANGED_CREATURES := ["Abyss Worm", "Nether Stalker"]
+
 const CREATURE_INGREDIENTS: Dictionary = {
 	"Void Leech": {id = "ingredient_void_extract", name = "Void Extract", symbol = "V", uses = 1, ingredient = true},
 	"Shadow Crawler": {id = "ingredient_shadow_membrane", name = "Shadow Membrane", symbol = "S", uses = 1, ingredient = true},
@@ -28,6 +30,8 @@ var corruption := 0
 var target_kills := 0
 var target_total := 0
 var exit_spawned := false
+var sidearm_ammo: int = 12
+var stealth_ready: bool = false
 
 # Tap-to-move
 var move_path: Array[Vector2i] = []
@@ -161,6 +165,7 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_4: _use_item(3); return
 		elif event.keycode == KEY_5: _use_item(4); return
 		elif event.keycode == KEY_6: _use_item(5); return
+		elif event.keycode == KEY_SPACE or event.keycode == KEY_Z: _player_wait(); return
 		if dir != Vector2i.ZERO:
 			move_path.clear()
 			_move(dir)
@@ -430,30 +435,69 @@ func _move(dir: Vector2i) -> void:
 			break
 
 	if hit_creature >= 0:
-		# Combat: player attacks creature
-		creatures[hit_creature]["hp"] -= 1
 		var c := creatures[hit_creature]
-		if c["hp"] <= 0:
-			if c["is_target"]:
-				target_kills += 1
-			_show_message("Killed %s!" % c["type"])
-			_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-			_drop_ingredient(c["type"])
-			_check_exit_spawn()
+		var is_passive: bool = not c.get("chasing", false) and not c.get("alerted", false)
+
+		if stealth_ready and is_passive:
+			# Stealth kill
+			var max_hp := 3  # base creature hp
+			if max_hp <= 3:
+				c["hp"] = 0
+			else:
+				c["hp"] -= int(max_hp * 0.8)
+			stealth_ready = false
+			if c["hp"] <= 0:
+				if c["is_target"]:
+					target_kills += 1
+				_show_message("Silent kill!")
+				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
+				_drop_ingredient(c["type"])
+				_check_exit_spawn()
+			else:
+				_show_message("Silent strike! (%d HP left)" % c["hp"])
+				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+		elif sidearm_ammo > 0:
+			# Sidearm shot
+			sidearm_ammo -= 1
+			c["hp"] -= 3
+			if c["hp"] <= 0:
+				if c["is_target"]:
+					target_kills += 1
+				_show_message("Bang! Hit %s for 3! Killed!" % c["type"])
+				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
+				_drop_ingredient(c["type"])
+				_check_exit_spawn()
+			else:
+				_show_message("Bang! Hit %s for 3! (%d HP left)" % [c["type"], c["hp"]])
+				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+			_gunshot_alert()
+			stealth_ready = false
 		else:
-			_show_message("Hit %s! (%d HP left)" % [c["type"], c["hp"]])
-			_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-		# Creature retaliates
-		player_hp -= 1
-		_update_hp_bar()
-		_flashes[player_pos] = {color = Color.RED, timer = 0.2}
-		if player_hp <= 0:
-			_show_message("You died!")
-			_game_over()
-			return
+			# Desperation melee — no ammo
+			c["hp"] -= 2
+			if c["hp"] <= 0:
+				if c["is_target"]:
+					target_kills += 1
+				_show_message("No ammo! Desperate strike! Killed %s!" % c["type"])
+				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
+				_drop_ingredient(c["type"])
+				_check_exit_spawn()
+			else:
+				_show_message("No ammo! Desperate strike! (%d HP left)" % c["hp"])
+				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+			# Creature retaliates for 2 damage
+			player_hp -= 2
+			_update_hp_bar()
+			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
+			stealth_ready = false
+			if player_hp <= 0:
+				_show_message("You died!")
+				_game_over()
+				return
 	else:
 		# Move player
 		player_pos = new_pos
+		stealth_ready = false
 
 	# Check exit
 	if grid[player_pos.x][player_pos.y] == Tile.EXIT:
@@ -494,23 +538,38 @@ func _move_creatures() -> void:
 			creature["stunned_turns"] = stunned - 1
 			continue
 
-		# Chase if player within 6 tiles (Chebyshev distance)
+		# Chase if player within 6 tiles (Chebyshev distance) or alerted
 		var cpos: Vector2i = creature["pos"]
 		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
-		var chasing := dist <= 6
+		var chasing: bool = dist <= 6 or creature.get("alerted", false)
+		creature["chasing"] = chasing
 
 		if chasing:
-			# Sort directions by distance to player (greedy chase)
-			var sorted_dirs := directions.duplicate()
-			sorted_dirs.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-				var pa: Vector2i = cpos + a
-				var pb: Vector2i = cpos + b
-				var da := maxi(absi(pa.x - player_pos.x), absi(pa.y - player_pos.y))
-				var db := maxi(absi(pb.x - player_pos.x), absi(pb.y - player_pos.y))
-				return da < db
-			)
-			_try_creature_move(creature, sorted_dirs)
+			# Ranged creatures: shoot if within 3 tiles and player visible
+			if creature["type"] in RANGED_CREATURES and dist <= 3 and tile_visible[player_pos.x][player_pos.y]:
+				player_hp -= 2
+				_update_hp_bar()
+				stealth_ready = false
+				_flashes[player_pos] = {color = Color.RED, timer = 0.2}
+				_flash_vignette()
+				_show_message("%s fires at you!" % creature["type"])
+				if player_hp <= 0:
+					_show_message("You died!")
+					_game_over()
+					return
+			else:
+				# Sort directions by distance to player (greedy chase)
+				var sorted_dirs := directions.duplicate()
+				sorted_dirs.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+					var pa: Vector2i = cpos + a
+					var pb: Vector2i = cpos + b
+					var da := maxi(absi(pa.x - player_pos.x), absi(pa.y - player_pos.y))
+					var db := maxi(absi(pb.x - player_pos.x), absi(pb.y - player_pos.y))
+					return da < db
+				)
+				_try_creature_move(creature, sorted_dirs)
 		else:
+			creature["chasing"] = false
 			# Random walk
 			directions.shuffle()
 			_try_creature_move(creature, directions)
@@ -534,6 +593,7 @@ func _try_creature_move(creature: Dictionary, dirs: Array) -> void:
 		if new_pos == player_pos:
 			player_hp -= 1
 			_update_hp_bar()
+			stealth_ready = false
 			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
 			_flash_vignette()
 			_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
@@ -739,8 +799,9 @@ func _update_hud() -> void:
 		else:
 			inv_text += "[%d]- " % [i + 1]
 	var scan_text := " | SCAN:%d" % scan_turns_left if scan_turns_left > 0 else ""
-	hud_label.text = "HP: %d | Turn: %d | Corruption: %d%s\nTarget: %s (%d/%d) | %s" % [
-		player_hp, turn_count, corruption, scan_text,
+	var stealth_text := " | STEALTH READY" if stealth_ready else ""
+	hud_label.text = "HP: %d | Ammo: %d | Turn: %d | Corruption: %d%s%s\nTarget: %s (%d/%d) | %s" % [
+		player_hp, sidearm_ammo, turn_count, corruption, scan_text, stealth_text,
 		contract.get("creature_type", "?"), target_kills, target_total, inv_text.strip_edges()
 	]
 	# Refresh action bar button labels
@@ -800,6 +861,54 @@ func _flash_vignette() -> void:
 	var tween := create_tween()
 	tween.tween_property(_vignette, "color:a", 0.0, 0.15)
 	tween.tween_callback(func(): _vignette.visible = false)
+
+func _gunshot_alert() -> void:
+	var any_alerted := false
+	for creature in creatures:
+		if creature["hp"] <= 0:
+			continue
+		if creature.get("chasing", false) or creature.get("alerted", false):
+			continue
+		var cpos: Vector2i = creature["pos"]
+		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
+		if dist <= 4:
+			creature["alerted"] = true
+			any_alerted = true
+	if any_alerted:
+		_show_message("Gunshot echoes!")
+
+func _player_wait() -> void:
+	if player_hp <= 0:
+		return
+	# Check for adjacent passive creatures
+	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var has_passive_adj := false
+	for dir in dirs:
+		var adj: Vector2i = player_pos + dir
+		for creature in creatures:
+			if creature["hp"] > 0 and creature["pos"] == adj:
+				if not creature.get("chasing", false) and not creature.get("alerted", false):
+					has_passive_adj = true
+					break
+		if has_passive_adj:
+			break
+	stealth_ready = has_passive_adj
+	if stealth_ready:
+		_show_message("Waiting... ready for stealth kill.")
+	else:
+		_show_message("You wait...")
+	# Advance turn
+	turn_count += 1
+	if turn_count % 5 == 0:
+		corruption += 1
+	if scan_turns_left > 0:
+		scan_turns_left -= 1
+	_move_creatures()
+	_update_visibility()
+	_center_camera()
+	queue_redraw()
+	grid_container.queue_redraw()
+	_update_hud()
 
 func _show_message(msg: String) -> void:
 	message_label.text = msg
