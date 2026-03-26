@@ -1,19 +1,87 @@
 extends Control
 
-const GRID_SIZE := 15
-const TILE_SIZE := 32
-const VIEW_RADIUS := 5
+# === World ===
+const WORLD_W := 1600
+const WORLD_H := 1600
+const GRID_STEP := 200
 
-enum Tile { WALL, FLOOR, EXIT }
+# === Player ===
+var player_pos := Vector2(800.0, 800.0)
+var player_hp := 10
+var player_max_hp := 10
+var player_speed := 180.0
+const PLAYER_RADIUS := 16.0
+var sidearm_ammo := 12
 
-const RANGED_CREATURES := ["Abyss Worm", "Nether Stalker"]
+# === Attack ===
+var attack_cooldown_base := 0.5
+var attack_cooldown_timer := 0.0
+var bullet_damage := 3
 
-const CREATURE_STATS: Dictionary = {
-	"Void Leech":     {detection = 3, leash = 6},
-	"Shadow Crawler": {detection = 4, leash = 7},
-	"Abyss Worm":     {detection = 4, leash = 8},
-	"Nether Stalker": {detection = 5, leash = 10},
-	"Rift Parasite":  {detection = 6, leash = 12},
+# === Bullets ===
+# {pos, vel, radius, color, damage, lifetime, from_player}
+var bullets: Array[Dictionary] = []
+
+# === Obstacles ===
+# {pos: Vector2, radius: float}
+var obstacles: Array[Dictionary] = []
+
+# === Enemies ===
+var enemies: Array[Dictionary] = []
+var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
+
+# === Pickups ===
+# {pos, type, color, ingredient_data} for ingredients
+# {pos, type} for essence
+var pickups: Array[Dictionary] = []
+
+# === Contract tracking ===
+var target_kills := 0
+var target_total := 0
+var contract_type := ""
+
+# === Ingredients collected ===
+var run_ingredients: Array[Dictionary] = []
+
+# === Void essence / leveling ===
+var essence_collected := 0
+var player_level := 1
+
+# === Exit zone ===
+var exit_spawned := false
+var exit_pos := Vector2.ZERO
+
+# === Camera ===
+var camera_offset := Vector2.ZERO
+
+# === Joystick ===
+var joy_active := false
+var joy_base := Vector2.ZERO
+var joy_knob := Vector2.ZERO
+var joy_touch_index := -1
+const JOY_MAX_DIST := 60.0
+
+# === Game state ===
+var paused := false
+var dead := false
+var dead_timer := 0.0
+var hunt_complete := false
+
+# === HUD message ===
+var hud_message := ""
+var hud_message_timer := 0.0
+
+# === Upgrade panel ===
+var upgrade_choices: Array[Dictionary] = []
+var upgrade_buttons: Array = [] # Node references
+
+# === Creature data ===
+const CREATURE_DEFS: Dictionary = {
+	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 60, hp = 3, detection = 180, melee_dmg = 1, ranged = false, void_type = false},
+	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 80, hp = 3, detection = 220, melee_dmg = 1, ranged = false, void_type = false},
+	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 50, hp = 5, detection = 250, melee_dmg = 2, ranged = false, void_type = false},
+	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 55, hp = 4, detection = 300, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 2.0, void_type = false},
+	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 90, hp = 4, detection = 220, melee_dmg = 1, ranged = false, void_type = true},
 }
 
 const CREATURE_INGREDIENTS: Dictionary = {
@@ -24,1094 +92,704 @@ const CREATURE_INGREDIENTS: Dictionary = {
 	"Rift Parasite": {id = "ingredient_rift_spore", name = "Rift Spore", symbol = "R", uses = 1, ingredient = true},
 }
 
-# Grid data
-var grid: Array = []  # 2D array of Tile
-var revealed: Array = []  # 2D bool array — ever seen
-var tile_visible: Array = []  # 2D bool array — currently in LOS
+const INGREDIENT_COLORS: Dictionary = {
+	"ingredient_void_extract": Color(0.8, 0.2, 0.2),
+	"ingredient_shadow_membrane": Color(0.5, 0.1, 0.7),
+	"ingredient_abyss_flesh": Color(0.3, 0.6, 0.1),
+	"ingredient_nether_bile": Color(0.2, 0.4, 0.9),
+	"ingredient_rift_spore": Color(0.9, 0.5, 0.1),
+}
 
-# Entities
-var player_pos := Vector2i.ZERO
-var player_hp := 10
-var creatures: Array[Dictionary] = []  # {pos, hp, type, is_target, stunned_turns}
-var turn_count := 0
-var corruption := 0
-var target_kills := 0
-var target_total := 0
-var exit_spawned := false
-var sidearm_ammo: int = 12
-var stealth_charge: float = 100.0
-const STEALTH_MAX: float = 100.0
-var stealth_active: bool = false
+const ALL_UPGRADES: Array = [
+	{id = "ammo", label = "More Ammo (+4)"},
+	{id = "reload", label = "Quick Reload"},
+	{id = "tough", label = "Tougher (+2 HP)"},
+	{id = "speed", label = "Speed Boost"},
+	{id = "damage", label = "Big Shots (+1)"},
+]
 
-# Tap-to-move
-var move_path: Array[Vector2i] = []
-var _pending_step: bool = false
-
-# Inventory (max 3 slots)
-var inventory: Array[Dictionary] = []  # {id, name, symbol, uses}
-var traps: Array[Vector2i] = []  # positions of placed traps
-var _action_bar: HBoxContainer
-var inventory_open: bool = false
-var _inv_layer: CanvasLayer
-var _inv_scroll_content: VBoxContainer
-
-# HP bar
-var _hp_bar_bg: ColorRect
-var _hp_bar_fg: ColorRect
-
-# Hit flash system: {Vector2i: {color: Color, timer: float}}
-var _flashes: Dictionary = {}
-
-# Ranged targeting
-var targeting_mode: bool = false
-
-# Screen vignette flash
-var _vignette: ColorRect
-
-# UI references
-@onready var grid_container: Control = $GridViewport/GridRoot
-@onready var hud_label: Label = $HUD/HUDLabel
-@onready var message_label: Label = $HUD/MessageLabel
-@onready var dpad_up: Button = $DPad/Up
-@onready var dpad_down: Button = $DPad/Down
-@onready var dpad_left: Button = $DPad/Left
-@onready var dpad_right: Button = $DPad/Right
-
+# =========================================================
+# READY
+# =========================================================
 func _ready() -> void:
-	_generate_dungeon()
-	_spawn_entities()
-	_update_visibility()
-	_center_camera()
-	queue_redraw()
-	_update_hud()
-	# Hide D-pad so it doesn't consume touch input
-	$DPad.hide()
-	# Grab focus so WASD/arrow keys work on this Control node
-	focus_mode = Control.FOCUS_ALL
-	grab_focus()
-	# Start with 1 net and 3 darts in inventory
-	inventory.append({id = "sidearm", name = "Sidearm", symbol = "G", uses = 999, weapon = true})
-	inventory.append({id = "net", name = "Net", symbol = "N", uses = 1})
-	# Action bar
-	var action_bar := HBoxContainer.new()
-	action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	action_bar.offset_top = -180
-	action_bar.z_index = 10
-	action_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	for i in inventory.size():
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(80, 60)
-		btn.name = "ItemBtn%d" % i
-		action_bar.add_child(btn)
-		btn.pressed.connect(_use_item.bind(i))
-	add_child(action_bar)
-	_action_bar = action_bar
-
-	# HP bar (background + foreground)
-	_hp_bar_bg = ColorRect.new()
-	_hp_bar_bg.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_hp_bar_bg.offset_bottom = 8
-	_hp_bar_bg.color = Color(0.15, 0.15, 0.15)
-	_hp_bar_bg.z_index = 15
-	add_child(_hp_bar_bg)
-
-	_hp_bar_fg = ColorRect.new()
-	_hp_bar_fg.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_hp_bar_fg.offset_bottom = 8
-	_hp_bar_fg.color = Color(0.2, 0.8, 0.2)
-	_hp_bar_fg.z_index = 16
-	add_child(_hp_bar_fg)
-	_update_hp_bar()
-
-	# Vignette flash overlay
-	_vignette = ColorRect.new()
-	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_vignette.color = Color(1, 0, 0, 0.3)
-	_vignette.z_index = 20
-	_vignette.visible = false
-	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_vignette)
-
-	# Inventory panel (CanvasLayer overlay)
-	_inv_layer = CanvasLayer.new()
-	_inv_layer.layer = 10
-	_inv_layer.visible = false
-	add_child(_inv_layer)
-
-	var inv_bg := ColorRect.new()
-	inv_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	inv_bg.color = Color(0, 0, 0, 0.75)
-	inv_bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	_inv_layer.add_child(inv_bg)
-
-	var inv_panel := PanelContainer.new()
-	inv_panel.set_anchors_preset(Control.PRESET_CENTER)
-	inv_panel.anchor_left = 0.1
-	inv_panel.anchor_right = 0.9
-	inv_panel.anchor_top = 0.1
-	inv_panel.anchor_bottom = 0.9
-	inv_panel.offset_left = 0
-	inv_panel.offset_right = 0
-	inv_panel.offset_top = 0
-	inv_panel.offset_bottom = 0
-	_inv_layer.add_child(inv_panel)
-
-	var inv_vbox := VBoxContainer.new()
-	inv_panel.add_child(inv_vbox)
-
-	var inv_title := Label.new()
-	inv_title.text = "Inventory"
-	inv_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	inv_vbox.add_child(inv_title)
-
-	var inv_scroll := ScrollContainer.new()
-	inv_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	inv_vbox.add_child(inv_scroll)
-
-	_inv_scroll_content = VBoxContainer.new()
-	_inv_scroll_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	inv_scroll.add_child(_inv_scroll_content)
-
-	var close_btn := Button.new()
-	close_btn.text = "Close"
-	close_btn.custom_minimum_size = Vector2(0, 50)
-	close_btn.pressed.connect(_toggle_inventory)
-	inv_vbox.add_child(close_btn)
-
-func _process(delta: float) -> void:
-	if inventory_open:
-		return
-	if _pending_step and not move_path.is_empty():
-		_pending_step = false
-		var dir: Vector2i = move_path.pop_front()
-		_move(dir)
-	elif _pending_step:
-		_pending_step = false
-
-	# Tick flash timers
-	var any_flash := false
-	var expired: Array[Vector2i] = []
-	for pos: Vector2i in _flashes:
-		_flashes[pos]["timer"] -= delta
-		if _flashes[pos]["timer"] <= 0:
-			expired.append(pos)
-		else:
-			any_flash = true
-	for pos in expired:
-		_flashes.erase(pos)
-	if any_flash or not expired.is_empty():
-		grid_container.queue_redraw()
-
-func _input(event: InputEvent) -> void:
-	# Inventory toggle / close
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_I or event.keycode == KEY_TAB:
-			_toggle_inventory()
-			return
-		if inventory_open and event.keycode == KEY_ESCAPE:
-			_toggle_inventory()
-			return
-		if inventory_open:
-			return  # Block all other keys while inventory is open
-
-	# Cancel targeting with Escape
-	if event is InputEventKey and event.pressed and not event.echo:
-		if targeting_mode and event.keycode == KEY_ESCAPE:
-			_cancel_targeting()
-			return
-
-	# Keyboard movement
-	if event is InputEventKey and event.pressed and not event.echo:
-		if targeting_mode:
-			return  # Block movement while targeting
-		var dir := Vector2i.ZERO
-		if event.keycode == KEY_W or event.keycode == KEY_UP: dir = Vector2i(0, -1)
-		elif event.keycode == KEY_S or event.keycode == KEY_DOWN: dir = Vector2i(0, 1)
-		elif event.keycode == KEY_A or event.keycode == KEY_LEFT: dir = Vector2i(-1, 0)
-		elif event.keycode == KEY_D or event.keycode == KEY_RIGHT: dir = Vector2i(1, 0)
-		elif event.keycode == KEY_1: _use_item(0); return
-		elif event.keycode == KEY_2: _use_item(1); return
-		elif event.keycode == KEY_3: _use_item(2); return
-		elif event.keycode == KEY_4: _use_item(3); return
-		elif event.keycode == KEY_5: _use_item(4); return
-		elif event.keycode == KEY_6: _use_item(5); return
-		elif event.keycode == KEY_SPACE or event.keycode == KEY_Z: _player_wait(); return
-		if dir != Vector2i.ZERO:
-			move_path.clear()
-			_move(dir)
-		return
-
-	# Block taps while inventory is open
-	if inventory_open:
-		return
-
-	# Touch/mouse tap
-	var is_tap := false
-	if event is InputEventScreenTouch and not event.pressed:
-		is_tap = true
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		is_tap = true
-	if not is_tap:
-		return
-
-	# Use get_mouse_position() — always correct viewport coords in Godot 4
-	var tap_pos := get_viewport().get_mouse_position()
-	var grid_local := tap_pos - grid_container.position
-	var gx := int(floor(grid_local.x / TILE_SIZE))
-	var gy := int(floor(grid_local.y / TILE_SIZE))
-
-	# Bounds check
-	if gx < 0 or gx >= GRID_SIZE or gy < 0 or gy >= GRID_SIZE:
-		return
-	# Must be revealed
-	if not revealed[gx][gy]:
-		return
-	# Can't tap walls
-	if grid[gx][gy] == Tile.WALL:
-		return
-
-	var target := Vector2i(gx, gy)
-
-	# Targeting mode: fire dart at tapped creature
-	if targeting_mode:
-		var found_creature := -1
-		for i in creatures.size():
-			if creatures[i]["hp"] > 0 and creatures[i]["pos"] == target and tile_visible[gx][gy]:
-				found_creature = i
-				break
-		if found_creature >= 0:
-			_fire_sidearm(found_creature)
-		else:
-			_cancel_targeting()
-		return
-
-	# Check if tapped tile has a visible creature — path to adjacent tile
-	var creature_idx := -1
-	for i in creatures.size():
-		if creatures[i]["hp"] > 0 and creatures[i]["pos"] == target and tile_visible[gx][gy]:
-			creature_idx = i
-			break
-
-	if creature_idx >= 0:
-		# Find path to an adjacent tile, then add attack step
-		var adj_dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-		var best_path: Array[Vector2i] = []
-		var already_adjacent := false
-		for adj_dir in adj_dirs:
-			var adj_pos: Vector2i = target + adj_dir
-			if adj_pos == player_pos:
-				already_adjacent = true
-				best_path = [] as Array[Vector2i]
-				break
-			if adj_pos.x < 0 or adj_pos.x >= GRID_SIZE or adj_pos.y < 0 or adj_pos.y >= GRID_SIZE:
-				continue
-			if grid[adj_pos.x][adj_pos.y] == Tile.WALL:
-				continue
-			var path := _bfs_path(player_pos, adj_pos)
-			if not path.is_empty() and (best_path.is_empty() or path.size() < best_path.size()):
-				best_path = path
-		if not already_adjacent and best_path.is_empty():
-			return
-		# Add the attack direction at the end
-		var attack_dir: Vector2i = target - (player_pos if best_path.is_empty() else player_pos + _sum_dirs(best_path))
-		best_path.append(attack_dir)
-		move_path = best_path
-	else:
-		if target == player_pos:
-			return
-		var path := _bfs_path(player_pos, target)
-		if path.is_empty():
-			return
-		move_path = path
-
-	# Execute first step immediately
-	var first_dir: Vector2i = move_path.pop_front()
-	_move(first_dir)
-
-func _sum_dirs(dirs: Array[Vector2i]) -> Vector2i:
-	var total := Vector2i.ZERO
-	for d in dirs:
-		total += d
-	return total
-
-func _bfs_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	if from == to:
-		return []
-	var max_len := 50
-	var visited: Dictionary = {}
-	# Queue entries: [position, Array[Vector2i] of directions taken]
-	var queue: Array = []
-	queue.push_back([from, [] as Array[Vector2i]])
-	visited[from] = true
-	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-
-	while not queue.is_empty():
-		var entry: Array = queue.pop_front()
-		var pos: Vector2i = entry[0]
-		var path: Array[Vector2i] = entry[1]
-		if path.size() >= max_len:
-			continue
-		for dir in dirs:
-			var np: Vector2i = pos + dir
-			if np.x < 0 or np.x >= GRID_SIZE or np.y < 0 or np.y >= GRID_SIZE:
-				continue
-			if grid[np.x][np.y] == Tile.WALL:
-				continue
-			if visited.has(np):
-				continue
-			visited[np] = true
-			var new_path: Array[Vector2i] = path.duplicate()
-			new_path.append(dir)
-			if np == to:
-				return new_path
-			queue.push_back([np, new_path])
-	return [] as Array[Vector2i]
-
-# --- Dungeon Generation ---
-
-func _generate_dungeon() -> void:
-	# Initialize all walls
-	grid.resize(GRID_SIZE)
-	revealed.resize(GRID_SIZE)
-	tile_visible.resize(GRID_SIZE)
-	for x in GRID_SIZE:
-		grid[x] = []
-		revealed[x] = []
-		tile_visible[x] = []
-		grid[x].resize(GRID_SIZE)
-		revealed[x].resize(GRID_SIZE)
-		tile_visible[x].resize(GRID_SIZE)
-		for y in GRID_SIZE:
-			grid[x][y] = Tile.WALL
-			revealed[x][y] = false
-			tile_visible[x][y] = false
-
-	# Carve rooms
-	var rooms: Array[Rect2i] = []
-	var depth: int = GameData.current_contract.get("depth", 1)
-	var num_rooms: int = 4 + depth * 2
-	var attempts := 0
-	while rooms.size() < num_rooms and attempts < 100:
-		attempts += 1
-		var w := randi_range(3, 5)
-		var h := randi_range(3, 5)
-		var rx := randi_range(1, GRID_SIZE - w - 1)
-		var ry := randi_range(1, GRID_SIZE - h - 1)
-		var room := Rect2i(rx, ry, w, h)
-		var overlap := false
-		for existing in rooms:
-			if room.intersects(existing.grow(1)):
-				overlap = true
-				break
-		if not overlap:
-			rooms.append(room)
-			for x in range(room.position.x, room.end.x):
-				for y in range(room.position.y, room.end.y):
-					grid[x][y] = Tile.FLOOR
-
-	# Connect rooms with corridors
-	for i in range(1, rooms.size()):
-		var from := rooms[i - 1].get_center()
-		var to := rooms[i].get_center()
-		_carve_corridor(from, to)
-
-	# Ensure connectivity by connecting first and last room
-	if rooms.size() >= 2:
-		var from := rooms[rooms.size() - 1].get_center()
-		var to := rooms[0].get_center()
-		_carve_corridor(from, to)
-
-func _carve_corridor(from: Vector2i, to: Vector2i) -> void:
-	var pos := from
-	while pos.x != to.x:
-		if pos.x >= 0 and pos.x < GRID_SIZE and pos.y >= 0 and pos.y < GRID_SIZE:
-			grid[pos.x][pos.y] = Tile.FLOOR
-		pos.x += 1 if to.x > pos.x else -1
-	while pos.y != to.y:
-		if pos.x >= 0 and pos.x < GRID_SIZE and pos.y >= 0 and pos.y < GRID_SIZE:
-			grid[pos.x][pos.y] = Tile.FLOOR
-		pos.y += 1 if to.y > pos.y else -1
-	if pos.x >= 0 and pos.x < GRID_SIZE and pos.y >= 0 and pos.y < GRID_SIZE:
-		grid[pos.x][pos.y] = Tile.FLOOR
-
-func _spawn_entities() -> void:
-	var floor_tiles: Array[Vector2i] = []
-	for x in GRID_SIZE:
-		for y in GRID_SIZE:
-			if grid[x][y] == Tile.FLOOR:
-				floor_tiles.append(Vector2i(x, y))
-	floor_tiles.shuffle()
-
-	# Player gets first floor tile
-	player_pos = floor_tiles.pop_back()
-
-	# Spawn creatures
-	var contract := GameData.current_contract
-	var creature_type: String = contract.get("creature_type", "Void Leech")
+	# Parse contract
+	var contract: Dictionary = GameData.current_contract
+	contract_type = contract.get("creature_type", "Void Leech")
 	var depth: int = contract.get("depth", 1)
-	var num_creatures: int = depth + 1  # 2-4
-	target_total = num_creatures
+	target_total = 3 + depth
 
-	for i in num_creatures:
-		if floor_tiles.is_empty():
-			break
-		var pos: Vector2i = floor_tiles.pop_back()
-		creatures.append({
-			"pos": pos,
-			"hp": 3,
-			"type": creature_type,
-			"is_target": true,
-		})
+	_spawn_obstacles()
+	_spawn_enemies(depth)
 
-# --- Visibility / Fog of War ---
+	set_process_input(true)
+	queue_redraw()
 
-func _update_visibility() -> void:
-	# Clear current visibility
-	for x in GRID_SIZE:
-		for y in GRID_SIZE:
-			tile_visible[x][y] = false
-
-	# Simple raycasting FOV
-	for angle in range(0, 360, 2):
-		var rad := deg_to_rad(angle)
-		var dx := cos(rad)
-		var dy := sin(rad)
-		var fx := float(player_pos.x) + 0.5
-		var fy := float(player_pos.y) + 0.5
-		for step in VIEW_RADIUS + 1:
-			var cx := int(fx)
-			var cy := int(fy)
-			if cx < 0 or cx >= GRID_SIZE or cy < 0 or cy >= GRID_SIZE:
+# =========================================================
+# SPAWN
+# =========================================================
+func _spawn_obstacles() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for i in range(40):
+		var r: float = rng.randf_range(20.0, 50.0)
+		var pos := Vector2.ZERO
+		for _try in range(20):
+			pos = Vector2(rng.randf_range(r, WORLD_W - r), rng.randf_range(r, WORLD_H - r))
+			# avoid center 400x400
+			if abs(pos.x - 800.0) > 200.0 or abs(pos.y - 800.0) > 200.0:
 				break
-			tile_visible[cx][cy] = true
-			revealed[cx][cy] = true
-			if grid[cx][cy] == Tile.WALL:
-				break
-			fx += dx
-			fy += dy
+		obstacles.append({pos = pos, radius = r})
 
-# --- Movement & Turn Logic ---
+func _spawn_enemies(depth: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var types_list: Array = CREATURE_DEFS.keys()
 
-func _move(dir: Vector2i) -> void:
-	if player_hp <= 0:
-		return
-	var new_pos := player_pos + dir
-	if new_pos.x < 0 or new_pos.x >= GRID_SIZE or new_pos.y < 0 or new_pos.y >= GRID_SIZE:
-		return
-	if grid[new_pos.x][new_pos.y] == Tile.WALL:
-		return
+	# Spawn target creatures
+	var target_count: int = target_total
+	for i in range(target_count):
+		_spawn_single_enemy(contract_type, true, rng)
 
-	# Check for creature at destination
-	var hit_creature := -1
-	for i in creatures.size():
-		if creatures[i]["pos"] == new_pos and creatures[i]["hp"] > 0:
-			hit_creature = i
-			break
+	# Spawn 4 filler creatures of other types
+	var filler_types: Array = []
+	for t in types_list:
+		if t != contract_type:
+			filler_types.append(t)
+	for i in range(4):
+		var ft: String = filler_types[rng.randi_range(0, filler_types.size() - 1)]
+		_spawn_single_enemy(ft, false, rng)
 
-	if hit_creature >= 0:
-		var c := creatures[hit_creature]
-
-		if stealth_active:
-			# Stealth kill — silent, no gunshot alert
-			stealth_charge -= 20.0
-			var assumed_max_hp := 5
-			if c["hp"] <= 3:
-				c["hp"] = 0
-			else:
-				c["hp"] -= int(assumed_max_hp * 0.8)
-			if c["hp"] <= 0:
-				if c["is_target"]:
-					target_kills += 1
-				_show_message("Silent kill!")
-				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-				_drop_ingredient(c["type"])
-				_check_exit_spawn()
-			else:
-				_show_message("Silent strike! (%d HP left)" % c["hp"])
-				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-			if stealth_charge <= 0.0:
-				_deactivate_stealth()
-		elif sidearm_ammo > 0:
-			# Sidearm shot
-			sidearm_ammo -= 1
-			c["hp"] -= 3
-			if c["hp"] <= 0:
-				if c["is_target"]:
-					target_kills += 1
-				_show_message("Bang! Hit %s for 3! Killed!" % c["type"])
-				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-				_drop_ingredient(c["type"])
-				_check_exit_spawn()
-			else:
-				_show_message("Bang! Hit %s for 3! (%d HP left)" % [c["type"], c["hp"]])
-				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-			_gunshot_alert()
-			if stealth_active:
-				_deactivate_stealth()
-		else:
-			# Desperation melee — no ammo
-			c["hp"] -= 2
-			if c["hp"] <= 0:
-				if c["is_target"]:
-					target_kills += 1
-				_show_message("No ammo! Desperate strike! Killed %s!" % c["type"])
-				_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-				_drop_ingredient(c["type"])
-				_check_exit_spawn()
-			else:
-				_show_message("No ammo! Desperate strike! (%d HP left)" % c["hp"])
-				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-			# Creature retaliates for 2 damage
-			player_hp -= 2
-			_update_hp_bar()
-			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
-			if stealth_active:
-				_deactivate_stealth()
-			if player_hp <= 0:
-				_show_message("You died!")
-				_game_over()
-				return
-	else:
-		# Move player
-		player_pos = new_pos
-
-	# Check exit
-	if grid[player_pos.x][player_pos.y] == Tile.EXIT:
-		_complete_hunt()
-		return
-
-	# Advance turn
-	turn_count += 1
-	_tick_stealth()
-
-	# Creature AI
-	_move_creatures()
-
-	_update_visibility()
-	_center_camera()
-	grid_container.queue_redraw()
-	_update_hud()
-
-	# Auto-step: schedule next path step if path remains
-	if not move_path.is_empty():
-		# Cancel path if player took damage (creature retaliated or attacked)
-		if player_hp <= 0:
-			move_path.clear()
-		else:
-			_pending_step = true
-
-func _move_creatures() -> void:
-	var directions := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-	for creature in creatures:
-		if creature["hp"] <= 0:
+func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator) -> void:
+	var def: Dictionary = CREATURE_DEFS[type_name]
+	var pos := Vector2.ZERO
+	for _try in range(30):
+		pos = Vector2(rng.randf_range(60.0, WORLD_W - 60.0), rng.randf_range(60.0, WORLD_H - 60.0))
+		if pos.distance_to(player_pos) < 300.0:
 			continue
-		# Stunned creatures skip their turn
-		var stunned: int = creature.get("stunned_turns", 0)
-		if stunned > 0:
-			creature["stunned_turns"] = stunned - 1
-			continue
-
-		# Decrement alert_turns
-		var alert_turns: int = creature.get("alert_turns", 0)
-		if alert_turns > 0:
-			creature["alert_turns"] = alert_turns - 1
-
-		# Detection/leash stats
-		var ctype: String = creature["type"]
-		var stats: Dictionary = CREATURE_STATS.get(ctype, {detection = 4, leash = 8})
-		var detection: int = stats["detection"]
-		var leash: int = stats["leash"]
-		var alerted_detection: int = detection * 2 if creature.get("alert_turns", 0) > 0 else detection
-
-		var cpos: Vector2i = creature["pos"]
-		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
-
-		# Stealth: player invisible to detection unless already alerted
-		var player_detectable: bool = not stealth_active
-		var can_see_player: bool = tile_visible[cpos.x][cpos.y] if (cpos.x >= 0 and cpos.x < GRID_SIZE and cpos.y >= 0 and cpos.y < GRID_SIZE) else false
-
-		# Aggro check
-		var chasing: bool = creature.get("alerted", false)
-		if not chasing and player_detectable and dist <= alerted_detection and can_see_player:
-			chasing = true
-			creature["alerted"] = true
-			creature["aggro_origin"] = cpos
-			creature["leash_msg_shown"] = false
-		creature["chasing"] = chasing
-
-		# Leash check
-		if chasing and creature.has("aggro_origin"):
-			var origin: Vector2i = creature["aggro_origin"]
-			var leash_dist := maxi(absi(player_pos.x - origin.x), absi(player_pos.y - origin.y))
-			if leash_dist > leash and dist > detection:
-				creature["alerted"] = false
-				creature["chasing"] = false
-				creature.erase("aggro_origin")
-				chasing = false
-				if not creature.get("leash_msg_shown", false):
-					creature["leash_msg_shown"] = true
-					_show_message("%s lost you..." % ctype)
-
-		if chasing:
-			# Ranged creatures: shoot if within 3 tiles and player visible
-			if creature["type"] in RANGED_CREATURES and dist <= 3 and tile_visible[player_pos.x][player_pos.y] and not stealth_active:
-				player_hp -= 2
-				_update_hp_bar()
-				if stealth_active:
-					_deactivate_stealth()
-				_flashes[player_pos] = {color = Color.RED, timer = 0.2}
-				_flash_vignette()
-				_show_message("%s fires at you!" % creature["type"])
-				if player_hp <= 0:
-					_show_message("You died!")
-					_game_over()
-					return
-			else:
-				# Sort directions by distance to player (greedy chase)
-				var sorted_dirs := directions.duplicate()
-				sorted_dirs.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-					var pa: Vector2i = cpos + a
-					var pb: Vector2i = cpos + b
-					var da := maxi(absi(pa.x - player_pos.x), absi(pa.y - player_pos.y))
-					var db := maxi(absi(pb.x - player_pos.x), absi(pb.y - player_pos.y))
-					return da < db
-				)
-				_try_creature_move(creature, sorted_dirs)
-		else:
-			creature["chasing"] = false
-			# Random walk
-			directions.shuffle()
-			_try_creature_move(creature, directions)
-
-func _try_creature_move(creature: Dictionary, dirs: Array) -> void:
-	for dir in dirs:
-		var new_pos: Vector2i = creature["pos"] + dir
-		if new_pos.x < 0 or new_pos.x >= GRID_SIZE or new_pos.y < 0 or new_pos.y >= GRID_SIZE:
-			continue
-		if grid[new_pos.x][new_pos.y] == Tile.WALL:
-			continue
-		# Don't walk into other creatures
 		var blocked := false
-		for other in creatures:
-			if other != creature and other["hp"] > 0 and other["pos"] == new_pos:
+		for obs in obstacles:
+			if pos.distance_to(obs.pos) < obs.radius + def.radius + 10.0:
 				blocked = true
 				break
-		if blocked:
-			continue
-		# Check if walking into player
-		if new_pos == player_pos:
-			player_hp -= 1
-			_update_hp_bar()
-			if stealth_active:
-				_deactivate_stealth()
-			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
-			_flash_vignette()
-			_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
-			if player_hp <= 0:
-				_show_message("You died!")
-				_game_over()
-				return
+		if not blocked:
+			break
+
+	var enemy: Dictionary = {
+		type = type_name,
+		pos = pos,
+		hp = def.hp,
+		max_hp = def.hp,
+		speed = float(def.speed),
+		radius = float(def.radius),
+		color = def.color,
+		detection = float(def.detection),
+		melee_dmg = def.melee_dmg,
+		leash = def.detection * 2.5,
+		aggro_origin = pos,
+		is_aggroed = false,
+		ranged = def.ranged,
+		ranged_dmg = def.get("ranged_dmg", 0),
+		ranged_cooldown_base = def.get("ranged_cooldown", 2.0),
+		ranged_cooldown_timer = 0.0,
+		void_type = def.void_type,
+		is_target = is_target,
+		patrol_target = pos,
+	}
+	enemies.append(enemy)
+
+# =========================================================
+# INPUT
+# =========================================================
+func _input(event: InputEvent) -> void:
+	if dead or hunt_complete:
+		return
+
+	# Upgrade panel clicks handled by buttons
+	if paused:
+		return
+
+	var vp_size := get_viewport_rect().size
+	var half_w: float = vp_size.x * 0.5
+
+	if event is InputEventScreenTouch:
+		var te: InputEventScreenTouch = event
+		if te.pressed:
+			if te.position.x < half_w:
+				# Start joystick
+				joy_active = true
+				joy_base = te.position
+				joy_knob = te.position
+				joy_touch_index = te.index
 		else:
-			creature["pos"] = new_pos
-			# Check if creature stepped on a trap
-			if new_pos in traps:
-				traps.erase(new_pos)
-				creature["stunned_turns"] = 3
-				_show_message("%s stepped on a trap!" % creature["type"])
-		break
+			if te.index == joy_touch_index:
+				joy_active = false
+				joy_touch_index = -1
 
-func _use_item(slot: int) -> void:
-	if slot >= inventory.size():
-		_show_message("Empty slot!")
+	elif event is InputEventScreenDrag:
+		var de: InputEventScreenDrag = event
+		if de.index == joy_touch_index and joy_active:
+			var diff: Vector2 = de.position - joy_base
+			if diff.length() > JOY_MAX_DIST:
+				diff = diff.normalized() * JOY_MAX_DIST
+			joy_knob = joy_base + diff
+
+	# Keyboard fallback for testing
+	# Handled in _process via Input.get_vector
+
+# =========================================================
+# PROCESS
+# =========================================================
+func _process(delta: float) -> void:
+	if dead:
+		dead_timer -= delta
+		if dead_timer <= 0.0:
+			_finish_hunt(0)
+		queue_redraw()
 		return
-	var item: Dictionary = inventory[slot]
-	if item["id"] == "sidearm":
-		# Enter targeting mode with sidearm
-		if sidearm_ammo <= 0:
-			_show_message("No ammo! Reload at ship.")
-			return
-		var has_visible := false
-		for creature in creatures:
-			if creature["hp"] > 0 and tile_visible[creature["pos"].x][creature["pos"].y]:
-				has_visible = true
+
+	if hunt_complete or paused:
+		queue_redraw()
+		return
+
+	_move_player(delta)
+	_update_camera()
+	_auto_attack(delta)
+	_update_enemies(delta)
+	_update_bullets(delta)
+	_check_pickups()
+	_update_hud_message(delta)
+
+	queue_redraw()
+
+func _move_player(delta: float) -> void:
+	var move_dir := Vector2.ZERO
+
+	# Joystick
+	if joy_active:
+		var diff: Vector2 = joy_knob - joy_base
+		if diff.length() > 5.0:
+			move_dir = diff.normalized()
+
+	# Keyboard fallback
+	if move_dir == Vector2.ZERO:
+		move_dir = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+
+	if move_dir == Vector2.ZERO:
+		return
+
+	var velocity: Vector2 = move_dir * player_speed * delta
+	var new_pos: Vector2 = player_pos + velocity
+
+	# Obstacle collision
+	for obs in obstacles:
+		var dist: float = new_pos.distance_to(obs.pos)
+		var min_dist: float = obs.radius + PLAYER_RADIUS
+		if dist < min_dist:
+			var push: Vector2 = (new_pos - obs.pos).normalized()
+			new_pos = obs.pos + push * min_dist
+
+	# World bounds
+	new_pos.x = clampf(new_pos.x, PLAYER_RADIUS, WORLD_W - PLAYER_RADIUS)
+	new_pos.y = clampf(new_pos.y, PLAYER_RADIUS, WORLD_H - PLAYER_RADIUS)
+
+	player_pos = new_pos
+
+	# Check exit zone
+	if exit_spawned and player_pos.distance_to(exit_pos) < 40.0 + PLAYER_RADIUS:
+		hunt_complete = true
+		_complete_hunt()
+
+func _update_camera() -> void:
+	var vp_size := get_viewport_rect().size
+	var vp_center: Vector2 = vp_size * 0.5
+	camera_offset = player_pos - vp_center
+	camera_offset.x = clampf(camera_offset.x, 0.0, WORLD_W - vp_size.x)
+	camera_offset.y = clampf(camera_offset.y, 0.0, WORLD_H - vp_size.y)
+
+func _auto_attack(delta: float) -> void:
+	attack_cooldown_timer -= delta
+	if attack_cooldown_timer > 0.0:
+		return
+
+	if sidearm_ammo <= 0:
+		return
+
+	# Find nearest enemy
+	var nearest_dist := 999999.0
+	var nearest_pos := Vector2.ZERO
+	var found := false
+	for e in enemies:
+		if e.hp <= 0:
+			continue
+		var d: float = player_pos.distance_to(e.pos)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest_pos = e.pos
+			found = true
+
+	if not found or nearest_dist > 350.0:
+		return
+
+	# Fire bullet
+	sidearm_ammo -= 1
+	attack_cooldown_timer = attack_cooldown_base
+	var dir: Vector2 = (nearest_pos - player_pos).normalized()
+	bullets.append({
+		pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+		vel = dir * 400.0,
+		radius = 5.0,
+		color = Color(1.0, 0.9, 0.2),
+		damage = bullet_damage,
+		lifetime = 0.8,
+		from_player = true,
+	})
+
+	if sidearm_ammo <= 0:
+		_show_message("No ammo!")
+
+# =========================================================
+# ENEMIES
+# =========================================================
+func _update_enemies(delta: float) -> void:
+	var dead_indices: Array[int] = []
+
+	for i in range(enemies.size()):
+		var e: Dictionary = enemies[i]
+		if e.hp <= 0:
+			continue
+
+		var dist_to_player: float = e.pos.distance_to(player_pos)
+
+		# Aggro check
+		if not e.is_aggroed:
+			if dist_to_player < e.detection:
+				e.is_aggroed = true
+				e.aggro_origin = e.pos
+		else:
+			# Leash check
+			var dist_from_origin: float = e.pos.distance_to(e.aggro_origin)
+			if dist_to_player > e.leash and dist_from_origin > e.detection:
+				e.is_aggroed = false
+
+		if e.is_aggroed:
+			# Ranged enemies stay back
+			var min_range := 0.0
+			if e.ranged:
+				min_range = 150.0
+				# Shoot
+				e.ranged_cooldown_timer -= delta
+				if e.ranged_cooldown_timer <= 0.0 and dist_to_player < e.detection:
+					e.ranged_cooldown_timer = e.ranged_cooldown_base
+					var dir: Vector2 = (player_pos - e.pos).normalized()
+					bullets.append({
+						pos = e.pos + dir * (e.radius + 5.0),
+						vel = dir * 250.0,
+						radius = 5.0,
+						color = Color(1.0, 0.3, 0.1),
+						damage = e.ranged_dmg,
+						lifetime = 1.2,
+						from_player = false,
+					})
+
+			if dist_to_player > min_range + e.radius:
+				var dir: Vector2 = (player_pos - e.pos).normalized()
+				var new_pos: Vector2 = e.pos + dir * e.speed * delta
+				new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
+				e.pos = new_pos
+
+			# Melee
+			if e.melee_dmg > 0 and dist_to_player < e.radius + PLAYER_RADIUS + 2.0:
+				var cd_key: int = i
+				var cd: float = enemy_melee_cooldowns.get(cd_key, 0.0)
+				if cd <= 0.0:
+					player_hp -= e.melee_dmg
+					enemy_melee_cooldowns[cd_key] = 1.0
+					_show_message("Hit! -%d HP" % e.melee_dmg)
+					if player_hp <= 0:
+						_die()
+						return
+		else:
+			# Patrol: random walk near aggro_origin
+			if e.pos.distance_to(e.patrol_target) < 5.0:
+				var rng_offset := Vector2(randf_range(-80.0, 80.0), randf_range(-80.0, 80.0))
+				e.patrol_target = e.aggro_origin + rng_offset
+				e.patrol_target.x = clampf(e.patrol_target.x, e.radius, WORLD_W - e.radius)
+				e.patrol_target.y = clampf(e.patrol_target.y, e.radius, WORLD_H - e.radius)
+			var dir: Vector2 = (e.patrol_target - e.pos).normalized()
+			var new_pos: Vector2 = e.pos + dir * e.speed * 0.3 * delta
+			new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
+			e.pos = new_pos
+
+		enemies[i] = e
+
+	# Decrement melee cooldowns
+	var keys_to_remove: Array = []
+	for key in enemy_melee_cooldowns:
+		enemy_melee_cooldowns[key] -= delta
+		if enemy_melee_cooldowns[key] <= 0.0:
+			keys_to_remove.append(key)
+	for key in keys_to_remove:
+		enemy_melee_cooldowns.erase(key)
+
+func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vector2:
+	for obs in obstacles:
+		var dist: float = new_pos.distance_to(obs.pos)
+		var min_dist: float = obs.radius + radius
+		if dist < min_dist:
+			var push: Vector2 = (new_pos - obs.pos).normalized()
+			new_pos = obs.pos + push * min_dist
+	# World bounds
+	new_pos.x = clampf(new_pos.x, radius, WORLD_W - radius)
+	new_pos.y = clampf(new_pos.y, radius, WORLD_H - radius)
+	return new_pos
+
+# =========================================================
+# BULLETS
+# =========================================================
+func _update_bullets(delta: float) -> void:
+	var to_remove: Array[int] = []
+
+	for i in range(bullets.size()):
+		var b: Dictionary = bullets[i]
+		b.pos += b.vel * delta
+		b.lifetime -= delta
+
+		if b.lifetime <= 0.0:
+			to_remove.append(i)
+			continue
+
+		# Out of world
+		if b.pos.x < 0.0 or b.pos.x > WORLD_W or b.pos.y < 0.0 or b.pos.y > WORLD_H:
+			to_remove.append(i)
+			continue
+
+		# Obstacle collision
+		var hit_obs := false
+		for obs in obstacles:
+			if b.pos.distance_to(obs.pos) < obs.radius + b.radius:
+				hit_obs = true
 				break
-		if not has_visible:
-			_show_message("No targets in range!")
-			return
-		targeting_mode = true
-		_show_message("Select a target to shoot!")
-		grid_container.queue_redraw()
-		return
-	elif item["id"] == "net":
-		# Immobilize adjacent creature for 2 turns
-		var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-		var netted := false
-		for dir in dirs:
-			var adj: Vector2i = player_pos + dir
-			for creature in creatures:
-				if creature["hp"] > 0 and creature["pos"] == adj:
-					creature["stunned_turns"] = 2
-					_show_message("Netted %s!" % creature["type"])
-					netted = true
+		if hit_obs:
+			to_remove.append(i)
+			continue
+
+		if b.from_player:
+			# Hit enemies
+			for ei in range(enemies.size()):
+				var e: Dictionary = enemies[ei]
+				if e.hp <= 0:
+					continue
+				if b.pos.distance_to(e.pos) < e.radius + b.radius:
+					e.hp -= b.damage
+					enemies[ei] = e
+					to_remove.append(i)
+					if e.hp <= 0:
+						_on_enemy_killed(ei)
 					break
-			if netted:
-				break
-		if not netted:
-			_show_message("No adjacent creature to net!")
-			return
-	elif item["id"] == "trap":
-		# Place trap on current tile
-		if player_pos in traps:
-			_show_message("Trap already here!")
-			return
-		traps.append(player_pos)
-		_show_message("Trap placed!")
-	item["uses"] -= 1
-	if item["uses"] <= 0:
-		inventory.remove_at(slot)
-	_update_hud()
+		else:
+			# Hit player
+			if b.pos.distance_to(player_pos) < PLAYER_RADIUS + b.radius:
+				player_hp -= b.damage
+				to_remove.append(i)
+				_show_message("Shot! -%d HP" % b.damage)
+				if player_hp <= 0:
+					_die()
+					return
 
-func _drop_ingredient(creature_type: String) -> void:
-	if not CREATURE_INGREDIENTS.has(creature_type):
-		return
-	if inventory.size() >= 6:
-		return
-	var ingredient: Dictionary = CREATURE_INGREDIENTS[creature_type].duplicate()
-	inventory.append(ingredient)
-	_show_message("%s dropped!" % ingredient["name"])
-	_update_hud()
+		bullets[i] = b
 
-func _check_exit_spawn() -> void:
-	if target_kills >= target_total and not exit_spawned:
-		exit_spawned = true
-		# Find a floor tile far from player for exit
-		var best_pos := Vector2i.ZERO
-		var best_dist := 0.0
-		for x in GRID_SIZE:
-			for y in GRID_SIZE:
-				if grid[x][y] == Tile.FLOOR:
-					var dist := Vector2(x - player_pos.x, y - player_pos.y).length()
-					if dist > best_dist:
-						# Make sure no creature is there
-						var occupied := false
-						for c in creatures:
-							if c["pos"] == Vector2i(x, y) and c["hp"] > 0:
-								occupied = true
-								break
-						if not occupied:
-							best_dist = dist
-							best_pos = Vector2i(x, y)
-		grid[best_pos.x][best_pos.y] = Tile.EXIT
-		_show_message("All targets eliminated! Exit appeared!")
+	# Remove in reverse order
+	to_remove.sort()
+	for idx in range(to_remove.size() - 1, -1, -1):
+		bullets.remove_at(to_remove[idx])
+
+func _on_enemy_killed(idx: int) -> void:
+	var e: Dictionary = enemies[idx]
+	var death_pos: Vector2 = e.pos
+
+	# Spawn ingredient pickup
+	if CREATURE_INGREDIENTS.has(e.type):
+		var ing_data: Dictionary = CREATURE_INGREDIENTS[e.type].duplicate()
+		var ing_color: Color = INGREDIENT_COLORS.get(ing_data.id, Color.WHITE)
+		pickups.append({pos = death_pos + Vector2(10, 0), type = "ingredient", color = ing_color, ingredient_data = ing_data})
+
+	# Spawn essence
+	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
+
+	# Track target kills
+	if e.is_target:
+		target_kills += 1
+		_show_message("Target down! %d/%d" % [target_kills, target_total])
+		if target_kills >= target_total and not exit_spawned:
+			_spawn_exit()
+
+func _spawn_exit() -> void:
+	exit_spawned = true
+	# Place exit far from player
+	var best_pos := Vector2(100.0, 100.0)
+	var best_dist := 0.0
+	for _try in range(20):
+		var pos := Vector2(randf_range(100.0, WORLD_W - 100.0), randf_range(100.0, WORLD_H - 100.0))
+		var d: float = pos.distance_to(player_pos)
+		if d > best_dist:
+			var blocked := false
+			for obs in obstacles:
+				if pos.distance_to(obs.pos) < obs.radius + 50.0:
+					blocked = true
+					break
+			if not blocked:
+				best_dist = d
+				best_pos = pos
+	exit_pos = best_pos
+	_show_message("Exit spawned! Get to the green zone!")
+
+# =========================================================
+# PICKUPS
+# =========================================================
+func _check_pickups() -> void:
+	var to_remove: Array[int] = []
+
+	for i in range(pickups.size()):
+		var p: Dictionary = pickups[i]
+		var pickup_radius := 20.0
+		if p.type == "essence":
+			pickup_radius = 40.0
+
+		if player_pos.distance_to(p.pos) < pickup_radius + PLAYER_RADIUS:
+			if p.type == "ingredient":
+				run_ingredients.append(p.ingredient_data)
+				_show_message("Picked up " + p.ingredient_data.name)
+			elif p.type == "essence":
+				essence_collected += 1
+				if essence_collected >= 50:
+					essence_collected -= 50
+					_level_up()
+			to_remove.append(i)
+
+	to_remove.sort()
+	for idx in range(to_remove.size() - 1, -1, -1):
+		pickups.remove_at(to_remove[idx])
+
+# =========================================================
+# LEVEL UP
+# =========================================================
+func _level_up() -> void:
+	player_level += 1
+	paused = true
+	_show_message("Level Up!")
+
+	# Pick 3 random upgrades
+	var shuffled: Array = ALL_UPGRADES.duplicate()
+	shuffled.shuffle()
+	upgrade_choices = []
+	for idx in range(mini(3, shuffled.size())):
+		upgrade_choices.append(shuffled[idx])
+
+	# Create upgrade panel using call_deferred
+	call_deferred("_create_upgrade_panel")
+
+func _create_upgrade_panel() -> void:
+	var vp_size := get_viewport_rect().size
+	var panel := Panel.new()
+	panel.name = "UpgradePanel"
+	panel.position = Vector2(vp_size.x * 0.1, vp_size.y * 0.3)
+	panel.size = Vector2(vp_size.x * 0.8, vp_size.y * 0.35)
+
+	var vbox := VBoxContainer.new()
+	vbox.position = Vector2(10, 10)
+	vbox.size = Vector2(panel.size.x - 20, panel.size.y - 20)
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "Level Up! Choose an upgrade:"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	upgrade_buttons = []
+	for i in range(upgrade_choices.size()):
+		var btn := Button.new()
+		btn.text = upgrade_choices[i].label
+		btn.custom_minimum_size = Vector2(0, 44)
+		btn.pressed.connect(_on_upgrade_chosen.bind(i))
+		vbox.add_child(btn)
+		upgrade_buttons.append(btn)
+
+	add_child(panel)
+
+func _on_upgrade_chosen(idx: int) -> void:
+	var choice: Dictionary = upgrade_choices[idx]
+	match choice.id:
+		"ammo":
+			sidearm_ammo += 4
+		"reload":
+			attack_cooldown_base = maxf(attack_cooldown_base - 0.05, 0.2)
+		"tough":
+			player_max_hp += 2
+			player_hp = mini(player_hp + 2, player_max_hp)
+		"speed":
+			player_speed += 20.0
+		"damage":
+			bullet_damage += 1
+
+	paused = false
+	upgrade_choices = []
+	upgrade_buttons = []
+	call_deferred("_remove_upgrade_panel")
+
+func _remove_upgrade_panel() -> void:
+	var panel := get_node_or_null("UpgradePanel")
+	if panel:
+		panel.queue_free()
+
+# =========================================================
+# DEATH & COMPLETION
+# =========================================================
+func _die() -> void:
+	dead = true
+	dead_timer = 2.0
+	player_hp = 0
+	_show_message("DEAD")
 
 func _complete_hunt() -> void:
-	var reward: int = GameData.current_contract.get("reward", 100)
-	SaveManager.complete_contract(reward, corruption)
-	var ingredients: Array[Dictionary] = []
-	for item in inventory:
-		if item.get("ingredient", false):
-			ingredients.append(item)
-	GameData.set_hunt_result(reward, corruption, 0, ingredients)
+	var contract: Dictionary = GameData.current_contract
+	var reward: int = contract.get("reward", 50)
+	SaveManager.complete_contract(reward, 0)
+	GameData.set_hunt_result(reward, 0, run_ingredients.size(), run_ingredients)
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
-func _game_over() -> void:
-	GameData.set_hunt_result(0, corruption, 0)
-	# Short delay then results
-	await get_tree().create_timer(1.0).timeout
+func _finish_hunt(credits: int) -> void:
+	if credits == 0:
+		SaveManager.complete_contract(0, 0)
+		GameData.set_hunt_result(0, 0, 0)
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
-# --- Rendering ---
-
-func _center_camera() -> void:
-	var viewport_size := get_viewport_rect().size
-	# Account for HUD at top (approx 80px) and DPad at bottom (approx 180px)
-	var available_height := viewport_size.y - 260.0
-	var available_width := viewport_size.x
-	var grid_pixel_size := GRID_SIZE * TILE_SIZE
-	var offset_x := (available_width - grid_pixel_size) / 2.0 - (player_pos.x - GRID_SIZE / 2) * TILE_SIZE
-	var offset_y := 80.0 + (available_height - grid_pixel_size) / 2.0 - (player_pos.y - GRID_SIZE / 2) * TILE_SIZE
-	grid_container.position = Vector2(offset_x, offset_y)
-
-func _draw_grid() -> void:
-	# This is called on grid_container
-	for x in GRID_SIZE:
-		for y in GRID_SIZE:
-			var rect := Rect2(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE - 1, TILE_SIZE - 1)
-			var color: Color
-
-			if not revealed[x][y]:
-				color = Color.BLACK
-			elif not tile_visible[x][y]:
-				# Revealed but not currently visible — dim
-				match grid[x][y]:
-					Tile.WALL:
-						color = Color(0.15, 0.15, 0.15)
-					Tile.FLOOR:
-						color = Color(0.3, 0.3, 0.3)
-					Tile.EXIT:
-						color = Color(0.4, 0.4, 0.1)
-			else:
-				match grid[x][y]:
-					Tile.WALL:
-						color = Color(0.25, 0.25, 0.25)
-					Tile.FLOOR:
-						color = Color(0.6, 0.6, 0.6)
-					Tile.EXIT:
-						color = Color(0.9, 0.9, 0.1)
-
-			grid_container.draw_rect(rect, color)
-
-	# Draw traps (only if visible or revealed)
-	for trap_pos in traps:
-		if tile_visible[trap_pos.x][trap_pos.y] or revealed[trap_pos.x][trap_pos.y]:
-			var trap_color := Color(0.9, 0.7, 0.1) if tile_visible[trap_pos.x][trap_pos.y] else Color(0.5, 0.4, 0.1)
-			var trap_rect := Rect2(trap_pos.x * TILE_SIZE + 6, trap_pos.y * TILE_SIZE + 6, TILE_SIZE - 13, TILE_SIZE - 13)
-			grid_container.draw_rect(trap_rect, trap_color)
-
-	# Draw creatures (visible, or all if scan active)
-	for creature in creatures:
-		if creature["hp"] <= 0:
-			continue
-		var pos: Vector2i = creature["pos"]
-		if tile_visible[pos.x][pos.y]:
-			var creature_color := Color(0.9, 0.2, 0.2)
-			if creature.get("stunned_turns", 0) > 0:
-				creature_color = Color(0.5, 0.5, 0.9)  # Blue tint for stunned
-			# Flash override
-			if _flashes.has(pos) and _flashes[pos]["timer"] > 0:
-				creature_color = _flashes[pos]["color"]
-			var rect := Rect2(pos.x * TILE_SIZE + 2, pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
-			grid_container.draw_rect(rect, creature_color)
-			# Targeting mode: cyan border on visible creatures
-			if targeting_mode and tile_visible[pos.x][pos.y]:
-				var border_rect := Rect2(pos.x * TILE_SIZE + 2, pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
-				grid_container.draw_rect(border_rect, Color(0, 1, 1, 0.8), false, 2.0)
-
-	# Draw player
-	var player_color := Color(0.2, 0.6, 0.9) if stealth_active else Color(0.2, 0.9, 0.2)
-	if _flashes.has(player_pos) and _flashes[player_pos]["timer"] > 0:
-		player_color = _flashes[player_pos]["color"]
-	var player_rect := Rect2(player_pos.x * TILE_SIZE + 2, player_pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
-	grid_container.draw_rect(player_rect, player_color)
-
-func _update_hud() -> void:
-	var contract := GameData.current_contract
-	var inv_text := ""
-	for i in 6:
-		if i < inventory.size():
-			inv_text += "[%d]%s " % [i + 1, inventory[i]["symbol"]]
-		else:
-			inv_text += "[%d]- " % [i + 1]
-	var sc_text := "STEALTH" if stealth_active else "%d%%" % int(stealth_charge)
-	hud_label.text = "HP: %d | Ammo: %d | SC: %s | Turn: %d | Corruption: %d\nTarget: %s (%d/%d) | %s" % [
-		player_hp, sidearm_ammo, sc_text, turn_count, corruption,
-		contract.get("creature_type", "?"), target_kills, target_total, inv_text.strip_edges()
-	]
-	# Refresh action bar buttons (rebuild dynamically)
-	if _action_bar:
-		for child in _action_bar.get_children():
-			child.queue_free()
-		var btn_count := mini(inventory.size(), 6)
-		for i in btn_count:
-			var btn := Button.new()
-			btn.custom_minimum_size = Vector2(80, 60)
-			btn.name = "ItemBtn%d" % i
-			var item := inventory[i]
-			var display_count: int = sidearm_ammo if item.get("id","") == "sidearm" else item.get("uses", 0)
-			btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), display_count]
-			btn.pressed.connect(_use_item.bind(i))
-			_action_bar.add_child(btn)
-
-func _update_hp_bar() -> void:
-	if _hp_bar_fg:
-		var ratio := clampf(float(player_hp) / 10.0, 0.0, 1.0)
-		_hp_bar_fg.anchor_right = ratio
-
-func _fire_sidearm(creature_idx: int) -> void:
-	if sidearm_ammo <= 0:
-		_show_message("Out of ammo!")
-		targeting_mode = false
-		grid_container.queue_redraw()
-		return
-	sidearm_ammo -= 1
-	if stealth_active:
-		_deactivate_stealth()
-	var c := creatures[creature_idx]
-	c["hp"] -= 3
-	_gunshot_alert()
-	if c["hp"] <= 0:
-		if c["is_target"]:
-			target_kills += 1
-		_show_message("Bang! %s down!" % c["type"])
-		_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-		_drop_ingredient(c["type"])
-		_check_exit_spawn()
-	else:
-		_show_message("Bang! Hit %s! (%d HP left)" % [c["type"], c["hp"]])
-		_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-	targeting_mode = false
-	grid_container.queue_redraw()
-	_move_creatures()
-	_update_visibility()
-	_center_camera()
-	_update_hud()
-
-func _cancel_targeting() -> void:
-	targeting_mode = false
-	_show_message("Targeting cancelled.")
-	grid_container.queue_redraw()
-
-func _flash_vignette() -> void:
-	if not _vignette:
-		return
-	_vignette.visible = true
-	_vignette.color = Color(1, 0, 0, 0.3)
-	var tween := create_tween()
-	tween.tween_property(_vignette, "color:a", 0.0, 0.15)
-	tween.tween_callback(func(): _vignette.visible = false)
-
-func _gunshot_alert() -> void:
-	var any_alerted := false
-	for creature in creatures:
-		if creature["hp"] <= 0:
-			continue
-		var cpos: Vector2i = creature["pos"]
-		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
-		if dist <= 4:
-			if not creature.get("alerted", false):
-				creature["alerted"] = true
-				creature["aggro_origin"] = cpos
-			creature["alert_turns"] = 10
-			any_alerted = true
-	if any_alerted:
-		_show_message("Gunshot echoes!")
-
-func _tick_stealth() -> void:
-	if stealth_active:
-		stealth_charge -= 3.0
-		if stealth_charge <= 0.0:
-			_deactivate_stealth()
-	else:
-		if corruption < 16:
-			stealth_charge = minf(stealth_charge + 5.0, STEALTH_MAX)
-		elif corruption < 36:
-			stealth_charge = minf(stealth_charge + 2.0, STEALTH_MAX)
-
-func _deactivate_stealth() -> void:
-	stealth_active = false
-	stealth_charge = maxf(stealth_charge, 0.0)
-	_show_message("Stealth field collapsed!")
-	# Aggro nearby creatures with LOS
-	for creature in creatures:
-		if creature["hp"] <= 0:
-			continue
-		var cpos: Vector2i = creature["pos"]
-		var stats: Dictionary = CREATURE_STATS.get(creature["type"], {detection = 4, leash = 8})
-		var det: int = stats["detection"]
-		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
-		if dist <= det and tile_visible[cpos.x][cpos.y]:
-			creature["alerted"] = true
-			if not creature.has("aggro_origin"):
-				creature["aggro_origin"] = cpos
-
-func _player_wait() -> void:
-	if player_hp <= 0:
-		return
-	# Toggle stealth field
-	if stealth_active:
-		_deactivate_stealth()
-	elif stealth_charge >= 10.0:
-		stealth_charge -= 10.0
-		stealth_active = true
-		_show_message("Stealth field active!")
-	else:
-		_show_message("Stealth field depleted!")
-	# Advance turn
-	turn_count += 1
-	_tick_stealth()
-	_move_creatures()
-	_update_visibility()
-	_center_camera()
-	queue_redraw()
-	grid_container.queue_redraw()
-	_update_hud()
-
-func _toggle_inventory() -> void:
-	inventory_open = not inventory_open
-	_inv_layer.visible = inventory_open
-	if inventory_open:
-		_refresh_inventory_panel()
-
-func _refresh_inventory_panel() -> void:
-	# Clear existing rows
-	for child in _inv_scroll_content.get_children():
-		child.queue_free()
-	# Build rows for each inventory item
-	for i in inventory.size():
-		var item: Dictionary = inventory[i]
-		var row := HBoxContainer.new()
-		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-		var symbol_label := Label.new()
-		symbol_label.text = item.get("symbol", "?")
-		symbol_label.custom_minimum_size = Vector2(30, 0)
-		row.add_child(symbol_label)
-
-		var name_label := Label.new()
-		var display_count: int = sidearm_ammo if item.get("id", "") == "sidearm" else item.get("uses", 0)
-		name_label.text = "%s (%d)" % [item.get("name", "?"), display_count]
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(name_label)
-
-		# Use button — hide for ingredients
-		var use_btn := Button.new()
-		use_btn.text = "Use"
-		use_btn.custom_minimum_size = Vector2(60, 40)
-		if item.get("ingredient", false):
-			use_btn.visible = false
-		else:
-			use_btn.pressed.connect(_inv_use_item.bind(i))
-		row.add_child(use_btn)
-
-		# Drop button — hide for sidearm
-		var drop_btn := Button.new()
-		drop_btn.text = "Drop"
-		drop_btn.custom_minimum_size = Vector2(60, 40)
-		if item.get("id", "") == "sidearm":
-			drop_btn.visible = false
-		else:
-			drop_btn.pressed.connect(_inv_drop_item.bind(i))
-		row.add_child(drop_btn)
-
-		_inv_scroll_content.add_child(row)
-
-	if inventory.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = "No items"
-		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_inv_scroll_content.add_child(empty_label)
-
-func _inv_use_item(slot: int) -> void:
-	_use_item(slot)
-	if inventory_open:
-		_refresh_inventory_panel()
-
-func _inv_drop_item(slot: int) -> void:
-	if slot < inventory.size():
-		var item: Dictionary = inventory[slot]
-		if item.get("id", "") == "sidearm":
-			return  # Safety check
-		inventory.remove_at(slot)
-		_update_hud()
-		_refresh_inventory_panel()
-
+# =========================================================
+# HUD MESSAGE
+# =========================================================
 func _show_message(msg: String) -> void:
-	message_label.text = msg
-	# Auto-clear after a bit via tween
-	var tween := create_tween()
-	tween.tween_interval(2.0)
-	tween.tween_property(message_label, "modulate:a", 0.0, 0.5)
-	tween.tween_callback(func():
-		message_label.text = ""
-		message_label.modulate.a = 1.0
-	)
+	hud_message = msg
+	hud_message_timer = 2.0
+
+func _update_hud_message(delta: float) -> void:
+	if hud_message_timer > 0.0:
+		hud_message_timer -= delta
+		if hud_message_timer <= 0.0:
+			hud_message = ""
+
+# =========================================================
+# DRAW
+# =========================================================
+func _draw() -> void:
+	var vp_size := get_viewport_rect().size
+
+	# --- World space drawing ---
+
+	# Background
+	var bg_screen := _w2s(Vector2.ZERO)
+	draw_rect(Rect2(bg_screen, Vector2(WORLD_W, WORLD_H)), Color(0.06, 0.06, 0.1))
+
+	# Grid lines
+	var grid_color := Color(0.1, 0.1, 0.15, 0.5)
+	for gx in range(0, WORLD_W + 1, GRID_STEP):
+		var sx: float = float(gx) - camera_offset.x
+		draw_line(Vector2(sx, -camera_offset.y), Vector2(sx, WORLD_H - camera_offset.y), grid_color, 1.0)
+	for gy in range(0, WORLD_H + 1, GRID_STEP):
+		var sy: float = float(gy) - camera_offset.y
+		draw_line(Vector2(-camera_offset.x, sy), Vector2(WORLD_W - camera_offset.x, sy), grid_color, 1.0)
+
+	# Obstacles
+	for obs in obstacles:
+		var sp: Vector2 = _w2s(obs.pos)
+		draw_circle(sp, obs.radius, Color(0.2, 0.15, 0.25))
+		draw_arc(sp, obs.radius, 0.0, TAU, 32, Color(0.4, 0.3, 0.5), 1.5)
+
+	# Exit zone
+	if exit_spawned:
+		var ep: Vector2 = _w2s(exit_pos)
+		var pulse: float = 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003)
+		draw_circle(ep, 40.0, Color(0.2, 0.9, 0.2, pulse * 0.4))
+		draw_arc(ep, 40.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.2, pulse), 2.0)
+
+	# Pickups
+	for p in pickups:
+		var sp: Vector2 = _w2s(p.pos)
+		if p.type == "ingredient":
+			draw_rect(Rect2(sp - Vector2(6, 6), Vector2(12, 12)), p.color)
+		elif p.type == "essence":
+			draw_circle(sp, 8.0, Color(0.5, 0.0, 0.8))
+
+	# Enemies
+	for e in enemies:
+		if e.hp <= 0:
+			continue
+		var sp: Vector2 = _w2s(e.pos)
+		draw_circle(sp, e.radius, e.color)
+		# HP bar above enemy
+		var bar_w: float = e.radius * 2.0
+		var bar_h := 3.0
+		var bar_pos := Vector2(sp.x - bar_w * 0.5, sp.y - e.radius - 8.0)
+		draw_rect(Rect2(bar_pos, Vector2(bar_w, bar_h)), Color(0.3, 0.3, 0.3))
+		var hp_frac: float = float(e.hp) / float(e.max_hp)
+		draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, bar_h)), Color(0.9, 0.2, 0.2))
+		# Target indicator
+		if e.is_target:
+			draw_arc(sp, e.radius + 4.0, 0.0, TAU, 16, Color(1.0, 1.0, 0.0, 0.6), 1.5)
+
+	# Bullets
+	for b in bullets:
+		var sp: Vector2 = _w2s(b.pos)
+		draw_circle(sp, b.radius, b.color)
+
+	# Player
+	var pp: Vector2 = _w2s(player_pos)
+	draw_circle(pp, PLAYER_RADIUS, Color(0.2, 0.9, 0.2))
+
+	# --- Screen space HUD ---
+
+	# Joystick
+	if joy_active:
+		draw_circle(joy_base, JOY_MAX_DIST, Color(1, 1, 1, 0.1))
+		draw_arc(joy_base, JOY_MAX_DIST, 0.0, TAU, 32, Color(1, 1, 1, 0.3), 1.5)
+		draw_circle(joy_knob, 18.0, Color(1, 1, 1, 0.4))
+
+	# HP bar
+	var hp_bar_x := 12.0
+	var hp_bar_y := 16.0
+	var hp_bar_w := 120.0
+	var hp_bar_h := 12.0
+	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w, hp_bar_h), Color(0.3, 0.1, 0.1))
+	var hp_frac: float = clampf(float(player_hp) / float(player_max_hp), 0.0, 1.0)
+	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
+
+	# Ammo text
+	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), "Ammo: %d" % sidearm_ammo, Color.WHITE, 14)
+
+	# Target counter (top center)
+	var target_text := "Targets: %d/%d" % [target_kills, target_total]
+	_draw_text(Vector2(vp_size.x * 0.5 - 50.0, 16.0), target_text, Color.WHITE, 14)
+
+	# Corruption meter (top right)
+	var corr_x: float = vp_size.x - 92.0
+	draw_rect(Rect2(corr_x, 16.0, 80.0, 12.0), Color(0.15, 0.1, 0.2))
+	# corruption is 0 for now
+
+	# Essence/level (bottom center)
+	var level_text := "LV %d | Essence: %d/50" % [player_level, essence_collected]
+	_draw_text(Vector2(vp_size.x * 0.5 - 70.0, vp_size.y - 30.0), level_text, Color(0.7, 0.5, 1.0), 14)
+
+	# HUD message (center)
+	if hud_message != "":
+		var msg_alpha: float = clampf(hud_message_timer, 0.0, 1.0)
+		_draw_text(Vector2(vp_size.x * 0.5 - 80.0, vp_size.y * 0.5 - 20.0), hud_message, Color(1, 1, 1, msg_alpha), 18)
+
+	# Dead overlay
+	if dead:
+		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0, 0, 0, 0.6))
+		_draw_text(Vector2(vp_size.x * 0.5 - 40.0, vp_size.y * 0.5 - 20.0), "DEAD", Color(1, 0.2, 0.2), 32)
+
+func _w2s(world_pos: Vector2) -> Vector2:
+	return world_pos - camera_offset
+
+func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -> void:
+	var font: Font = ThemeDB.fallback_font
+	draw_string(font, pos + Vector2(0, font_size), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
