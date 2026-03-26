@@ -8,6 +8,14 @@ enum Tile { WALL, FLOOR, EXIT }
 
 const RANGED_CREATURES := ["Abyss Worm", "Nether Stalker"]
 
+const CREATURE_STATS: Dictionary = {
+	"Void Leech":     {detection = 3, leash = 6},
+	"Shadow Crawler": {detection = 4, leash = 7},
+	"Abyss Worm":     {detection = 4, leash = 8},
+	"Nether Stalker": {detection = 5, leash = 10},
+	"Rift Parasite":  {detection = 6, leash = 12},
+}
+
 const CREATURE_INGREDIENTS: Dictionary = {
 	"Void Leech": {id = "ingredient_void_extract", name = "Void Extract", symbol = "V", uses = 1, ingredient = true},
 	"Shadow Crawler": {id = "ingredient_shadow_membrane", name = "Shadow Membrane", symbol = "S", uses = 1, ingredient = true},
@@ -31,7 +39,9 @@ var target_kills := 0
 var target_total := 0
 var exit_spawned := false
 var sidearm_ammo: int = 12
-var stealth_ready: bool = false
+var stealth_charge: float = 100.0
+const STEALTH_MAX: float = 100.0
+var stealth_active: bool = false
 
 # Tap-to-move
 var move_path: Array[Vector2i] = []
@@ -39,9 +49,11 @@ var _pending_step: bool = false
 
 # Inventory (max 3 slots)
 var inventory: Array[Dictionary] = []  # {id, name, symbol, uses}
-var scan_turns_left: int = 0
 var traps: Array[Vector2i] = []  # positions of placed traps
 var _action_bar: HBoxContainer
+var inventory_open: bool = false
+var _inv_layer: CanvasLayer
+var _inv_scroll_content: VBoxContainer
 
 # HP bar
 var _hp_bar_bg: ColorRect
@@ -52,7 +64,6 @@ var _flashes: Dictionary = {}
 
 # Ranged targeting
 var targeting_mode: bool = false
-var targeting_dart: bool = false
 
 # Screen vignette flash
 var _vignette: ColorRect
@@ -81,14 +92,13 @@ func _ready() -> void:
 	# Start with 1 net and 3 darts in inventory
 	inventory.append({id = "sidearm", name = "Sidearm", symbol = "G", uses = 999, weapon = true})
 	inventory.append({id = "net", name = "Net", symbol = "N", uses = 1})
-	inventory.append({id = "dart", name = "Dart", symbol = "D", uses = 3})
 	# Action bar
 	var action_bar := HBoxContainer.new()
 	action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	action_bar.offset_top = -180
 	action_bar.z_index = 10
 	action_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	for i in 6:
+	for i in inventory.size():
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(80, 60)
 		btn.name = "ItemBtn%d" % i
@@ -122,7 +132,55 @@ func _ready() -> void:
 	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_vignette)
 
+	# Inventory panel (CanvasLayer overlay)
+	_inv_layer = CanvasLayer.new()
+	_inv_layer.layer = 10
+	_inv_layer.visible = false
+	add_child(_inv_layer)
+
+	var inv_bg := ColorRect.new()
+	inv_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inv_bg.color = Color(0, 0, 0, 0.75)
+	inv_bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	_inv_layer.add_child(inv_bg)
+
+	var inv_panel := PanelContainer.new()
+	inv_panel.set_anchors_preset(Control.PRESET_CENTER)
+	inv_panel.anchor_left = 0.1
+	inv_panel.anchor_right = 0.9
+	inv_panel.anchor_top = 0.1
+	inv_panel.anchor_bottom = 0.9
+	inv_panel.offset_left = 0
+	inv_panel.offset_right = 0
+	inv_panel.offset_top = 0
+	inv_panel.offset_bottom = 0
+	_inv_layer.add_child(inv_panel)
+
+	var inv_vbox := VBoxContainer.new()
+	inv_panel.add_child(inv_vbox)
+
+	var inv_title := Label.new()
+	inv_title.text = "Inventory"
+	inv_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	inv_vbox.add_child(inv_title)
+
+	var inv_scroll := ScrollContainer.new()
+	inv_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inv_vbox.add_child(inv_scroll)
+
+	_inv_scroll_content = VBoxContainer.new()
+	_inv_scroll_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inv_scroll.add_child(_inv_scroll_content)
+
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.custom_minimum_size = Vector2(0, 50)
+	close_btn.pressed.connect(_toggle_inventory)
+	inv_vbox.add_child(close_btn)
+
 func _process(delta: float) -> void:
+	if inventory_open:
+		return
 	if _pending_step and not move_path.is_empty():
 		_pending_step = false
 		var dir: Vector2i = move_path.pop_front()
@@ -145,6 +203,17 @@ func _process(delta: float) -> void:
 		grid_container.queue_redraw()
 
 func _input(event: InputEvent) -> void:
+	# Inventory toggle / close
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_I or event.keycode == KEY_TAB:
+			_toggle_inventory()
+			return
+		if inventory_open and event.keycode == KEY_ESCAPE:
+			_toggle_inventory()
+			return
+		if inventory_open:
+			return  # Block all other keys while inventory is open
+
 	# Cancel targeting with Escape
 	if event is InputEventKey and event.pressed and not event.echo:
 		if targeting_mode and event.keycode == KEY_ESCAPE:
@@ -170,6 +239,10 @@ func _input(event: InputEvent) -> void:
 		if dir != Vector2i.ZERO:
 			move_path.clear()
 			_move(dir)
+		return
+
+	# Block taps while inventory is open
+	if inventory_open:
 		return
 
 	# Touch/mouse tap
@@ -207,10 +280,7 @@ func _input(event: InputEvent) -> void:
 				found_creature = i
 				break
 		if found_creature >= 0:
-			if targeting_dart:
-				_fire_dart(found_creature)
-			else:
-				_fire_sidearm(found_creature)
+			_fire_sidearm(found_creature)
 		else:
 			_cancel_targeting()
 		return
@@ -440,16 +510,15 @@ func _move(dir: Vector2i) -> void:
 
 	if hit_creature >= 0:
 		var c := creatures[hit_creature]
-		var is_passive: bool = not c.get("chasing", false) and not c.get("alerted", false)
 
-		if stealth_ready and is_passive:
-			# Stealth kill
-			var max_hp := 3  # base creature hp
-			if max_hp <= 3:
+		if stealth_active:
+			# Stealth kill — silent, no gunshot alert
+			stealth_charge -= 20.0
+			var assumed_max_hp := 5
+			if c["hp"] <= 3:
 				c["hp"] = 0
 			else:
-				c["hp"] -= int(max_hp * 0.8)
-			stealth_ready = false
+				c["hp"] -= int(assumed_max_hp * 0.8)
 			if c["hp"] <= 0:
 				if c["is_target"]:
 					target_kills += 1
@@ -460,6 +529,8 @@ func _move(dir: Vector2i) -> void:
 			else:
 				_show_message("Silent strike! (%d HP left)" % c["hp"])
 				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+			if stealth_charge <= 0.0:
+				_deactivate_stealth()
 		elif sidearm_ammo > 0:
 			# Sidearm shot
 			sidearm_ammo -= 1
@@ -475,7 +546,8 @@ func _move(dir: Vector2i) -> void:
 				_show_message("Bang! Hit %s for 3! (%d HP left)" % [c["type"], c["hp"]])
 				_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
 			_gunshot_alert()
-			stealth_ready = false
+			if stealth_active:
+				_deactivate_stealth()
 		else:
 			# Desperation melee — no ammo
 			c["hp"] -= 2
@@ -493,7 +565,8 @@ func _move(dir: Vector2i) -> void:
 			player_hp -= 2
 			_update_hp_bar()
 			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
-			stealth_ready = false
+			if stealth_active:
+				_deactivate_stealth()
 			if player_hp <= 0:
 				_show_message("You died!")
 				_game_over()
@@ -501,7 +574,6 @@ func _move(dir: Vector2i) -> void:
 	else:
 		# Move player
 		player_pos = new_pos
-		stealth_ready = false
 
 	# Check exit
 	if grid[player_pos.x][player_pos.y] == Tile.EXIT:
@@ -510,8 +582,7 @@ func _move(dir: Vector2i) -> void:
 
 	# Advance turn
 	turn_count += 1
-	if scan_turns_left > 0:
-		scan_turns_left -= 1
+	_tick_stealth()
 
 	# Creature AI
 	_move_creatures()
@@ -540,18 +611,54 @@ func _move_creatures() -> void:
 			creature["stunned_turns"] = stunned - 1
 			continue
 
-		# Chase if player within 6 tiles (Chebyshev distance) or alerted
+		# Decrement alert_turns
+		var alert_turns: int = creature.get("alert_turns", 0)
+		if alert_turns > 0:
+			creature["alert_turns"] = alert_turns - 1
+
+		# Detection/leash stats
+		var ctype: String = creature["type"]
+		var stats: Dictionary = CREATURE_STATS.get(ctype, {detection = 4, leash = 8})
+		var detection: int = stats["detection"]
+		var leash: int = stats["leash"]
+		var alerted_detection: int = detection * 2 if creature.get("alert_turns", 0) > 0 else detection
+
 		var cpos: Vector2i = creature["pos"]
 		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
-		var chasing: bool = dist <= 6 or creature.get("alerted", false)
+
+		# Stealth: player invisible to detection unless already alerted
+		var player_detectable: bool = not stealth_active
+		var can_see_player: bool = tile_visible[cpos.x][cpos.y] if (cpos.x >= 0 and cpos.x < GRID_SIZE and cpos.y >= 0 and cpos.y < GRID_SIZE) else false
+
+		# Aggro check
+		var chasing: bool = creature.get("alerted", false)
+		if not chasing and player_detectable and dist <= alerted_detection and can_see_player:
+			chasing = true
+			creature["alerted"] = true
+			creature["aggro_origin"] = cpos
+			creature["leash_msg_shown"] = false
 		creature["chasing"] = chasing
+
+		# Leash check
+		if chasing and creature.has("aggro_origin"):
+			var origin: Vector2i = creature["aggro_origin"]
+			var leash_dist := maxi(absi(player_pos.x - origin.x), absi(player_pos.y - origin.y))
+			if leash_dist > leash and dist > detection:
+				creature["alerted"] = false
+				creature["chasing"] = false
+				creature.erase("aggro_origin")
+				chasing = false
+				if not creature.get("leash_msg_shown", false):
+					creature["leash_msg_shown"] = true
+					_show_message("%s lost you..." % ctype)
 
 		if chasing:
 			# Ranged creatures: shoot if within 3 tiles and player visible
-			if creature["type"] in RANGED_CREATURES and dist <= 3 and tile_visible[player_pos.x][player_pos.y]:
+			if creature["type"] in RANGED_CREATURES and dist <= 3 and tile_visible[player_pos.x][player_pos.y] and not stealth_active:
 				player_hp -= 2
 				_update_hp_bar()
-				stealth_ready = false
+				if stealth_active:
+					_deactivate_stealth()
 				_flashes[player_pos] = {color = Color.RED, timer = 0.2}
 				_flash_vignette()
 				_show_message("%s fires at you!" % creature["type"])
@@ -595,7 +702,8 @@ func _try_creature_move(creature: Dictionary, dirs: Array) -> void:
 		if new_pos == player_pos:
 			player_hp -= 1
 			_update_hp_bar()
-			stealth_ready = false
+			if stealth_active:
+				_deactivate_stealth()
 			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
 			_flash_vignette()
 			_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
@@ -631,7 +739,6 @@ func _use_item(slot: int) -> void:
 			_show_message("No targets in range!")
 			return
 		targeting_mode = true
-		targeting_dart = false
 		_show_message("Select a target to shoot!")
 		grid_container.queue_redraw()
 		return
@@ -652,21 +759,6 @@ func _use_item(slot: int) -> void:
 		if not netted:
 			_show_message("No adjacent creature to net!")
 			return
-	elif item["id"] == "dart":
-		# Enter targeting mode
-		var has_visible := false
-		for creature in creatures:
-			if creature["hp"] > 0 and tile_visible[creature["pos"].x][creature["pos"].y]:
-				has_visible = true
-				break
-		if not has_visible:
-			_show_message("No targets in range!")
-			return
-		targeting_mode = true
-		targeting_dart = true
-		_show_message("Select a target!")
-		grid_container.queue_redraw()
-		return  # Don't consume use yet
 	elif item["id"] == "trap":
 		# Place trap on current tile
 		if player_pos in traps:
@@ -674,12 +766,6 @@ func _use_item(slot: int) -> void:
 			return
 		traps.append(player_pos)
 		_show_message("Trap placed!")
-	elif item["id"] == "scan":
-		scan_turns_left = 4
-		_show_message("Scan activated!")
-		grid_container.queue_redraw()
-		_update_hud()
-
 	item["uses"] -= 1
 	if item["uses"] <= 0:
 		inventory.remove_at(slot)
@@ -787,12 +873,10 @@ func _draw_grid() -> void:
 		if creature["hp"] <= 0:
 			continue
 		var pos: Vector2i = creature["pos"]
-		if tile_visible[pos.x][pos.y] or scan_turns_left > 0:
+		if tile_visible[pos.x][pos.y]:
 			var creature_color := Color(0.9, 0.2, 0.2)
 			if creature.get("stunned_turns", 0) > 0:
 				creature_color = Color(0.5, 0.5, 0.9)  # Blue tint for stunned
-			elif not tile_visible[pos.x][pos.y]:
-				creature_color = Color(0.7, 0.3, 0.3, 0.6)  # Dimmer for scan-only
 			# Flash override
 			if _flashes.has(pos) and _flashes[pos]["timer"] > 0:
 				creature_color = _flashes[pos]["color"]
@@ -804,7 +888,7 @@ func _draw_grid() -> void:
 				grid_container.draw_rect(border_rect, Color(0, 1, 1, 0.8), false, 2.0)
 
 	# Draw player
-	var player_color := Color(0.2, 0.9, 0.2)
+	var player_color := Color(0.2, 0.6, 0.9) if stealth_active else Color(0.2, 0.9, 0.2)
 	if _flashes.has(player_pos) and _flashes[player_pos]["timer"] > 0:
 		player_color = _flashes[player_pos]["color"]
 	var player_rect := Rect2(player_pos.x * TILE_SIZE + 2, player_pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
@@ -818,55 +902,30 @@ func _update_hud() -> void:
 			inv_text += "[%d]%s " % [i + 1, inventory[i]["symbol"]]
 		else:
 			inv_text += "[%d]- " % [i + 1]
-	var scan_text := " | SCAN:%d" % scan_turns_left if scan_turns_left > 0 else ""
-	var stealth_text := " | STEALTH READY" if stealth_ready else ""
-	hud_label.text = "HP: %d | Ammo: %d | Turn: %d | Corruption: %d%s%s\nTarget: %s (%d/%d) | %s" % [
-		player_hp, sidearm_ammo, turn_count, corruption, scan_text, stealth_text,
+	var sc_text := "STEALTH" if stealth_active else "%d%%" % int(stealth_charge)
+	hud_label.text = "HP: %d | Ammo: %d | SC: %s | Turn: %d | Corruption: %d\nTarget: %s (%d/%d) | %s" % [
+		player_hp, sidearm_ammo, sc_text, turn_count, corruption,
 		contract.get("creature_type", "?"), target_kills, target_total, inv_text.strip_edges()
 	]
-	# Refresh action bar button labels
+	# Refresh action bar buttons (rebuild dynamically)
 	if _action_bar:
-		for i in 6:
-			var btn := _action_bar.get_child(i) as Button
-			if btn:
-				if i < inventory.size():
-					var item := inventory[i]
-					var display_count: int = sidearm_ammo if item.get("id","") == "sidearm" else item.get("uses", 0)
-					btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), display_count]
-					btn.disabled = false
-				else:
-					btn.text = "Empty"
-					btn.disabled = true
+		for child in _action_bar.get_children():
+			child.queue_free()
+		var btn_count := mini(inventory.size(), 6)
+		for i in btn_count:
+			var btn := Button.new()
+			btn.custom_minimum_size = Vector2(80, 60)
+			btn.name = "ItemBtn%d" % i
+			var item := inventory[i]
+			var display_count: int = sidearm_ammo if item.get("id","") == "sidearm" else item.get("uses", 0)
+			btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), display_count]
+			btn.pressed.connect(_use_item.bind(i))
+			_action_bar.add_child(btn)
 
 func _update_hp_bar() -> void:
 	if _hp_bar_fg:
 		var ratio := clampf(float(player_hp) / 10.0, 0.0, 1.0)
 		_hp_bar_fg.anchor_right = ratio
-
-func _fire_dart(creature_idx: int) -> void:
-	var c := creatures[creature_idx]
-	c["hp"] -= 2
-	if c["hp"] <= 0:
-		if c["is_target"]:
-			target_kills += 1
-		_show_message("Dart kills %s!" % c["type"])
-		_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
-		_drop_ingredient(c["type"])
-		_check_exit_spawn()
-	else:
-		_show_message("Dart hits %s! (%d HP left)" % [c["type"], c["hp"]])
-		_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
-	# Consume dart use
-	for i in inventory.size():
-		if inventory[i]["id"] == "dart":
-			inventory[i]["uses"] -= 1
-			if inventory[i]["uses"] <= 0:
-				inventory.remove_at(i)
-			break
-	targeting_mode = false
-	targeting_dart = false
-	grid_container.queue_redraw()
-	_update_hud()
 
 func _fire_sidearm(creature_idx: int) -> void:
 	if sidearm_ammo <= 0:
@@ -875,18 +934,11 @@ func _fire_sidearm(creature_idx: int) -> void:
 		grid_container.queue_redraw()
 		return
 	sidearm_ammo -= 1
+	if stealth_active:
+		_deactivate_stealth()
 	var c := creatures[creature_idx]
 	c["hp"] -= 3
-	# Alert nearby creatures to gunshot
-	var alerted_any := false
-	for other in creatures:
-		if other["hp"] > 0 and other != c:
-			var d: int = maxi(absi(other["pos"].x - player_pos.x), absi(other["pos"].y - player_pos.y))
-			if d <= 4 and not other.get("alerted", false):
-				other["alerted"] = true
-				alerted_any = true
-	if alerted_any:
-		_show_message("Gunshot echoes!")
+	_gunshot_alert()
 	if c["hp"] <= 0:
 		if c["is_target"]:
 			target_kills += 1
@@ -898,7 +950,6 @@ func _fire_sidearm(creature_idx: int) -> void:
 		_show_message("Bang! Hit %s! (%d HP left)" % [c["type"], c["hp"]])
 		_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
 	targeting_mode = false
-	targeting_dart = false
 	grid_container.queue_redraw()
 	_move_creatures()
 	_update_visibility()
@@ -907,7 +958,6 @@ func _fire_sidearm(creature_idx: int) -> void:
 
 func _cancel_targeting() -> void:
 	targeting_mode = false
-	targeting_dart = false
 	_show_message("Targeting cancelled.")
 	grid_container.queue_redraw()
 
@@ -925,46 +975,135 @@ func _gunshot_alert() -> void:
 	for creature in creatures:
 		if creature["hp"] <= 0:
 			continue
-		if creature.get("chasing", false) or creature.get("alerted", false):
-			continue
 		var cpos: Vector2i = creature["pos"]
 		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
 		if dist <= 4:
-			creature["alerted"] = true
+			if not creature.get("alerted", false):
+				creature["alerted"] = true
+				creature["aggro_origin"] = cpos
+			creature["alert_turns"] = 10
 			any_alerted = true
 	if any_alerted:
 		_show_message("Gunshot echoes!")
 
+func _tick_stealth() -> void:
+	if stealth_active:
+		stealth_charge -= 3.0
+		if stealth_charge <= 0.0:
+			_deactivate_stealth()
+	else:
+		if corruption < 16:
+			stealth_charge = minf(stealth_charge + 5.0, STEALTH_MAX)
+		elif corruption < 36:
+			stealth_charge = minf(stealth_charge + 2.0, STEALTH_MAX)
+
+func _deactivate_stealth() -> void:
+	stealth_active = false
+	stealth_charge = maxf(stealth_charge, 0.0)
+	_show_message("Stealth field collapsed!")
+	# Aggro nearby creatures with LOS
+	for creature in creatures:
+		if creature["hp"] <= 0:
+			continue
+		var cpos: Vector2i = creature["pos"]
+		var stats: Dictionary = CREATURE_STATS.get(creature["type"], {detection = 4, leash = 8})
+		var det: int = stats["detection"]
+		var dist := maxi(absi(cpos.x - player_pos.x), absi(cpos.y - player_pos.y))
+		if dist <= det and tile_visible[cpos.x][cpos.y]:
+			creature["alerted"] = true
+			if not creature.has("aggro_origin"):
+				creature["aggro_origin"] = cpos
+
 func _player_wait() -> void:
 	if player_hp <= 0:
 		return
-	# Check for adjacent passive creatures
-	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-	var has_passive_adj := false
-	for dir in dirs:
-		var adj: Vector2i = player_pos + dir
-		for creature in creatures:
-			if creature["hp"] > 0 and creature["pos"] == adj:
-				if not creature.get("chasing", false) and not creature.get("alerted", false):
-					has_passive_adj = true
-					break
-		if has_passive_adj:
-			break
-	stealth_ready = has_passive_adj
-	if stealth_ready:
-		_show_message("Waiting... ready for stealth kill.")
+	# Toggle stealth field
+	if stealth_active:
+		_deactivate_stealth()
+	elif stealth_charge >= 10.0:
+		stealth_charge -= 10.0
+		stealth_active = true
+		_show_message("Stealth field active!")
 	else:
-		_show_message("You wait...")
+		_show_message("Stealth field depleted!")
 	# Advance turn
 	turn_count += 1
-	if scan_turns_left > 0:
-		scan_turns_left -= 1
+	_tick_stealth()
 	_move_creatures()
 	_update_visibility()
 	_center_camera()
 	queue_redraw()
 	grid_container.queue_redraw()
 	_update_hud()
+
+func _toggle_inventory() -> void:
+	inventory_open = not inventory_open
+	_inv_layer.visible = inventory_open
+	if inventory_open:
+		_refresh_inventory_panel()
+
+func _refresh_inventory_panel() -> void:
+	# Clear existing rows
+	for child in _inv_scroll_content.get_children():
+		child.queue_free()
+	# Build rows for each inventory item
+	for i in inventory.size():
+		var item: Dictionary = inventory[i]
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var symbol_label := Label.new()
+		symbol_label.text = item.get("symbol", "?")
+		symbol_label.custom_minimum_size = Vector2(30, 0)
+		row.add_child(symbol_label)
+
+		var name_label := Label.new()
+		var display_count: int = sidearm_ammo if item.get("id", "") == "sidearm" else item.get("uses", 0)
+		name_label.text = "%s (%d)" % [item.get("name", "?"), display_count]
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+
+		# Use button — hide for ingredients
+		var use_btn := Button.new()
+		use_btn.text = "Use"
+		use_btn.custom_minimum_size = Vector2(60, 40)
+		if item.get("ingredient", false):
+			use_btn.visible = false
+		else:
+			use_btn.pressed.connect(_inv_use_item.bind(i))
+		row.add_child(use_btn)
+
+		# Drop button — hide for sidearm
+		var drop_btn := Button.new()
+		drop_btn.text = "Drop"
+		drop_btn.custom_minimum_size = Vector2(60, 40)
+		if item.get("id", "") == "sidearm":
+			drop_btn.visible = false
+		else:
+			drop_btn.pressed.connect(_inv_drop_item.bind(i))
+		row.add_child(drop_btn)
+
+		_inv_scroll_content.add_child(row)
+
+	if inventory.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "No items"
+		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_inv_scroll_content.add_child(empty_label)
+
+func _inv_use_item(slot: int) -> void:
+	_use_item(slot)
+	if inventory_open:
+		_refresh_inventory_panel()
+
+func _inv_drop_item(slot: int) -> void:
+	if slot < inventory.size():
+		var item: Dictionary = inventory[slot]
+		if item.get("id", "") == "sidearm":
+			return  # Safety check
+		inventory.remove_at(slot)
+		_update_hud()
+		_refresh_inventory_panel()
 
 func _show_message(msg: String) -> void:
 	message_label.text = msg
