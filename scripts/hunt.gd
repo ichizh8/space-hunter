@@ -79,6 +79,7 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	grab_focus()
 	# Start with 1 net and 3 darts in inventory
+	inventory.append({id = "sidearm", name = "Sidearm", symbol = "G", uses = 999, weapon = true})
 	inventory.append({id = "net", name = "Net", symbol = "N", uses = 1})
 	inventory.append({id = "dart", name = "Dart", symbol = "D", uses = 3})
 	# Action bar
@@ -206,7 +207,10 @@ func _input(event: InputEvent) -> void:
 				found_creature = i
 				break
 		if found_creature >= 0:
-			_fire_dart(found_creature)
+			if targeting_dart:
+				_fire_dart(found_creature)
+			else:
+				_fire_sidearm(found_creature)
 		else:
 			_cancel_targeting()
 		return
@@ -506,8 +510,6 @@ func _move(dir: Vector2i) -> void:
 
 	# Advance turn
 	turn_count += 1
-	if turn_count % 5 == 0:
-		corruption += 1
 	if scan_turns_left > 0:
 		scan_turns_left -= 1
 
@@ -615,7 +617,25 @@ func _use_item(slot: int) -> void:
 		_show_message("Empty slot!")
 		return
 	var item: Dictionary = inventory[slot]
-	if item["id"] == "net":
+	if item["id"] == "sidearm":
+		# Enter targeting mode with sidearm
+		if sidearm_ammo <= 0:
+			_show_message("No ammo! Reload at ship.")
+			return
+		var has_visible := false
+		for creature in creatures:
+			if creature["hp"] > 0 and tile_visible[creature["pos"].x][creature["pos"].y]:
+				has_visible = true
+				break
+		if not has_visible:
+			_show_message("No targets in range!")
+			return
+		targeting_mode = true
+		targeting_dart = false
+		_show_message("Select a target to shoot!")
+		grid_container.queue_redraw()
+		return
+	elif item["id"] == "net":
 		# Immobilize adjacent creature for 2 turns
 		var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
 		var netted := false
@@ -811,7 +831,8 @@ func _update_hud() -> void:
 			if btn:
 				if i < inventory.size():
 					var item := inventory[i]
-					btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), item.get("uses",0)]
+					var display_count: int = sidearm_ammo if item.get("id","") == "sidearm" else item.get("uses", 0)
+					btn.text = "%s\n%s (%d)" % [item.get("symbol","?"), item.get("name","?"), display_count]
 					btn.disabled = false
 				else:
 					btn.text = "Empty"
@@ -845,6 +866,43 @@ func _fire_dart(creature_idx: int) -> void:
 	targeting_mode = false
 	targeting_dart = false
 	grid_container.queue_redraw()
+	_update_hud()
+
+func _fire_sidearm(creature_idx: int) -> void:
+	if sidearm_ammo <= 0:
+		_show_message("Out of ammo!")
+		targeting_mode = false
+		grid_container.queue_redraw()
+		return
+	sidearm_ammo -= 1
+	var c := creatures[creature_idx]
+	c["hp"] -= 3
+	# Alert nearby creatures to gunshot
+	var alerted_any := false
+	for other in creatures:
+		if other["hp"] > 0 and other != c:
+			var d: int = maxi(absi(other["pos"].x - player_pos.x), absi(other["pos"].y - player_pos.y))
+			if d <= 4 and not other.get("alerted", false):
+				other["alerted"] = true
+				alerted_any = true
+	if alerted_any:
+		_show_message("Gunshot echoes!")
+	if c["hp"] <= 0:
+		if c["is_target"]:
+			target_kills += 1
+		_show_message("Bang! %s down!" % c["type"])
+		_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
+		_drop_ingredient(c["type"])
+		_check_exit_spawn()
+	else:
+		_show_message("Bang! Hit %s! (%d HP left)" % [c["type"], c["hp"]])
+		_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+	targeting_mode = false
+	targeting_dart = false
+	grid_container.queue_redraw()
+	_move_creatures()
+	_update_visibility()
+	_center_camera()
 	_update_hud()
 
 func _cancel_targeting() -> void:
@@ -899,8 +957,6 @@ func _player_wait() -> void:
 		_show_message("You wait...")
 	# Advance turn
 	turn_count += 1
-	if turn_count % 5 == 0:
-		corruption += 1
 	if scan_turns_left > 0:
 		scan_turns_left -= 1
 	_move_creatures()
