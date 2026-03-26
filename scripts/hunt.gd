@@ -14,6 +14,60 @@ const WEAPON_DEFS: Dictionary = {
 	"dart": {name="Homing Dart", desc="Slow seeking projectile.", fire_rate=0.9, damage=3, bullet_speed=200.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"}
 }
 
+# Per-weapon level-up perks: each level 2-5 has a named perk with icon + description
+# Applied in _on_upgrade_chosen, effects tracked via player stat modifiers
+const WEAPON_LEVEL_PERKS: Dictionary = {
+	"sidearm": {
+		2: {icon="⚡", name="Hair Trigger", desc="Fire rate +25%", effect="fire_rate", value=-0.09},
+		3: {icon="🎯", name="Hollow Point", desc="+2 damage per shot", effect="damage", value=2},
+		4: {icon="💥", name="Overpressure", desc="Bullets pierce 1 enemy", effect="piercing", value=true},
+		5: {icon="🌀", name="Rapid Fire", desc="Fire rate +40%, mag +6", effect="fire_rate_mag", value=0.0},
+	},
+	"scatter": {
+		2: {icon="↔", name="Wide Bore", desc="Cone spread +30%, 1 extra pellet", effect="pellets", value=1},
+		3: {icon="💥", name="Buckshot", desc="+1 damage per pellet", effect="damage", value=1},
+		4: {icon="🔥", name="Incendiary", desc="Pellets slow enemies 20% for 1s", effect="slow", value=true},
+		5: {icon="🌪", name="Salvo", desc="Fire rate +30%, 2 extra pellets", effect="pellets_rate", value=0.0},
+	},
+	"lance": {
+		2: {icon="⚡", name="Charged Shot", desc="Projectile speed +30%", effect="bullet_speed", value=84.0},
+		3: {icon="💎", name="Void Core", desc="+3 damage", effect="damage", value=3},
+		4: {icon="🌀", name="Overload", desc="On kill: fires a 2nd lance automatically", effect="on_kill_lance", value=true},
+		5: {icon="💥", name="Singularity", desc="Explosion on impact, 60px AOE", effect="explode", value=true},
+	},
+	"baton": {
+		2: {icon="↔", name="Extended Arc", desc="AOE radius +30px", effect="radius", value=30.0},
+		3: {icon="💥", name="Shockwave", desc="+2 damage, knocks enemies back", effect="damage_knockback", value=2},
+		4: {icon="❤", name="Life Leech", desc="Each enemy hit restores 0.5 HP", effect="leech", value=true},
+		5: {icon="⚡", name="Chain Lightning", desc="Damage arcs to 2 additional enemies", effect="chain", value=true},
+	},
+	"dart": {
+		2: {icon="🎯", name="Lock-On", desc="Tracking speed +50%", effect="tracking", value=1.5},
+		3: {icon="💥", name="Detonator", desc="Explodes on hit, 40px AOE", effect="explode", value=true},
+		4: {icon="🐍", name="Swarm", desc="Fires 2 darts simultaneously", effect="dual", value=true},
+		5: {icon="💀", name="Voidseeker", desc="On kill: splits into 2 new darts", effect="split_on_kill", value=true},
+	},
+}
+
+# Passive pool — drawn randomly, no repeats per run
+const ALL_PASSIVES: Array = [
+	{id="tough",       rarity="common", icon="🛡", name="Reinforced Suit",   desc="+3 max HP, heal to full"},
+	{id="speed",       rarity="common", icon="💨", name="Thruster Boost",    desc="+25 move speed"},
+	{id="xp",          rarity="common", icon="✨", name="Void Attunement",   desc="Essence pickup range +40px"},
+	{id="tough2",      rarity="common", icon="❤", name="Adrenaline Gland",  desc="+2 max HP"},
+	{id="reload",      rarity="common", icon="🔄", name="Speed Loader",      desc="Reload time -30%"},
+	{id="magplus",     rarity="common", icon="📦", name="Extended Mag",      desc="+4 ammo in all weapons"},
+	{id="dodge",       rarity="rare",   icon="👻", name="Phase Shift",       desc="10% chance to dodge a hit"},
+	{id="burst_move",  rarity="rare",   icon="⚡", name="Sprint Capacitor",  desc="Killing 3 enemies: +50% speed for 3s"},
+	{id="vamp",        rarity="rare",   icon="🩸", name="Blood Harvest",     desc="1 in 5 kills restores 1 HP"},
+	{id="elite_dmg",   rarity="rare",   icon="⚔", name="Hunter's Mark",     desc="+30% damage vs elites"},
+	{id="corruption_resist", rarity="rare", icon="🌑", name="Void Skin",    desc="Corruption gain -25%"},
+]
+var passives_taken: Array[String] = []  # ids of passives already picked this run
+
+# Runtime weapon modifiers (applied to WEAPON_DEFS at fire time)
+var weapon_mods: Dictionary = {}  # weapon_id -> {fire_rate_mult, damage_bonus, extra_pellets, piercing, slow, etc.}
+
 # === Player ===
 var player_pos := Vector2(800.0, 800.0)
 var player_hp := 10
@@ -503,7 +557,12 @@ func _update_weapons(delta: float) -> void:
 	for wi in range(active_weapons.size()):
 		var w: Dictionary = active_weapons[wi]
 		var def: Dictionary = WEAPON_DEFS[w.id]
-		var damage: int = def.damage + (w.level - 1)
+		var mods_w: Dictionary = weapon_mods.get(w.id, {})
+		var damage: int = def.damage + (w.level - 1) + mods_w.get("damage_bonus", 0)
+		var w_piercing: bool = mods_w.get("piercing", def.pattern == "piercing")
+		var w_fire_rate: float = maxf(0.1, def.fire_rate + mods_w.get("fire_rate_add", 0.0))
+		var w_bullet_speed: float = def.bullet_speed + mods_w.get("bullet_speed_bonus", 0.0)
+		var w_extra_pellets: int = mods_w.get("extra_pellets", 0)
 
 		# Handle reload
 		if w.reload_timer > 0.0:
@@ -534,44 +593,49 @@ func _update_weapons(delta: float) -> void:
 				continue
 
 			var dir: Vector2 = (nearest_pos - player_pos).normalized()
-			w.cooldown_timer = def.fire_rate
+			w.cooldown_timer = w_fire_rate
 
 			match def.pattern:
 				"single":
 					w.mag_ammo -= 1
 					bullets.append({
 						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-						vel = dir * def.bullet_speed,
+						vel = dir * w_bullet_speed,
 						radius = def.bullet_radius,
 						color = def.color,
 						damage = damage,
-						lifetime = def.range / def.bullet_speed,
+						lifetime = def.range / maxf(1.0, w_bullet_speed),
 						from_player = true,
+						piercing = w_piercing,
+						hit_ids = [] if w_piercing else [],
 					})
 				"scatter":
 					w.mag_ammo -= 1
 					var base_angle: float = dir.angle()
-					for offset_deg in [-15.0, 0.0, 15.0]:
-						var angle: float = base_angle + deg_to_rad(offset_deg)
+					var pellet_angles: Array = [-15.0, 0.0, 15.0]
+					for _ep in range(w_extra_pellets):
+						pellet_angles.append(randf_range(-25.0, 25.0))
+					for offset_deg in pellet_angles:
+						var angle: float = base_angle + deg_to_rad(float(offset_deg))
 						var scatter_dir := Vector2(cos(angle), sin(angle))
 						bullets.append({
 							pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
-							vel = scatter_dir * def.bullet_speed,
+							vel = scatter_dir * w_bullet_speed,
 							radius = def.bullet_radius,
 							color = def.color,
 							damage = damage,
-							lifetime = def.range / def.bullet_speed,
+							lifetime = def.range / maxf(1.0, w_bullet_speed),
 							from_player = true,
 						})
 				"piercing":
 					w.mag_ammo -= 1
 					bullets.append({
 						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-						vel = dir * def.bullet_speed,
+						vel = dir * w_bullet_speed,
 						radius = def.bullet_radius,
 						color = def.color,
 						damage = damage,
-						lifetime = def.range / def.bullet_speed,
+						lifetime = def.range / maxf(1.0, w_bullet_speed),
 						from_player = true,
 						piercing = true,
 						hit_ids = [],
@@ -1089,22 +1153,41 @@ func _level_up() -> void:
 
 func _generate_upgrades() -> Array:
 	var options: Array[Dictionary] = []
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
 
-	# Upgrade existing weapons (up to 2 offers)
+	# --- Weapon upgrades: offer named perk for each held weapon ---
 	var upgradeable: Array[Dictionary] = []
 	for w in active_weapons:
 		if w.level < 5:
 			upgradeable.append(w)
 	upgradeable.shuffle()
 	for w in upgradeable.slice(0, 2):
-		var def: Dictionary = WEAPON_DEFS[w.id]
-		options.append({
-			type="weapon_upgrade", weapon_id=w.id,
-			label=def.name + " Lv" + str(w.level) + "->Lv" + str(w.level+1),
-			desc=def.desc + " (+" + str(w.level) + " dmg total)"
-		})
+		var next_level: int = w.level + 1
+		if WEAPON_LEVEL_PERKS.has(w.id) and WEAPON_LEVEL_PERKS[w.id].has(next_level):
+			var perk: Dictionary = WEAPON_LEVEL_PERKS[w.id][next_level]
+			var wdef: Dictionary = WEAPON_DEFS[w.id]
+			options.append({
+				type = "weapon_upgrade",
+				weapon_id = w.id,
+				rarity = "rare" if next_level >= 4 else "common",
+				icon = perk.icon,
+				label = wdef.name + " — " + perk.name,
+				desc = perk.desc,
+				perk = perk,
+			})
+		else:
+			# Fallback generic upgrade
+			var wdef2: Dictionary = WEAPON_DEFS[w.id]
+			options.append({
+				type = "weapon_upgrade", weapon_id = w.id,
+				rarity = "common", icon = "⬆",
+				label = wdef2.name + " Lv" + str(w.level + 1),
+				desc = "+1 damage",
+				perk = {effect = "damage", value = 1},
+			})
 
-	# Acquire new weapon if slot open
+	# --- New weapon acquisition if slot open ---
 	if active_weapons.size() < weapon_slots:
 		var held: Array[String] = []
 		for w in active_weapons:
@@ -1116,17 +1199,30 @@ func _generate_upgrades() -> Array:
 		if not available.is_empty():
 			available.shuffle()
 			var new_id: String = available[0]
-			var def: Dictionary = WEAPON_DEFS[new_id]
-			options.append({type="weapon_acquire", weapon_id=new_id, label="Acquire " + def.name, desc=def.desc})
+			var wdef3: Dictionary = WEAPON_DEFS[new_id]
+			options.append({
+				type = "weapon_acquire", weapon_id = new_id,
+				rarity = "rare", icon = "🔫",
+				label = "Acquire: " + wdef3.name,
+				desc = wdef3.desc,
+				perk = {},
+			})
 
-	# Passives
-	var passives: Array[Dictionary] = [
-		{type="passive", id="tough", label="Reinforced Suit", desc="+2 max HP, heal now"},
-		{type="passive", id="speed", label="Thruster Boost", desc="+20 move speed"},
-		{type="passive", id="xp", label="Void Attunement", desc="Collect essence from further away"}
-	]
-	passives.shuffle()
-	options.append(passives[0])
+	# --- Passives: pick from pool, exclude already taken ---
+	var available_passives: Array[Dictionary] = []
+	for p in ALL_PASSIVES:
+		if not passives_taken.has(p.id):
+			available_passives.append(p)
+	available_passives.shuffle()
+	# Always offer at least 1 passive, prefer rare if level is high
+	var passive_count: int = 1 if options.size() >= 2 else 2
+	for p in available_passives.slice(0, passive_count):
+		options.append({
+			type = "passive", id = p.id,
+			rarity = p.rarity, icon = p.icon,
+			label = p.name, desc = p.desc,
+			perk = {},
+		})
 
 	options.shuffle()
 	if options.size() > 3:
@@ -1165,11 +1261,60 @@ func _create_upgrade_panel() -> void:
 
 	upgrade_buttons = []
 	for i in range(upgrade_choices.size()):
+		var c: Dictionary = upgrade_choices[i]
+		var is_rare: bool = c.get("rarity", "common") == "rare"
+
+		# Card container
+		var card := PanelContainer.new()
+		card.custom_minimum_size = Vector2(0, 72)
+		var card_style := StyleBoxFlat.new()
+		card_style.bg_color = Color(0.12, 0.08, 0.20, 0.95) if is_rare else Color(0.08, 0.10, 0.16, 0.95)
+		card_style.border_color = Color(0.9, 0.7, 0.1) if is_rare else Color(0.4, 0.4, 0.6)
+		card_style.border_width_left = 2; card_style.border_width_right = 2
+		card_style.border_width_top = 2; card_style.border_width_bottom = 2
+		card_style.corner_radius_top_left = 6; card_style.corner_radius_top_right = 6
+		card_style.corner_radius_bottom_left = 6; card_style.corner_radius_bottom_right = 6
+		card.add_theme_stylebox_override("panel", card_style)
+
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 10)
+		card.add_child(hbox)
+
+		# Icon + number
+		var icon_lbl := Label.new()
+		icon_lbl.text = "  %s" % c.get("icon", "★")
+		icon_lbl.add_theme_font_size_override("font_size", 28)
+		icon_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		hbox.add_child(icon_lbl)
+
+		var text_vbox := VBoxContainer.new()
+		text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hbox.add_child(text_vbox)
+
+		var name_lbl := Label.new()
+		var rarity_tag: String = "  ◆ RARE" if is_rare else ""
+		name_lbl.text = "[%d] %s%s" % [i + 1, c.label, rarity_tag]
+		name_lbl.add_theme_font_size_override("font_size", 15)
+		var name_color: Color = Color(1.0, 0.85, 0.3) if is_rare else Color(0.9, 0.9, 1.0)
+		name_lbl.add_theme_color_override("font_color", name_color)
+		text_vbox.add_child(name_lbl)
+
+		var desc_lbl := Label.new()
+		desc_lbl.text = c.desc
+		desc_lbl.add_theme_font_size_override("font_size", 12)
+		desc_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.85))
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		text_vbox.add_child(desc_lbl)
+
+		# Invisible button over card
 		var btn := Button.new()
-		btn.text = "[%d] %s — %s" % [i + 1, upgrade_choices[i].label, upgrade_choices[i].desc]
-		btn.custom_minimum_size = Vector2(0, 44)
+		btn.flat = true
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		btn.pressed.connect(_on_upgrade_chosen.bind(i))
-		vbox.add_child(btn)
+		card.add_child(btn)
+
+		vbox.add_child(card)
 		upgrade_buttons.append(btn)
 
 	add_child(panel)
@@ -1178,9 +1323,14 @@ func _on_upgrade_chosen(idx: int) -> void:
 	var choice: Dictionary = upgrade_choices[idx]
 	match choice.type:
 		"weapon_upgrade":
-			for w in active_weapons:
+			for wi in range(active_weapons.size()):
+				var w: Dictionary = active_weapons[wi]
 				if w.id == choice.weapon_id:
 					w.level += 1
+					active_weapons[wi] = w
+					# Apply perk effect to weapon_mods
+					var perk: Dictionary = choice.get("perk", {})
+					_apply_weapon_perk(choice.weapon_id, perk)
 					break
 		"weapon_acquire":
 			var is_baton: bool = choice.weapon_id == "baton"
@@ -1194,14 +1344,51 @@ func _on_upgrade_chosen(idx: int) -> void:
 				reload_timer=0.0
 			})
 		"passive":
+			passives_taken.append(choice.id)
 			match choice.id:
 				"tough":
+					player_max_hp += 3
+					player_hp = player_max_hp  # full heal
+				"tough2":
 					player_max_hp += 2
 					player_hp = mini(player_hp + 2, player_max_hp)
 				"speed":
-					player_speed += 20.0
+					player_speed += 25.0
 				"xp":
-					essence_collect_radius = essence_collect_radius + 20.0
+					essence_collect_radius += 40.0
+				"reload":
+					for wi2 in range(active_weapons.size()):
+						var w2: Dictionary = active_weapons[wi2]
+						# Stored in weapon_mods for fire logic to read
+						var mods: Dictionary = weapon_mods.get(w2.id, {})
+						mods["reload_mult"] = mods.get("reload_mult", 1.0) * 0.7
+						weapon_mods[w2.id] = mods
+				"magplus":
+					for wi3 in range(active_weapons.size()):
+						var w3: Dictionary = active_weapons[wi3]
+						w3.mag_size += 4
+						w3.mag_ammo = mini(w3.mag_ammo + 4, w3.mag_size)
+						active_weapons[wi3] = w3
+				"dodge":
+					var mods_d: Dictionary = weapon_mods.get("_player", {})
+					mods_d["dodge_chance"] = mods_d.get("dodge_chance", 0.0) + 0.1
+					weapon_mods["_player"] = mods_d
+				"burst_move":
+					var mods_bm: Dictionary = weapon_mods.get("_player", {})
+					mods_bm["kill_streak_speed"] = true
+					weapon_mods["_player"] = mods_bm
+				"vamp":
+					var mods_v: Dictionary = weapon_mods.get("_player", {})
+					mods_v["vamp_chance"] = mods_v.get("vamp_chance", 0.0) + 0.2
+					weapon_mods["_player"] = mods_v
+				"elite_dmg":
+					var mods_e: Dictionary = weapon_mods.get("_player", {})
+					mods_e["elite_dmg_bonus"] = mods_e.get("elite_dmg_bonus", 1.0) + 0.3
+					weapon_mods["_player"] = mods_e
+				"corruption_resist":
+					var mods_cr: Dictionary = weapon_mods.get("_player", {})
+					mods_cr["corruption_resist"] = mods_cr.get("corruption_resist", 0.0) + 0.25
+					weapon_mods["_player"] = mods_cr
 
 	paused = false
 	upgrade_choices = []
@@ -1212,6 +1399,55 @@ func _remove_upgrade_panel() -> void:
 	var panel := get_node_or_null("UpgradePanel")
 	if panel:
 		panel.queue_free()
+
+func _apply_weapon_perk(wid: String, perk: Dictionary) -> void:
+	if perk.is_empty():
+		return
+	var mods: Dictionary = weapon_mods.get(wid, {})
+	match perk.get("effect", ""):
+		"fire_rate":
+			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) + perk.value
+		"damage":
+			mods["damage_bonus"] = mods.get("damage_bonus", 0) + int(perk.value)
+		"piercing":
+			mods["piercing"] = true
+		"fire_rate_mag":
+			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.14
+			for wi in range(active_weapons.size()):
+				if active_weapons[wi].id == wid:
+					var w: Dictionary = active_weapons[wi]
+					w.mag_size += 6
+					w.mag_ammo = mini(w.mag_ammo + 6, w.mag_size)
+					active_weapons[wi] = w
+		"pellets":
+			mods["extra_pellets"] = mods.get("extra_pellets", 0) + int(perk.value)
+		"slow":
+			mods["slow_on_hit"] = true
+		"pellets_rate":
+			mods["extra_pellets"] = mods.get("extra_pellets", 0) + 2
+			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.21
+		"bullet_speed":
+			mods["bullet_speed_bonus"] = mods.get("bullet_speed_bonus", 0.0) + perk.value
+		"on_kill_lance":
+			mods["on_kill_lance"] = true
+		"explode":
+			mods["explode_on_hit"] = true
+		"radius":
+			mods["radius_bonus"] = mods.get("radius_bonus", 0.0) + perk.value
+		"damage_knockback":
+			mods["damage_bonus"] = mods.get("damage_bonus", 0) + int(perk.value)
+			mods["knockback"] = true
+		"leech":
+			mods["leech"] = true
+		"chain":
+			mods["chain"] = true
+		"tracking":
+			mods["tracking_mult"] = mods.get("tracking_mult", 1.0) * perk.value
+		"dual":
+			mods["dual_dart"] = true
+		"split_on_kill":
+			mods["split_on_kill"] = true
+	weapon_mods[wid] = mods
 
 # =========================================================
 # DEATH & COMPLETION
