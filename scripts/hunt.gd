@@ -100,11 +100,16 @@ var upgrade_buttons: Array = [] # Node references
 
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
-	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 90, hp = 3, detection = 260, melee_dmg = 1, ranged = false, void_type = false},
-	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 120, hp = 3, detection = 300, melee_dmg = 1, ranged = false, void_type = false},
-	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 75, hp = 5, detection = 320, melee_dmg = 2, ranged = false, void_type = false},
-	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 80, hp = 4, detection = 350, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.6, void_type = false},
-	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 140, hp = 4, detection = 300, melee_dmg = 1, ranged = false, void_type = true},
+	# charge: runs straight at player — dumb, fast, cannon fodder
+	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 100, hp = 3, detection = 280, melee_dmg = 1, ranged = false, void_type = false, behavior = "charge"},
+	# flank: tries to circle and approach from the side
+	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 110, hp = 3, detection = 300, melee_dmg = 1, ranged = false, void_type = false, behavior = "flank"},
+	# burst: slow patrol, then sudden 2.5x speed lunge, pauses after
+	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 65, hp = 6, detection = 320, melee_dmg = 2, ranged = false, void_type = false, behavior = "burst"},
+	# strafe: ranged, sidesteps perpendicular to player while shooting
+	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 70, hp = 4, detection = 360, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.4, void_type = false, behavior = "strafe"},
+	# pack: faster when allies are nearby, swarming behavior
+	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 100, hp = 4, detection = 300, melee_dmg = 1, ranged = false, void_type = true, behavior = "pack"},
 }
 
 const CREATURE_INGREDIENTS: Dictionary = {
@@ -243,6 +248,17 @@ func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGe
 		void_type = def.void_type,
 		is_target = is_target,
 		patrol_target = pos,
+		behavior = def.get("behavior", "charge"),
+		# burst state
+		burst_timer = 0.0,
+		burst_active = false,
+		burst_cooldown = randf_range(1.5, 3.0),
+		# flank state
+		flank_side = 1.0 if rng.randi() % 2 == 0 else -1.0,
+		flank_timer = randf_range(1.0, 2.5),
+		# strafe state
+		strafe_dir = 1.0 if rng.randi() % 2 == 0 else -1.0,
+		strafe_timer = randf_range(0.8, 1.8),
 	}
 	enemies.append(enemy)
 
@@ -508,28 +524,94 @@ func _update_enemies(delta: float) -> void:
 				e.is_aggroed = false
 
 		if e.is_aggroed:
-			# Ranged enemies stay back
-			var min_range := 0.0
-			if e.ranged:
-				min_range = 150.0
-				# Shoot
-				e.ranged_cooldown_timer -= delta
-				if e.ranged_cooldown_timer <= 0.0 and dist_to_player < e.detection:
-					e.ranged_cooldown_timer = e.ranged_cooldown_base
-					var dir: Vector2 = (player_pos - e.pos).normalized()
-					bullets.append({
-						pos = e.pos + dir * (e.radius + 5.0),
-						vel = dir * 250.0,
-						radius = 5.0,
-						color = Color(1.0, 0.3, 0.1),
-						damage = e.ranged_dmg,
-						lifetime = 1.2,
-						from_player = false,
-					})
+			var move_dir := Vector2.ZERO
 
-			if dist_to_player > min_range + e.radius:
-				var dir: Vector2 = (player_pos - e.pos).normalized()
-				var new_pos: Vector2 = e.pos + dir * e.speed * delta
+			match e.behavior:
+				"charge":
+					# Dumb straight-line rush
+					if dist_to_player > e.radius + PLAYER_RADIUS:
+						move_dir = (player_pos - e.pos).normalized()
+
+				"flank":
+					# Circle to the side, then close in
+					e.flank_timer -= delta
+					if e.flank_timer <= 0.0:
+						e.flank_side *= -1.0
+						e.flank_timer = randf_range(1.0, 2.5)
+					var to_player: Vector2 = (player_pos - e.pos).normalized()
+					var perp: Vector2 = Vector2(-to_player.y, to_player.x) * e.flank_side
+					if dist_to_player > 80.0:
+						move_dir = (to_player + perp * 0.7).normalized()
+					else:
+						move_dir = to_player  # close enough, just hit
+
+				"burst":
+					# Slow stalk, then sudden lunge
+					e.burst_timer -= delta
+					if e.burst_active:
+						move_dir = (player_pos - e.pos).normalized()
+						if e.burst_timer <= 0.0:
+							e.burst_active = false
+							e.burst_timer = randf_range(1.5, 3.0)
+					else:
+						# Slow stalk toward player
+						if dist_to_player > e.radius + PLAYER_RADIUS:
+							move_dir = (player_pos - e.pos).normalized() * 0.35
+						if e.burst_timer <= 0.0:
+							e.burst_active = true
+							e.burst_timer = 0.55  # lunge duration
+
+				"strafe":
+					# Ranged: sidestep while shooting, maintain distance
+					e.ranged_cooldown_timer -= delta
+					if e.ranged_cooldown_timer <= 0.0 and dist_to_player < e.detection:
+						e.ranged_cooldown_timer = e.ranged_cooldown_base
+						var shoot_dir: Vector2 = (player_pos - e.pos).normalized()
+						bullets.append({
+							pos = e.pos + shoot_dir * (e.radius + 5.0),
+							vel = shoot_dir * 260.0,
+							radius = 5.0,
+							color = Color(1.0, 0.3, 0.1),
+							damage = e.ranged_dmg,
+							lifetime = 1.4,
+							from_player = false,
+						})
+					e.strafe_timer -= delta
+					if e.strafe_timer <= 0.0:
+						e.strafe_dir *= -1.0
+						e.strafe_timer = randf_range(0.8, 1.8)
+					var to_p: Vector2 = (player_pos - e.pos).normalized()
+					var side: Vector2 = Vector2(-to_p.y, to_p.x) * e.strafe_dir
+					if dist_to_player < 130.0:
+						move_dir = -to_p + side * 0.5  # back away
+					elif dist_to_player > 220.0:
+						move_dir = to_p  # close gap
+					else:
+						move_dir = side  # pure strafe in ideal range
+
+				"pack":
+					# Count nearby allies — speed bonus per ally within 160px
+					var nearby: int = 0
+					for other in enemies:
+						if other.hp > 0 and other.type == e.type and other.pos != e.pos:
+							if e.pos.distance_to(other.pos) < 160.0:
+								nearby += 1
+					var pack_mult: float = 1.0 + nearby * 0.25
+					if dist_to_player > e.radius + PLAYER_RADIUS:
+						move_dir = (player_pos - e.pos).normalized()
+					# Apply pack speed directly here
+					if move_dir != Vector2.ZERO:
+						var new_pos: Vector2 = e.pos + move_dir.normalized() * e.speed * pack_mult * delta
+						new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
+						e.pos = new_pos
+					move_dir = Vector2.ZERO  # handled above
+
+			# Apply movement (non-pack behaviors)
+			if move_dir != Vector2.ZERO:
+				var spd: float = e.speed
+				if e.behavior == "burst" and e.burst_active:
+					spd *= 2.5
+				var new_pos: Vector2 = e.pos + move_dir.normalized() * spd * delta
 				new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 				e.pos = new_pos
 
@@ -785,8 +867,8 @@ func _check_pickups() -> void:
 				_show_message("\u2713 " + p.ingredient_data.name)
 			elif p.type == "essence":
 				essence_collected += 1
-				if essence_collected >= 50:
-					essence_collected -= 50
+				if essence_collected >= 20:
+					essence_collected -= 20
 					_level_up()
 			to_remove.append(i)
 
@@ -1162,7 +1244,7 @@ func _draw() -> void:
 	var xp_bar_y: float = vp_size.y - 20.0
 	var xp_bar_h := 8.0
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), Color(0.1, 0.1, 0.15))
-	var xp_frac: float = float(essence_collected) / 50.0
+	var xp_frac: float = float(essence_collected) / 20.0
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), Color(0.5, 0.0, 0.9))
 	# LV label left of bar
 	_draw_text(Vector2(4.0, xp_bar_y - 4.0), "LV %d" % player_level, Color(0.7, 0.5, 1.0), 12)
