@@ -57,6 +57,13 @@ var target_kills := 0
 var target_total := 0
 var contract_type := ""
 
+# === Wave system ===
+var wave_current := 0
+var wave_total := 0
+var wave_timer := 0.0
+const WAVE_INTERVAL := 22.0  # seconds before forcing next wave
+var wave_targets_remaining := 0  # contract targets left to assign to waves
+
 # === Ingredients collected ===
 var run_ingredients: Array[Dictionary] = []
 
@@ -164,8 +171,12 @@ func _ready() -> void:
 	var base_mag: int = 999 if is_baton else 12
 	active_weapons = [{id=start_wep, level=1, cooldown_timer=0.0, mag_ammo=base_mag + mag_bonus, mag_size=base_mag + mag_bonus, reload_timer=0.0}]
 
+	wave_total = 2 + depth  # Depth 1: 3 waves, Depth 2: 4, Depth 3: 5
+	wave_targets_remaining = target_total
+	wave_timer = WAVE_INTERVAL
+
 	_spawn_obstacles()
-	_spawn_enemies(depth)
+	_spawn_wave(depth)
 
 	set_process_input(true)
 	queue_redraw()
@@ -186,30 +197,72 @@ func _spawn_obstacles() -> void:
 				break
 		obstacles.append({pos = pos, radius = r})
 
-func _spawn_enemies(depth: int) -> void:
+func _update_waves(delta: float) -> void:
+	if exit_spawned or hunt_complete:
+		return
+	if wave_current >= wave_total:
+		return  # all waves done, just wait for targets to die
+
+	# Count living enemies
+	var alive: int = 0
+	for e in enemies:
+		if e.hp > 0:
+			alive += 1
+
+	wave_timer -= delta
+	var force_next: bool = wave_timer <= 0.0
+	var low_enemies: bool = alive <= 3
+
+	if force_next or low_enemies:
+		var depth: int = GameData.current_contract.get("depth", 1)
+		_spawn_wave(depth)
+
+func _spawn_wave(depth: int) -> void:
+	wave_current += 1
+	wave_timer = WAVE_INTERVAL
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var types_list: Array = CREATURE_DEFS.keys()
+	var wave_idx: int = wave_current  # 1-based
 
-	# Spawn target creatures
-	var target_count: int = target_total
-	for i in range(target_count):
+	# Show wave message (except wave 1 — no announcement at match start)
+	if wave_idx > 1:
+		_show_message("-- WAVE %d --" % wave_idx)
+
+	# Targets: spread across waves. Wave 1 gets ~half, later waves get remainder evenly.
+	var targets_this_wave := 0
+	if wave_idx == 1:
+		targets_this_wave = max(1, int(ceil(float(wave_targets_remaining) * 0.5)))
+	else:
+		var waves_left: int = wave_total - wave_idx + 1
+		targets_this_wave = max(0, int(ceil(float(wave_targets_remaining) / float(max(waves_left, 1)))))
+	targets_this_wave = min(targets_this_wave, wave_targets_remaining)
+	wave_targets_remaining -= targets_this_wave
+	for i in range(targets_this_wave):
 		_spawn_single_enemy(contract_type, true, rng)
 
-	# Spawn filler creatures — scales with depth for map density
-	# Depth 1: ~12, Depth 2: ~18, Depth 3: ~24 fillers
-	var filler_count: int = 10 + depth * 6 + rng.randi_range(0, 4)
+	# Filler: scales with wave number and depth
+	# Wave 1: base. Each subsequent wave: +4 fillers and faster (5% speed bonus per wave).
+	var base_fillers: int = 8 + depth * 4
+	var filler_count: int = base_fillers + (wave_idx - 1) * 4 + rng.randi_range(0, 3)
 	var filler_types: Array = []
 	for t in types_list:
 		if t != contract_type:
 			filler_types.append(t)
+	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
 		var ft: String = filler_types[rng.randi_range(0, filler_types.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
-	# Pre-aggro roughly 40% of all fillers — they hunt the player from the start
-	var aggro_count: int = int(filler_count * 0.4)
-	for i in range(min(aggro_count, enemies.size())):
+	# Apply wave speed bonus to newly spawned enemies
+	var speed_mult: float = 1.0 + (wave_idx - 1) * 0.08
+	for i in range(spawn_start, enemies.size()):
+		enemies[i].speed *= speed_mult
+
+	# Pre-aggro ~50% of new wave — they rush immediately
+	var new_count: int = enemies.size() - spawn_start
+	var aggro_count: int = int(new_count * 0.5)
+	for i in range(spawn_start, spawn_start + aggro_count):
 		enemies[i].is_aggroed = true
 		enemies[i].aggro_origin = enemies[i].pos
 
@@ -325,6 +378,7 @@ func _process(delta: float) -> void:
 	_update_hud_message(delta)
 	_apply_corruption_effects()
 	_update_aoe_flashes(delta)
+	_update_waves(delta)
 
 	queue_redraw()
 
@@ -783,7 +837,7 @@ func _on_enemy_killed(idx: int) -> void:
 	if e.is_target:
 		target_kills += 1
 		_show_message("Target down! %d/%d" % [target_kills, target_total])
-		if target_kills >= target_total and not exit_spawned:
+		if target_kills >= target_total and wave_current >= wave_total and not exit_spawned:
 			_spawn_exit()
 
 func _drop_ingredient(enemy: Dictionary) -> void:
@@ -1222,8 +1276,8 @@ func _draw() -> void:
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
-	var target_text := "Targets: %d/%d" % [target_kills, target_total]
-	_draw_text(Vector2(vp_size.x * 0.5 - 50.0, 16.0), target_text, Color.WHITE, 14)
+	var target_text := "Targets: %d/%d  |  Wave %d/%d" % [target_kills, target_total, wave_current, wave_total]
+	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
 
 	# Corruption meter (top right)
 	var corr_x: float = vp_size.x - 92.0
