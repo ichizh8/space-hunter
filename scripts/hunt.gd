@@ -1393,6 +1393,10 @@ func _on_upgrade_chosen(idx: int) -> void:
 	paused = false
 	upgrade_choices = []
 	upgrade_buttons = []
+	# Reset joystick — the panel consumed the touch-release event, finger is stuck
+	joy_active = false
+	joy_touch_index = -1
+	joy_knob = Vector2.ZERO
 	call_deferred("_remove_upgrade_panel")
 
 func _remove_upgrade_panel() -> void:
