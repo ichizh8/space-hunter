@@ -727,6 +727,9 @@ func _draw() -> void:
 		# Target indicator
 		if e.is_target:
 			draw_arc(sp, e.radius + 4.0, 0.0, TAU, 16, Color(1.0, 1.0, 0.0, 0.6), 1.5)
+		# Name label — short name above HP bar
+		var short_name: String = e.type.split(" ")[0]
+		_draw_text(Vector2(sp.x - e.radius, sp.y - e.radius - 18.0), short_name, Color(1.0, 1.0, 1.0, 0.75), 10)
 
 	# Bullets
 	for b in bullets:
