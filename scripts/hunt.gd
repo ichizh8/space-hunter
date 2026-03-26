@@ -294,8 +294,7 @@ func _spawn_wave(depth: int) -> void:
 	rng.randomize()
 	var types_list: Array = CREATURE_DEFS.keys()
 
-	if wave_current > 1:
-		_show_message("Wave %d" % wave_current)
+	pass  # no wave announcement — elites announce themselves
 
 	# Filler only — no targets in waves. Ramps: +2 per wave, capped at wave 10.
 	var effective_wave: int = min(wave_current, 10)
@@ -1655,7 +1654,7 @@ func _draw() -> void:
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
-	var target_text := "Ingredients: %d/%d  |  Wave %d" % [target_kills, target_total, wave_current]
+	var target_text := "Ingredients: %d/%d" % [target_kills, target_total]
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
 
 	# Corruption meter (top right)
