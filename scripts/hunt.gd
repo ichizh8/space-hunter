@@ -43,6 +43,9 @@ var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
 # {pos, type} for essence
 var pickups: Array[Dictionary] = []
 
+# === Ingredient pickups (Phase 3 — pristine quality) ===
+var ingredient_pickups: Array[Dictionary] = []
+
 # === AOE flashes ===
 var aoe_flashes: Array[Dictionary] = []
 
@@ -120,6 +123,14 @@ const INGREDIENT_COLORS: Dictionary = {
 	"ingredient_rift_spore": Color(0.9, 0.5, 0.1),
 }
 
+const PRISTINE_NAMES: Dictionary = {
+	"void_extract": "Void Extract (Pure)",
+	"shadow_membrane": "Shadow Membrane (Intact)",
+	"abyss_flesh": "Abyss Flesh (Raw)",
+	"nether_bile": "Nether Bile (Distilled)",
+	"rift_spore": "Rift Spore",
+}
+
 
 # =========================================================
 # READY
@@ -131,7 +142,22 @@ func _ready() -> void:
 	var depth: int = contract.get("depth", 1)
 	target_total = 3 + depth
 
-	active_weapons = [{id="sidearm", level=1, cooldown_timer=0.0, mag_ammo=12, mag_size=12, reload_timer=0.0}]
+	# Apply ship upgrades
+	var hp_bonus: int = SaveManager.data.ship_upgrades.get("max_hp", 0) * 2
+	player_max_hp = 10 + hp_bonus
+	player_hp = player_max_hp
+
+	var mag_bonus: int = SaveManager.data.ship_upgrades.get("mag_size", 0) * 3
+	var xp_bonus: float = SaveManager.data.ship_upgrades.get("xp_rate", 0) * 0.1
+	essence_collect_radius = 60.0 + (60.0 * xp_bonus)
+
+	# Starting weapon from loadout
+	var start_wep: String = GameData.starting_weapon
+	if start_wep.is_empty() or not WEAPON_DEFS.has(start_wep):
+		start_wep = "sidearm"
+	var is_baton: bool = start_wep == "baton"
+	var base_mag: int = 999 if is_baton else 12
+	active_weapons = [{id=start_wep, level=1, cooldown_timer=0.0, mag_ammo=base_mag + mag_bonus, mag_size=base_mag + mag_bonus, reload_timer=0.0}]
 
 	_spawn_obstacles()
 	_spawn_enemies(depth)
@@ -648,12 +674,17 @@ func _on_enemy_killed(idx: int) -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
 
-	# Spawn ingredient pickup
+	# Spawn ingredient pickup (Phase 3 — pristine quality)
 	if CREATURE_INGREDIENTS.has(e.type):
-		var ing_data: Dictionary = CREATURE_INGREDIENTS[e.type].duplicate()
-		var ing_color: Color = INGREDIENT_COLORS.get(ing_data.id, Color.WHITE)
-		pickups.append({pos = death_pos + Vector2(10, 0), type = "ingredient", color = ing_color, ingredient_data = ing_data})
-		_show_message("+ " + ing_data.name)
+		var ing_def: Dictionary = CREATURE_INGREDIENTS[e.type]
+		# Extract base ingredient id (strip "ingredient_" prefix)
+		var base_id: String = ing_def.id.replace("ingredient_", "")
+		_drop_ingredient({
+			ingredient_id = base_id,
+			void_type = CREATURE_DEFS[e.type].void_type,
+			pos = death_pos + Vector2(10, 0),
+			color = INGREDIENT_COLORS.get(ing_def.id, Color.WHITE),
+		})
 
 	# Spawn essence
 	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
@@ -664,6 +695,43 @@ func _on_enemy_killed(idx: int) -> void:
 		_show_message("Target down! %d/%d" % [target_kills, target_total])
 		if target_kills >= target_total and not exit_spawned:
 			_spawn_exit()
+
+func _drop_ingredient(enemy: Dictionary) -> void:
+	var ing_id: String = enemy.get("ingredient_id", "")
+	if ing_id.is_empty():
+		return
+
+	var is_void_creature: bool = enemy.get("void_type", false)
+	var is_pristine: bool = false
+
+	if not is_void_creature and corruption < 15.0:
+		is_pristine = randf() < 0.4
+	elif not is_void_creature and corruption < 35.0:
+		is_pristine = randf() < 0.1
+
+	var display_name: String
+	if is_pristine:
+		display_name = PRISTINE_NAMES.get(ing_id, ing_id + " (Pure)")
+	else:
+		display_name = ing_id.replace("_", " ").capitalize()
+
+	var drop: Dictionary = {
+		id = "ingredient_" + ing_id + ("_pristine" if is_pristine else ""),
+		name = display_name,
+		is_pristine = is_pristine,
+		ingredient = true,
+		uses = 1,
+	}
+
+	ingredient_pickups.append({
+		pos = enemy.pos,
+		data = drop,
+		collected = false,
+		pulse_phase = randf() * TAU,
+		color = enemy.get("color", Color.WHITE),
+	})
+
+	_show_message("+ " + display_name)
 
 func _spawn_exit() -> void:
 	exit_spawned = true
@@ -711,6 +779,18 @@ func _check_pickups() -> void:
 	to_remove.sort()
 	for idx in range(to_remove.size() - 1, -1, -1):
 		pickups.remove_at(to_remove[idx])
+
+	# Ingredient pickups (Phase 3)
+	for i in range(ingredient_pickups.size()):
+		var ip: Dictionary = ingredient_pickups[i]
+		if ip.collected:
+			continue
+		if player_pos.distance_to(ip.pos) < 30.0:
+			ip.collected = true
+			ingredient_pickups[i] = ip
+			run_ingredients.append(ip.data)
+			var msg_color: Color = Color(0.4, 1.0, 0.6) if ip.data.get("is_pristine", false) else Color(0.4, 1.0, 0.4)
+			_show_message("Collected " + ip.data.name)
 
 # =========================================================
 # LEVEL UP
@@ -822,11 +902,13 @@ func _on_upgrade_chosen(idx: int) -> void:
 					break
 		"weapon_acquire":
 			var is_baton: bool = choice.weapon_id == "baton"
+			var acq_mag_bonus: int = SaveManager.data.ship_upgrades.get("mag_size", 0) * 3
+			var acq_base: int = 999 if is_baton else 12 + acq_mag_bonus
 			active_weapons.append({
 				id=choice.weapon_id, level=1,
 				cooldown_timer=0.0,
-				mag_ammo=999 if is_baton else 12,
-				mag_size=999 if is_baton else 12,
+				mag_ammo=acq_base,
+				mag_size=acq_base,
 				reload_timer=0.0
 			})
 		"passive":
@@ -862,15 +944,19 @@ func _complete_hunt() -> void:
 	var contract: Dictionary = GameData.current_contract
 	var reward: int = contract.get("reward", 50)
 	var corr: int = int(corruption)
+	var pristine_count: int = run_ingredients.filter(func(i): return i.get("is_pristine", false)).size()
 	SaveManager.complete_contract(reward, corr)
 	GameData.set_hunt_result(reward, corr, run_ingredients.size(), run_ingredients)
+	GameData.hunt_result["pristine_count"] = pristine_count
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 func _finish_hunt(credits: int) -> void:
 	var corr: int = int(corruption)
+	var pristine_count: int = run_ingredients.filter(func(i): return i.get("is_pristine", false)).size()
 	if credits == 0:
 		SaveManager.complete_contract(0, corr)
 		GameData.set_hunt_result(0, corr, 0)
+		GameData.hunt_result["pristine_count"] = pristine_count
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 # =========================================================
@@ -950,6 +1036,27 @@ func _draw() -> void:
 			# Glow ring
 			draw_circle(sp, 14.0, Color(0.5, 0.0, 0.8, 0.3))
 			draw_circle(sp, 10.0, Color(0.5, 0.0, 0.8))
+
+	# Ingredient pickups (Phase 3)
+	var time_sec: float = Time.get_ticks_msec() * 0.001
+	for ip in ingredient_pickups:
+		if ip.collected:
+			continue
+		var sp: Vector2 = _w2s(ip.pos)
+		var is_pristine: bool = ip.data.get("is_pristine", false)
+		var pickup_color: Color = Color(0.9, 0.9, 0.2) if is_pristine else ip.get("color", Color.WHITE)
+		# Main square
+		draw_rect(Rect2(sp - Vector2(8, 8), Vector2(16, 16)), pickup_color)
+		# Pulsing outline
+		var ip_pulse: float = 0.3 + 0.4 * sin(ip.pulse_phase + time_sec * 4.0)
+		var outline_size := Vector2(20, 20)
+		draw_rect(Rect2(sp - outline_size * 0.5, outline_size), Color(pickup_color.r, pickup_color.g, pickup_color.b, ip_pulse), false, 1.5)
+		# Pristine sparkle — 4 orbiting dots
+		if is_pristine:
+			for si in range(4):
+				var angle: float = ip.pulse_phase + time_sec * 2.5 + si * TAU * 0.25
+				var sparkle_pos: Vector2 = sp + Vector2(cos(angle), sin(angle)) * 14.0
+				draw_circle(sparkle_pos, 2.0, Color(1.0, 1.0, 0.6, 0.8))
 
 	# Enemies
 	for e in enemies:

@@ -31,6 +31,27 @@ func complete_contract(credits: int, corruption: int) -> void:
 	data.contracts_completed += 1
 	save_game()
 
+func buy_upgrade(upgrade_id: String, cost: int) -> bool:
+	if data.total_credits < cost:
+		return false
+	data.total_credits -= cost
+	data.ship_upgrades[upgrade_id] += 1
+	save_game()
+	return true
+
+func add_stock(item_id: String, amount: int) -> void:
+	var current: int = data.stock.get(item_id, 0)
+	data.stock[item_id] = current + amount
+	save_game()
+
+func consume_stock(item_id: String) -> bool:
+	var current: int = data.stock.get(item_id, 0)
+	if current <= 0:
+		return false
+	data.stock[item_id] = current - 1
+	save_game()
+	return true
+
 func add_ingredients(arr: Array) -> void:
 	for item in arr:
 		var ingredient_id: String = item.get("id", "").replace("ingredient_", "")

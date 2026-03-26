@@ -34,45 +34,4 @@ theme_override_constants/margin_bottom = 40
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 20
-
-[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "The Wanderer — Your Ship"
-horizontal_alignment = 1
-
-[node name="StatsLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "Credits: 0 | Corruption: 0 | Contracts: 0"
-horizontal_alignment = 1
-
-[node name="Separator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="PantryTitle" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "Pantry"
-horizontal_alignment = 1
-
-[node name="PantryLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "(empty)"
-horizontal_alignment = 1
-
-[node name="Separator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="ContractButton" type="Button" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 60)
-text = "Contract Board"
-
-[node name="CookButton" type="Button" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 60)
-text = "Cook"
-
-[node name="CookStatusLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = ""
-horizontal_alignment = 1
+theme_override_constants/separation = 12

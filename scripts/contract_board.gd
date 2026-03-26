@@ -37,4 +37,4 @@ func _build_contract_buttons() -> void:
 
 func _on_contract_selected(index: int) -> void:
 	GameData.set_current_contract(contracts[index])
-	get_tree().change_scene_to_file("res://scenes/Hunt.tscn")
+	get_tree().change_scene_to_file("res://scenes/Loadout.tscn")
