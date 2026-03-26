@@ -53,16 +53,22 @@ var aoe_flashes: Array[Dictionary] = []
 var essence_collect_radius: float = 60.0
 
 # === Contract tracking ===
-var target_kills := 0
-var target_total := 0
+var target_kills := 0   # elites killed
+var target_total := 0   # elites required
 var contract_type := ""
 
-# === Wave system ===
+# === Wave system (infinite) ===
 var wave_current := 0
-var wave_total := 0
 var wave_timer := 0.0
-const WAVE_INTERVAL := 22.0  # seconds before forcing next wave
-var wave_targets_remaining := 0  # contract targets left to assign to waves
+var hunt_elapsed := 0.0   # total seconds in hunt
+const WAVE_INTERVAL_START := 20.0
+const WAVE_INTERVAL_MIN   := 8.0
+
+# === Elite system ===
+var elite_timer := 0.0
+var elite_interval := 0.0   # set on ready: 180-300s
+var elite_spawned_count := 0
+const ELITE_TYPES: Array = ["Void Hulk", "Phase Hunter", "Brood Mother"]
 
 # === Ingredients collected ===
 var run_ingredients: Array[Dictionary] = []
@@ -171,9 +177,10 @@ func _ready() -> void:
 	var base_mag: int = 999 if is_baton else 12
 	active_weapons = [{id=start_wep, level=1, cooldown_timer=0.0, mag_ammo=base_mag + mag_bonus, mag_size=base_mag + mag_bonus, reload_timer=0.0}]
 
-	wave_total = 2 + depth  # Depth 1: 3 waves, Depth 2: 4, Depth 3: 5
-	wave_targets_remaining = target_total
-	wave_timer = WAVE_INTERVAL
+	# Elite interval: first elite at 3-5 min (shorter at higher depth)
+	elite_interval = randf_range(180.0 - depth * 30.0, 300.0 - depth * 30.0)
+	elite_timer = elite_interval
+	wave_timer = WAVE_INTERVAL_START
 
 	_spawn_obstacles()
 	_spawn_wave(depth)
@@ -200,71 +207,123 @@ func _spawn_obstacles() -> void:
 func _update_waves(delta: float) -> void:
 	if exit_spawned or hunt_complete:
 		return
-	if wave_current >= wave_total:
-		return  # all waves done, just wait for targets to die
 
-	# Count living enemies
+	hunt_elapsed += delta
+
+	# Count living non-elite enemies
 	var alive: int = 0
 	for e in enemies:
-		if e.hp > 0:
+		if e.hp > 0 and not e.get("is_elite", false):
 			alive += 1
 
+	# Wave timer shrinks over time — ramps up pressure
 	wave_timer -= delta
+	var wave_interval: float = maxf(WAVE_INTERVAL_MIN, WAVE_INTERVAL_START - wave_current * 1.5)
 	var force_next: bool = wave_timer <= 0.0
 	var low_enemies: bool = alive <= 3
 
 	if force_next or low_enemies:
 		var depth: int = GameData.current_contract.get("depth", 1)
 		_spawn_wave(depth)
+		wave_timer = wave_interval
+
+	# Elite timer — spawn one elite at interval, then reset
+	elite_timer -= delta
+	if elite_timer <= 0.0:
+		elite_timer = elite_interval * 0.7  # subsequent elites come faster
+		var depth: int = GameData.current_contract.get("depth", 1)
+		_spawn_elite(depth)
 
 func _spawn_wave(depth: int) -> void:
 	wave_current += 1
-	wave_timer = WAVE_INTERVAL
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var types_list: Array = CREATURE_DEFS.keys()
-	var wave_idx: int = wave_current  # 1-based
 
-	# Show wave message (except wave 1 — no announcement at match start)
-	if wave_idx > 1:
-		_show_message("-- WAVE %d --" % wave_idx)
+	if wave_current > 1:
+		_show_message("Wave %d" % wave_current)
 
-	# Targets: spread across waves. Wave 1 gets ~half, later waves get remainder evenly.
-	var targets_this_wave := 0
-	if wave_idx == 1:
-		targets_this_wave = max(1, int(ceil(float(wave_targets_remaining) * 0.5)))
-	else:
-		var waves_left: int = wave_total - wave_idx + 1
-		targets_this_wave = max(0, int(ceil(float(wave_targets_remaining) / float(max(waves_left, 1)))))
-	targets_this_wave = min(targets_this_wave, wave_targets_remaining)
-	wave_targets_remaining -= targets_this_wave
-	for i in range(targets_this_wave):
-		_spawn_single_enemy(contract_type, true, rng)
-
-	# Filler: scales with wave number and depth
-	# Wave 1: base. Each subsequent wave: +4 fillers and faster (5% speed bonus per wave).
-	var base_fillers: int = 8 + depth * 4
-	var filler_count: int = base_fillers + (wave_idx - 1) * 4 + rng.randi_range(0, 3)
-	var filler_types: Array = []
-	for t in types_list:
-		if t != contract_type:
-			filler_types.append(t)
+	# Filler only — no targets in waves. Ramps: +2 per wave, capped at wave 10.
+	var effective_wave: int = min(wave_current, 10)
+	var base_fillers: int = 6 + depth * 3
+	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
-		var ft: String = filler_types[rng.randi_range(0, filler_types.size() - 1)]
+		var ft: String = types_list[rng.randi_range(0, types_list.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
-	# Apply wave speed bonus to newly spawned enemies
-	var speed_mult: float = 1.0 + (wave_idx - 1) * 0.08
+	# Each wave is 8% faster than previous, capped at wave 8
+	var speed_mult: float = 1.0 + min(effective_wave - 1, 7) * 0.08
 	for i in range(spawn_start, enemies.size()):
 		enemies[i].speed *= speed_mult
 
-	# Pre-aggro ~50% of new wave — they rush immediately
+	# Pre-aggro 60% — most rush immediately
 	var new_count: int = enemies.size() - spawn_start
-	var aggro_count: int = int(new_count * 0.5)
+	var aggro_count: int = int(new_count * 0.6)
 	for i in range(spawn_start, spawn_start + aggro_count):
 		enemies[i].is_aggroed = true
 		enemies[i].aggro_origin = enemies[i].pos
+
+func _spawn_elite(depth: int) -> void:
+	elite_spawned_count += 1
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	# Pick elite type — cycle through types, add some randomness
+	var elite_type: String = ELITE_TYPES[(elite_spawned_count - 1) % ELITE_TYPES.size()]
+	if rng.randf() < 0.3:
+		elite_type = ELITE_TYPES[rng.randi_range(0, ELITE_TYPES.size() - 1)]
+
+	_show_message("⚠ ELITE: %s approaching!" % elite_type)
+
+	# Find a spawn point far from player
+	var pos := Vector2.ZERO
+	for _try in range(40):
+		pos = Vector2(rng.randf_range(80.0, WORLD_W - 80.0), rng.randf_range(80.0, WORLD_H - 80.0))
+		if pos.distance_to(player_pos) >= 350.0:
+			var blocked := false
+			for obs in obstacles:
+				if pos.distance_to(obs.pos) < obs.radius + 30.0:
+					blocked = true
+					break
+			if not blocked:
+				break
+
+	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
+
+	var elite: Dictionary = {
+		type = elite_type,
+		pos = pos,
+		hp = int(20.0 * hp_scale),
+		max_hp = int(20.0 * hp_scale),
+		speed = 55.0 + depth * 10.0,
+		radius = 20.0,
+		color = Color(1.0, 0.85, 0.1),  # gold
+		detection = 600.0,
+		melee_dmg = 2 + depth,
+		leash = 9999.0,  # never leash — always hunt
+		aggro_origin = pos,
+		is_aggroed = true,
+		ranged = false,
+		ranged_dmg = 0,
+		ranged_cooldown_base = 2.0,
+		ranged_cooldown_timer = 0.0,
+		void_type = false,
+		is_target = true,
+		is_elite = true,
+		elite_type = elite_type,
+		patrol_target = pos,
+		behavior = "elite",
+		# behavior state
+		burst_timer = 0.0, burst_active = false, burst_cooldown = 2.0,
+		flank_side = 1.0, flank_timer = 1.5,
+		strafe_dir = 1.0, strafe_timer = 1.0,
+		# elite-specific state
+		phase_timer = 0.0,    # Phase Hunter teleport
+		brood_triggered = false,  # Brood Mother add spawn
+		charge_timer = 0.0,   # Void Hulk slam cooldown
+	}
+	enemies.append(elite)
 
 func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator) -> void:
 	var def: Dictionary = CREATURE_DEFS[type_name]
@@ -660,6 +719,64 @@ func _update_enemies(delta: float) -> void:
 						e.pos = new_pos
 					move_dir = Vector2.ZERO  # handled above
 
+				"elite":
+					var etype: String = e.get("elite_type", "Void Hulk")
+					if etype == "Void Hulk":
+						# Slow relentless charge + ground slam
+						e.charge_timer -= delta
+						move_dir = (player_pos - e.pos).normalized()
+						if e.charge_timer <= 0.0 and dist_to_player < 120.0:
+							e.charge_timer = 4.0
+							aoe_flashes.append({pos = e.pos, radius = 100.0, timer = 0.3, color = Color(1.0, 0.3, 0.0, 0.5)})
+							player_hp -= 2
+							_show_message("SLAM! -2 HP")
+							if player_hp <= 0:
+								_die()
+					elif etype == "Phase Hunter":
+						# Ranged + teleports every 4s
+						e.phase_timer -= delta
+						e.ranged_cooldown_timer -= delta
+						if e.phase_timer <= 0.0:
+							e.phase_timer = 4.0
+							var rng2 := RandomNumberGenerator.new()
+							rng2.randomize()
+							var new_p := Vector2(rng2.randf_range(80.0, WORLD_W - 80.0), rng2.randf_range(80.0, WORLD_H - 80.0))
+							if new_p.distance_to(player_pos) < 200.0:
+								new_p = player_pos + (new_p - player_pos).normalized() * 280.0
+							e.pos = new_p
+							aoe_flashes.append({pos = e.pos, radius = 40.0, timer = 0.2, color = Color(0.5, 0.1, 1.0, 0.8)})
+						if e.ranged_cooldown_timer <= 0.0:
+							e.ranged_cooldown_timer = 1.2
+							var shoot_dir: Vector2 = (player_pos - e.pos).normalized()
+							for spread_f in [-0.2, 0.0, 0.2]:
+								var sd: Vector2 = shoot_dir.rotated(spread_f)
+								bullets.append({pos = e.pos + sd * 25.0, vel = sd * 300.0, radius = 6.0,
+									color = Color(0.8, 0.2, 1.0), damage = 2, lifetime = 1.5, from_player = false})
+						var to_p2: Vector2 = (player_pos - e.pos).normalized()
+						move_dir = Vector2(-to_p2.y, to_p2.x)  # orbit
+					elif etype == "Brood Mother":
+						# Ranged + spawns adds at 50% HP
+						e.ranged_cooldown_timer -= delta
+						if e.ranged_cooldown_timer <= 0.0:
+							e.ranged_cooldown_timer = 1.8
+							var sd2: Vector2 = (player_pos - e.pos).normalized()
+							bullets.append({pos = e.pos + sd2 * 25.0, vel = sd2 * 220.0, radius = 6.0,
+								color = Color(0.9, 0.1, 0.5), damage = 2, lifetime = 1.6, from_player = false})
+						if not e.brood_triggered and float(e.hp) / float(e.max_hp) <= 0.5:
+							e.brood_triggered = true
+							_show_message("Brood Mother calls her spawn!")
+							var rng3 := RandomNumberGenerator.new()
+							rng3.randomize()
+							for _add in range(4):
+								_spawn_single_enemy("Rift Parasite", false, rng3)
+								enemies[-1].is_aggroed = true
+						var to_p3: Vector2 = (player_pos - e.pos).normalized()
+						var side3: Vector2 = Vector2(-to_p3.y, to_p3.x)
+						if dist_to_player < 200.0:
+							move_dir = -to_p3 + side3 * 0.5
+						else:
+							move_dir = side3
+
 			# Apply movement (non-pack behaviors)
 			if move_dir != Vector2.ZERO:
 				var spd: float = e.speed
@@ -818,27 +935,42 @@ func _on_enemy_killed(idx: int) -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
 
-	# Spawn ingredient pickup (Phase 3 — pristine quality)
-	if CREATURE_INGREDIENTS.has(e.type):
-		var ing_def: Dictionary = CREATURE_INGREDIENTS[e.type]
-		# Extract base ingredient id (strip "ingredient_" prefix)
-		var base_id: String = ing_def.id.replace("ingredient_", "")
-		_drop_ingredient({
-			ingredient_id = base_id,
-			void_type = CREATURE_DEFS[e.type].void_type,
-			pos = death_pos + Vector2(10, 0),
-			color = INGREDIENT_COLORS.get(ing_def.id, Color.WHITE),
+	# Elites: drop ingredient guaranteed + big essence burst
+	if e.get("is_elite", false):
+		_show_message("Elite down! Ingredient dropped!")
+		# Drop a big essence burst
+		for _b in range(5):
+			pickups.append({pos = death_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20)), type = "essence"})
+		# Drop ingredient based on elite type
+		var elite_ingredient_map := {
+			"Void Hulk": "void_extract",
+			"Phase Hunter": "nether_bile",
+			"Brood Mother": "rift_spore",
+		}
+		var ing_id: String = elite_ingredient_map.get(e.elite_type, "void_extract")
+		var ing_color: Color = INGREDIENT_COLORS.get("ingredient_" + ing_id, Color.GOLD)
+		ingredient_pickups.append({
+			pos = death_pos,
+			data = {
+				id = "ingredient_" + ing_id + "_pristine",
+				name = ing_id.replace("_", " ").capitalize() + " (Pure)",
+				is_pristine = true,
+				ingredient = true,
+				uses = 1,
+			},
+			collected = false,
+			pulse_phase = 0.0,
+			color = ing_color,
 		})
-
-	# Spawn essence
-	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
-
-	# Track target kills
-	if e.is_target:
+		# Track contract progress
 		target_kills += 1
-		_show_message("Target down! %d/%d" % [target_kills, target_total])
-		if target_kills >= target_total and wave_current >= wave_total and not exit_spawned:
+		_show_message("Ingredients: %d/%d" % [target_kills, target_total])
+		if target_kills >= target_total and not exit_spawned:
 			_spawn_exit()
+		return
+
+	# Regular enemies: essence only (no ingredients)
+	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
 
 func _drop_ingredient(enemy: Dictionary) -> void:
 	var ing_id: String = enemy.get("ingredient_id", "")
@@ -1213,20 +1345,27 @@ func _draw() -> void:
 		if e.hp <= 0:
 			continue
 		var sp: Vector2 = _w2s(e.pos)
+		var is_elite: bool = e.get("is_elite", false)
 		draw_circle(sp, e.radius, e.color)
-		# HP bar above enemy
-		var bar_w: float = e.radius * 2.0
-		var bar_h := 3.0
-		var bar_pos := Vector2(sp.x - bar_w * 0.5, sp.y - e.radius - 8.0)
+		if is_elite:
+			# Pulsing gold double ring for elites
+			var pulse: float = 0.6 + sin(hunt_elapsed * 4.0) * 0.3
+			draw_arc(sp, e.radius + 5.0, 0.0, TAU, 32, Color(1.0, 0.85, 0.1, pulse), 2.5)
+			draw_arc(sp, e.radius + 10.0, 0.0, TAU, 32, Color(1.0, 0.5, 0.0, pulse * 0.5), 1.5)
+		# HP bar — bigger for elites
+		var bar_w: float = e.radius * (3.0 if is_elite else 2.0)
+		var bar_h: float = 5.0 if is_elite else 3.0
+		var bar_pos := Vector2(sp.x - bar_w * 0.5, sp.y - e.radius - 10.0)
 		draw_rect(Rect2(bar_pos, Vector2(bar_w, bar_h)), Color(0.3, 0.3, 0.3))
 		var hp_frac: float = float(e.hp) / float(e.max_hp)
-		draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, bar_h)), Color(0.9, 0.2, 0.2))
-		# Target indicator
-		if e.is_target:
-			draw_arc(sp, e.radius + 4.0, 0.0, TAU, 16, Color(1.0, 1.0, 0.0, 0.6), 1.5)
-		# Name label — short name above HP bar
-		var short_name: String = e.type.split(" ")[0]
-		_draw_text(Vector2(sp.x - e.radius, sp.y - e.radius - 18.0), short_name, Color(1.0, 1.0, 1.0, 0.75), 10)
+		var hp_color: Color = Color(1.0, 0.7, 0.0) if is_elite else Color(0.9, 0.2, 0.2)
+		draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, bar_h)), hp_color)
+		# Label — elite gets full name in gold, regular gets short name
+		if is_elite:
+			_draw_text(Vector2(sp.x - e.radius - 10.0, sp.y - e.radius - 22.0), "★ " + e.type, Color(1.0, 0.9, 0.3), 11)
+		else:
+			var short_name: String = e.type.split(" ")[0]
+			_draw_text(Vector2(sp.x - e.radius, sp.y - e.radius - 18.0), short_name, Color(1.0, 1.0, 1.0, 0.75), 10)
 
 	# Bullets
 	for b in bullets:
@@ -1276,7 +1415,7 @@ func _draw() -> void:
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
-	var target_text := "Targets: %d/%d  |  Wave %d/%d" % [target_kills, target_total, wave_current, wave_total]
+	var target_text := "Ingredients: %d/%d  |  Wave %d" % [target_kills, target_total, wave_current]
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
 
 	# Corruption meter (top right)
