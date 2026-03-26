@@ -11,10 +11,15 @@ var player_hp := 10
 var player_max_hp := 10
 var player_speed := 180.0
 const PLAYER_RADIUS := 16.0
-var sidearm_ammo := 12
+# === Magazine ===
+var mag_size := 12
+var mag_ammo := 12
+var reload_time := 1.5
+var reload_timer := 0.0
+var is_reloading := false
 
 # === Attack ===
-var attack_cooldown_base := 0.5
+var attack_cooldown_base := 0.35
 var attack_cooldown_timer := 0.0
 var bullet_damage := 3
 
@@ -102,7 +107,7 @@ const INGREDIENT_COLORS: Dictionary = {
 
 const ALL_UPGRADES: Array = [
 	{id = "ammo", label = "Piercing Rounds (+1 dmg)"},
-	{id = "reload", label = "Quick Reload"},
+	{id = "reload", label = "Quick Reload (faster reload + fire)"},
 	{id = "tough", label = "Tougher (+2 HP)"},
 	{id = "speed", label = "Speed Boost"},
 	{id = "damage", label = "Big Shots (+1)"},
@@ -307,8 +312,24 @@ func _update_camera() -> void:
 	camera_offset.y = clampf(camera_offset.y, 0.0, WORLD_H - vp_size.y)
 
 func _auto_attack(delta: float) -> void:
+	# Handle reload
+	if is_reloading:
+		reload_timer -= delta
+		if reload_timer <= 0.0:
+			is_reloading = false
+			mag_ammo = mag_size
+			_show_message("Reloaded!")
+		return
+
 	attack_cooldown_timer -= delta
 	if attack_cooldown_timer > 0.0:
+		return
+
+	# Out of ammo — start reload
+	if mag_ammo <= 0:
+		is_reloading = true
+		reload_timer = reload_time
+		_show_message("Reloading...")
 		return
 
 	# Find nearest enemy
@@ -328,6 +349,7 @@ func _auto_attack(delta: float) -> void:
 		return
 
 	# Fire bullet
+	mag_ammo -= 1
 	attack_cooldown_timer = attack_cooldown_base
 	var dir: Vector2 = (nearest_pos - player_pos).normalized()
 	bullets.append({
@@ -615,7 +637,8 @@ func _on_upgrade_chosen(idx: int) -> void:
 		"ammo":
 			bullet_damage += 1
 		"reload":
-			attack_cooldown_base = maxf(attack_cooldown_base - 0.05, 0.2)
+			reload_time = maxf(reload_time - 0.25, 0.5)
+			attack_cooldown_base = maxf(attack_cooldown_base - 0.03, 0.15)
 		"tough":
 			player_max_hp += 2
 			player_hp = mini(player_hp + 2, player_max_hp)
@@ -758,7 +781,9 @@ func _draw() -> void:
 	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
 
 	# Ammo text
-	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), "LV %d" % player_level, Color(0.7, 0.9, 1.0), 14)
+	var ammo_color: Color = Color(1.0, 0.8, 0.2) if not is_reloading else Color(1.0, 0.4, 0.2)
+	var ammo_text: String = "RELOADING..." if is_reloading else "%d / %d" % [mag_ammo, mag_size]
+	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
 	var target_text := "Targets: %d/%d" % [target_kills, target_total]
