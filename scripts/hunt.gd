@@ -100,11 +100,11 @@ var upgrade_buttons: Array = [] # Node references
 
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
-	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 60, hp = 3, detection = 180, melee_dmg = 1, ranged = false, void_type = false},
-	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 80, hp = 3, detection = 220, melee_dmg = 1, ranged = false, void_type = false},
-	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 50, hp = 5, detection = 250, melee_dmg = 2, ranged = false, void_type = false},
-	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 55, hp = 4, detection = 300, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 2.0, void_type = false},
-	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 90, hp = 4, detection = 220, melee_dmg = 1, ranged = false, void_type = true},
+	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 90, hp = 3, detection = 260, melee_dmg = 1, ranged = false, void_type = false},
+	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 120, hp = 3, detection = 300, melee_dmg = 1, ranged = false, void_type = false},
+	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 75, hp = 5, detection = 320, melee_dmg = 2, ranged = false, void_type = false},
+	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 80, hp = 4, detection = 350, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.6, void_type = false},
+	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 140, hp = 4, detection = 300, melee_dmg = 1, ranged = false, void_type = true},
 }
 
 const CREATURE_INGREDIENTS: Dictionary = {
@@ -202,12 +202,18 @@ func _spawn_enemies(depth: int) -> void:
 		var ft: String = filler_types[rng.randi_range(0, filler_types.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
+	# Pre-aggro roughly 40% of all fillers — they hunt the player from the start
+	var aggro_count: int = int(filler_count * 0.4)
+	for i in range(min(aggro_count, enemies.size())):
+		enemies[i].is_aggroed = true
+		enemies[i].aggro_origin = enemies[i].pos
+
 func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator) -> void:
 	var def: Dictionary = CREATURE_DEFS[type_name]
 	var pos := Vector2.ZERO
 	for _try in range(30):
 		pos = Vector2(rng.randf_range(60.0, WORLD_W - 60.0), rng.randf_range(60.0, WORLD_H - 60.0))
-		if pos.distance_to(player_pos) < 300.0:
+		if pos.distance_to(player_pos) < 180.0:
 			continue
 		var blocked := false
 		for obs in obstacles:
@@ -257,8 +263,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var te: InputEventScreenTouch = event
 		if te.pressed:
-			if te.position.x < half_w:
-				# Start joystick
+			# First finger down anywhere starts the joystick at that point
+			if not joy_active:
 				joy_active = true
 				joy_base = te.position
 				joy_knob = te.position
