@@ -66,6 +66,12 @@ var joy_knob := Vector2.ZERO
 var joy_touch_index := -1
 const JOY_MAX_DIST := 60.0
 
+# === Corruption ===
+var corruption: float = 0.0
+var corruption_max: float = 100.0  # visual cap for bar, not hard cap
+var corruption_threshold_35 := false
+var corruption_threshold_60 := false
+
 # === Game state ===
 var paused := false
 var dead := false
@@ -106,11 +112,11 @@ const INGREDIENT_COLORS: Dictionary = {
 }
 
 const ALL_UPGRADES: Array = [
-	{id = "ammo", label = "Piercing Rounds (+1 dmg)"},
-	{id = "reload", label = "Quick Reload (faster reload + fire)"},
-	{id = "tough", label = "Tougher (+2 HP)"},
-	{id = "speed", label = "Speed Boost"},
-	{id = "damage", label = "Big Shots (+1)"},
+	{id = "ammo", label = "Piercing Rounds", desc = "Bullets deal +1 damage"},
+	{id = "reload", label = "Combat Efficiency", desc = "Faster reload & fire rate"},
+	{id = "tough", label = "Reinforced Suit", desc = "+2 max HP, heal 2 HP now"},
+	{id = "speed", label = "Thruster Boost", desc = "+20 movement speed"},
+	{id = "damage", label = "Overcharge", desc = "+1 bullet damage"},
 ]
 
 # =========================================================
@@ -263,6 +269,7 @@ func _process(delta: float) -> void:
 	_update_bullets(delta)
 	_check_pickups()
 	_update_hud_message(delta)
+	_apply_corruption_effects()
 
 	queue_redraw()
 
@@ -446,6 +453,13 @@ func _update_enemies(delta: float) -> void:
 	for key in keys_to_remove:
 		enemy_melee_cooldowns.erase(key)
 
+	# Void creature proximity corruption aura
+	for e in enemies:
+		if e.hp <= 0 or not e.void_type:
+			continue
+		if player_pos.distance_to(e.pos) < 160.0:
+			corruption += 2.0 * delta
+
 func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vector2:
 	for obs in obstacles:
 		var dist: float = new_pos.distance_to(obs.pos)
@@ -527,6 +541,7 @@ func _on_enemy_killed(idx: int) -> void:
 		var ing_data: Dictionary = CREATURE_INGREDIENTS[e.type].duplicate()
 		var ing_color: Color = INGREDIENT_COLORS.get(ing_data.id, Color.WHITE)
 		pickups.append({pos = death_pos + Vector2(10, 0), type = "ingredient", color = ing_color, ingredient_data = ing_data})
+		_show_message("+ " + ing_data.name)
 
 	# Spawn essence
 	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
@@ -568,12 +583,12 @@ func _check_pickups() -> void:
 		var p: Dictionary = pickups[i]
 		var pickup_radius := 20.0
 		if p.type == "essence":
-			pickup_radius = 40.0
+			pickup_radius = 60.0
 
 		if player_pos.distance_to(p.pos) < pickup_radius + PLAYER_RADIUS:
 			if p.type == "ingredient":
 				run_ingredients.append(p.ingredient_data)
-				_show_message("Picked up " + p.ingredient_data.name)
+				_show_message("\u2713 " + p.ingredient_data.name)
 			elif p.type == "essence":
 				essence_collected += 1
 				if essence_collected >= 50:
@@ -607,23 +622,36 @@ func _create_upgrade_panel() -> void:
 	var vp_size := get_viewport_rect().size
 	var panel := Panel.new()
 	panel.name = "UpgradePanel"
-	panel.position = Vector2(vp_size.x * 0.1, vp_size.y * 0.3)
-	panel.size = Vector2(vp_size.x * 0.8, vp_size.y * 0.35)
+	panel.position = Vector2.ZERO
+	panel.size = vp_size
+
+	# Dark overlay background
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.1, 0.92)
+	panel.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
-	vbox.position = Vector2(10, 10)
-	vbox.size = Vector2(panel.size.x - 20, panel.size.y - 20)
+	vbox.position = Vector2(vp_size.x * 0.1, vp_size.y * 0.15)
+	vbox.size = Vector2(vp_size.x * 0.8, vp_size.y * 0.7)
 	panel.add_child(vbox)
 
 	var title := Label.new()
-	title.text = "Level Up! Choose an upgrade:"
+	title.text = "LEVEL UP"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", Color(0.8, 0.6, 1.0))
+	title.add_theme_font_size_override("font_size", 28)
 	vbox.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.text = "Choose an upgrade:"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_color_override("font_color", Color(0.6, 0.5, 0.8))
+	vbox.add_child(subtitle)
 
 	upgrade_buttons = []
 	for i in range(upgrade_choices.size()):
 		var btn := Button.new()
-		btn.text = upgrade_choices[i].label
+		btn.text = "[%d] %s — %s" % [i + 1, upgrade_choices[i].label, upgrade_choices[i].desc]
 		btn.custom_minimum_size = Vector2(0, 44)
 		btn.pressed.connect(_on_upgrade_chosen.bind(i))
 		vbox.add_child(btn)
@@ -669,14 +697,16 @@ func _die() -> void:
 func _complete_hunt() -> void:
 	var contract: Dictionary = GameData.current_contract
 	var reward: int = contract.get("reward", 50)
-	SaveManager.complete_contract(reward, 0)
-	GameData.set_hunt_result(reward, 0, run_ingredients.size(), run_ingredients)
+	var corr: int = int(corruption)
+	SaveManager.complete_contract(reward, corr)
+	GameData.set_hunt_result(reward, corr, run_ingredients.size(), run_ingredients)
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 func _finish_hunt(credits: int) -> void:
+	var corr: int = int(corruption)
 	if credits == 0:
-		SaveManager.complete_contract(0, 0)
-		GameData.set_hunt_result(0, 0, 0)
+		SaveManager.complete_contract(0, corr)
+		GameData.set_hunt_result(0, corr, 0)
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 # =========================================================
@@ -691,6 +721,22 @@ func _update_hud_message(delta: float) -> void:
 		hud_message_timer -= delta
 		if hud_message_timer <= 0.0:
 			hud_message = ""
+
+# =========================================================
+# CORRUPTION
+# =========================================================
+func _apply_corruption_effects():
+	# Threshold messages (first time only)
+	if corruption >= 36.0 and not corruption_threshold_35:
+		corruption_threshold_35 = true
+		_show_message("Corruption rising...")
+	if corruption >= 60.0 and not corruption_threshold_60:
+		corruption_threshold_60 = true
+		_show_message("Deeply corrupted")
+	# Visual thresholds only for now — Phase 6 adds mechanical effects
+	# 36+: melee heals (Phase 6)
+	# 60+: void mutations more likely (Phase 6)
+	# Field stim corruption: consumables not built yet — Phase 3+
 
 # =========================================================
 # DRAW
@@ -727,12 +773,19 @@ func _draw() -> void:
 		draw_arc(ep, 40.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.2, pulse), 2.0)
 
 	# Pickups
+	var pulse_alpha: float = 0.3 + 0.3 * sin(Time.get_ticks_msec() * 0.004)
 	for p in pickups:
 		var sp: Vector2 = _w2s(p.pos)
 		if p.type == "ingredient":
-			draw_rect(Rect2(sp - Vector2(6, 6), Vector2(12, 12)), p.color)
+			# Pulsing outline
+			var outline_size := Vector2(20, 20)
+			draw_rect(Rect2(sp - outline_size * 0.5, outline_size), Color(p.color.r, p.color.g, p.color.b, pulse_alpha), false, 1.5)
+			# Main square 16x16
+			draw_rect(Rect2(sp - Vector2(8, 8), Vector2(16, 16)), p.color)
 		elif p.type == "essence":
-			draw_circle(sp, 8.0, Color(0.5, 0.0, 0.8))
+			# Glow ring
+			draw_circle(sp, 14.0, Color(0.5, 0.0, 0.8, 0.3))
+			draw_circle(sp, 10.0, Color(0.5, 0.0, 0.8))
 
 	# Enemies
 	for e in enemies:
@@ -791,12 +844,30 @@ func _draw() -> void:
 
 	# Corruption meter (top right)
 	var corr_x: float = vp_size.x - 92.0
-	draw_rect(Rect2(corr_x, 16.0, 80.0, 12.0), Color(0.15, 0.1, 0.2))
-	# corruption is 0 for now
+	_draw_text(Vector2(corr_x, 4.0), "CORRUPTION", Color(0.7, 0.4, 0.9, 0.8), 9)
+	draw_rect(Rect2(corr_x, 16.0, 80.0, 10.0), Color(0.2, 0.1, 0.2))
+	var corr_frac: float = clampf(corruption / corruption_max, 0.0, 1.0)
+	var corr_color: Color
+	if corruption < 36.0:
+		corr_color = Color(0.5, 0.1, 0.8)
+	elif corruption < 61.0:
+		corr_color = Color(0.8, 0.1, 0.5)
+	else:
+		corr_color = Color(1.0, 0.1, 0.2)
+	if corr_frac > 0.0:
+		draw_rect(Rect2(corr_x, 16.0, 80.0 * corr_frac, 10.0), corr_color)
 
-	# Essence/level (bottom center)
-	var level_text := "LV %d | Essence: %d/50" % [player_level, essence_collected]
-	_draw_text(Vector2(vp_size.x * 0.5 - 70.0, vp_size.y - 30.0), level_text, Color(0.7, 0.5, 1.0), 14)
+	# XP bar (full width, bottom of screen)
+	var xp_bar_y: float = vp_size.y - 20.0
+	var xp_bar_h := 8.0
+	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), Color(0.1, 0.1, 0.15))
+	var xp_frac: float = float(essence_collected) / 50.0
+	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), Color(0.5, 0.0, 0.9))
+	# LV label left of bar
+	_draw_text(Vector2(4.0, xp_bar_y - 4.0), "LV %d" % player_level, Color(0.7, 0.5, 1.0), 12)
+
+	# Skill level tracker (bottom left, above XP bar)
+	_draw_text(Vector2(4.0, xp_bar_y - 20.0), "Sidearm Lv %d" % player_level, Color(0.6, 0.6, 0.8, 0.8), 11)
 
 	# HUD message (center)
 	if hud_message != "":
