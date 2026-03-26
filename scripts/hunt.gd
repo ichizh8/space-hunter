@@ -39,6 +39,20 @@ var scan_turns_left: int = 0
 var traps: Array[Vector2i] = []  # positions of placed traps
 var _action_bar: HBoxContainer
 
+# HP bar
+var _hp_bar_bg: ColorRect
+var _hp_bar_fg: ColorRect
+
+# Hit flash system: {Vector2i: {color: Color, timer: float}}
+var _flashes: Dictionary = {}
+
+# Ranged targeting
+var targeting_mode: bool = false
+var targeting_dart: bool = false
+
+# Screen vignette flash
+var _vignette: ColorRect
+
 # UI references
 @onready var grid_container: Control = $GridViewport/GridRoot
 @onready var hud_label: Label = $HUD/HUDLabel
@@ -60,8 +74,9 @@ func _ready() -> void:
 	# Grab focus so WASD/arrow keys work on this Control node
 	focus_mode = Control.FOCUS_ALL
 	grab_focus()
-	# Start with 1 net in inventory
+	# Start with 1 net and 3 darts in inventory
 	inventory.append({id = "net", name = "Net", symbol = "N", uses = 1})
+	inventory.append({id = "dart", name = "Dart", symbol = "D", uses = 3})
 	# Action bar
 	var action_bar := HBoxContainer.new()
 	action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
@@ -77,7 +92,32 @@ func _ready() -> void:
 	add_child(action_bar)
 	_action_bar = action_bar
 
-func _process(_delta: float) -> void:
+	# HP bar (background + foreground)
+	_hp_bar_bg = ColorRect.new()
+	_hp_bar_bg.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_hp_bar_bg.offset_bottom = 8
+	_hp_bar_bg.color = Color(0.15, 0.15, 0.15)
+	_hp_bar_bg.z_index = 15
+	add_child(_hp_bar_bg)
+
+	_hp_bar_fg = ColorRect.new()
+	_hp_bar_fg.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_hp_bar_fg.offset_bottom = 8
+	_hp_bar_fg.color = Color(0.2, 0.8, 0.2)
+	_hp_bar_fg.z_index = 16
+	add_child(_hp_bar_fg)
+	_update_hp_bar()
+
+	# Vignette flash overlay
+	_vignette = ColorRect.new()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.color = Color(1, 0, 0, 0.3)
+	_vignette.z_index = 20
+	_vignette.visible = false
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_vignette)
+
+func _process(delta: float) -> void:
 	if _pending_step and not move_path.is_empty():
 		_pending_step = false
 		var dir: Vector2i = move_path.pop_front()
@@ -85,9 +125,31 @@ func _process(_delta: float) -> void:
 	elif _pending_step:
 		_pending_step = false
 
+	# Tick flash timers
+	var any_flash := false
+	var expired: Array[Vector2i] = []
+	for pos: Vector2i in _flashes:
+		_flashes[pos]["timer"] -= delta
+		if _flashes[pos]["timer"] <= 0:
+			expired.append(pos)
+		else:
+			any_flash = true
+	for pos in expired:
+		_flashes.erase(pos)
+	if any_flash or not expired.is_empty():
+		grid_container.queue_redraw()
+
 func _input(event: InputEvent) -> void:
+	# Cancel targeting with Escape
+	if event is InputEventKey and event.pressed and not event.echo:
+		if targeting_mode and event.keycode == KEY_ESCAPE:
+			_cancel_targeting()
+			return
+
 	# Keyboard movement
 	if event is InputEventKey and event.pressed and not event.echo:
+		if targeting_mode:
+			return  # Block movement while targeting
 		var dir := Vector2i.ZERO
 		if event.keycode == KEY_W or event.keycode == KEY_UP: dir = Vector2i(0, -1)
 		elif event.keycode == KEY_S or event.keycode == KEY_DOWN: dir = Vector2i(0, 1)
@@ -130,6 +192,19 @@ func _input(event: InputEvent) -> void:
 		return
 
 	var target := Vector2i(gx, gy)
+
+	# Targeting mode: fire dart at tapped creature
+	if targeting_mode:
+		var found_creature := -1
+		for i in creatures.size():
+			if creatures[i]["hp"] > 0 and creatures[i]["pos"] == target and tile_visible[gx][gy]:
+				found_creature = i
+				break
+		if found_creature >= 0:
+			_fire_dart(found_creature)
+		else:
+			_cancel_targeting()
+		return
 
 	# Check if tapped tile has a visible creature — path to adjacent tile
 	var creature_idx := -1
@@ -362,12 +437,16 @@ func _move(dir: Vector2i) -> void:
 			if c["is_target"]:
 				target_kills += 1
 			_show_message("Killed %s!" % c["type"])
+			_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
 			_drop_ingredient(c["type"])
 			_check_exit_spawn()
 		else:
 			_show_message("Hit %s! (%d HP left)" % [c["type"], c["hp"]])
+			_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
 		# Creature retaliates
 		player_hp -= 1
+		_update_hp_bar()
+		_flashes[player_pos] = {color = Color.RED, timer = 0.2}
 		if player_hp <= 0:
 			_show_message("You died!")
 			_game_over()
@@ -454,6 +533,9 @@ func _try_creature_move(creature: Dictionary, dirs: Array) -> void:
 		# Check if walking into player
 		if new_pos == player_pos:
 			player_hp -= 1
+			_update_hp_bar()
+			_flashes[player_pos] = {color = Color.RED, timer = 0.2}
+			_flash_vignette()
 			_show_message("%s attacks you! (%d HP)" % [creature["type"], player_hp])
 			if player_hp <= 0:
 				_show_message("You died!")
@@ -490,6 +572,21 @@ func _use_item(slot: int) -> void:
 		if not netted:
 			_show_message("No adjacent creature to net!")
 			return
+	elif item["id"] == "dart":
+		# Enter targeting mode
+		var has_visible := false
+		for creature in creatures:
+			if creature["hp"] > 0 and tile_visible[creature["pos"].x][creature["pos"].y]:
+				has_visible = true
+				break
+		if not has_visible:
+			_show_message("No targets in range!")
+			return
+		targeting_mode = true
+		targeting_dart = true
+		_show_message("Select a target!")
+		grid_container.queue_redraw()
+		return  # Don't consume use yet
 	elif item["id"] == "trap":
 		# Place trap on current tile
 		if player_pos in traps:
@@ -616,12 +713,22 @@ func _draw_grid() -> void:
 				creature_color = Color(0.5, 0.5, 0.9)  # Blue tint for stunned
 			elif not tile_visible[pos.x][pos.y]:
 				creature_color = Color(0.7, 0.3, 0.3, 0.6)  # Dimmer for scan-only
+			# Flash override
+			if _flashes.has(pos) and _flashes[pos]["timer"] > 0:
+				creature_color = _flashes[pos]["color"]
 			var rect := Rect2(pos.x * TILE_SIZE + 2, pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
 			grid_container.draw_rect(rect, creature_color)
+			# Targeting mode: cyan border on visible creatures
+			if targeting_mode and tile_visible[pos.x][pos.y]:
+				var border_rect := Rect2(pos.x * TILE_SIZE + 2, pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
+				grid_container.draw_rect(border_rect, Color(0, 1, 1, 0.8), false, 2.0)
 
 	# Draw player
+	var player_color := Color(0.2, 0.9, 0.2)
+	if _flashes.has(player_pos) and _flashes[player_pos]["timer"] > 0:
+		player_color = _flashes[player_pos]["color"]
 	var player_rect := Rect2(player_pos.x * TILE_SIZE + 2, player_pos.y * TILE_SIZE + 2, TILE_SIZE - 5, TILE_SIZE - 5)
-	grid_container.draw_rect(player_rect, Color(0.2, 0.9, 0.2))
+	grid_container.draw_rect(player_rect, player_color)
 
 func _update_hud() -> void:
 	var contract := GameData.current_contract
@@ -648,6 +755,51 @@ func _update_hud() -> void:
 				else:
 					btn.text = "Empty"
 					btn.disabled = true
+
+func _update_hp_bar() -> void:
+	if _hp_bar_fg:
+		var ratio := clampf(float(player_hp) / 10.0, 0.0, 1.0)
+		_hp_bar_fg.anchor_right = ratio
+
+func _fire_dart(creature_idx: int) -> void:
+	var c := creatures[creature_idx]
+	c["hp"] -= 2
+	if c["hp"] <= 0:
+		if c["is_target"]:
+			target_kills += 1
+		_show_message("Dart kills %s!" % c["type"])
+		_flashes[c["pos"]] = {color = Color.WHITE, timer = 0.3}
+		_drop_ingredient(c["type"])
+		_check_exit_spawn()
+	else:
+		_show_message("Dart hits %s! (%d HP left)" % [c["type"], c["hp"]])
+		_flashes[c["pos"]] = {color = Color.YELLOW, timer = 0.2}
+	# Consume dart use
+	for i in inventory.size():
+		if inventory[i]["id"] == "dart":
+			inventory[i]["uses"] -= 1
+			if inventory[i]["uses"] <= 0:
+				inventory.remove_at(i)
+			break
+	targeting_mode = false
+	targeting_dart = false
+	grid_container.queue_redraw()
+	_update_hud()
+
+func _cancel_targeting() -> void:
+	targeting_mode = false
+	targeting_dart = false
+	_show_message("Targeting cancelled.")
+	grid_container.queue_redraw()
+
+func _flash_vignette() -> void:
+	if not _vignette:
+		return
+	_vignette.visible = true
+	_vignette.color = Color(1, 0, 0, 0.3)
+	var tween := create_tween()
+	tween.tween_property(_vignette, "color:a", 0.0, 0.15)
+	tween.tween_callback(func(): _vignette.visible = false)
 
 func _show_message(msg: String) -> void:
 	message_label.text = msg
