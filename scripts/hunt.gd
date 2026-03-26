@@ -5,23 +5,26 @@ const WORLD_W := 1600
 const WORLD_H := 1600
 const GRID_STEP := 200
 
+# === Weapon definitions ===
+const WEAPON_DEFS: Dictionary = {
+	"sidearm": {name="Sidearm", desc="Reliable auto-pistol.", fire_rate=0.35, damage=3, bullet_speed=400.0, bullet_radius=5.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
+	"scatter": {name="Scatter Pistol", desc="3-pellet cone. Shreds packs.", fire_rate=0.7, damage=2, bullet_speed=380.0, bullet_radius=4.0, color=Color(1.0,0.5,0.1), range=220.0, pattern="scatter"},
+	"lance": {name="Void Lance", desc="Slow piercing shot. Hits all in line.", fire_rate=1.2, damage=6, bullet_speed=280.0, bullet_radius=7.0, color=Color(0.5,0.1,1.0), range=500.0, pattern="piercing"},
+	"baton": {name="Shock Baton", desc="Melee AOE pulse. Damages all within 100px.", fire_rate=0.8, damage=4, bullet_speed=0.0, bullet_radius=100.0, color=Color(0.1,0.8,1.0), range=100.0, pattern="melee_aoe"},
+	"dart": {name="Homing Dart", desc="Slow seeking projectile.", fire_rate=0.9, damage=3, bullet_speed=200.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"}
+}
+
 # === Player ===
 var player_pos := Vector2(800.0, 800.0)
 var player_hp := 10
 var player_max_hp := 10
 var player_speed := 180.0
 const PLAYER_RADIUS := 16.0
-# === Magazine ===
-var mag_size := 12
-var mag_ammo := 12
-var reload_time := 1.5
-var reload_timer := 0.0
-var is_reloading := false
 
-# === Attack ===
-var attack_cooldown_base := 0.35
-var attack_cooldown_timer := 0.0
-var bullet_damage := 3
+# === Weapons ===
+var active_weapons: Array[Dictionary] = []
+# Each entry: {id: String, level: int, cooldown_timer: float, mag_ammo: int, mag_size: int, reload_timer: float}
+var weapon_slots: int = 3
 
 # === Bullets ===
 # {pos, vel, radius, color, damage, lifetime, from_player}
@@ -39,6 +42,12 @@ var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
 # {pos, type, color, ingredient_data} for ingredients
 # {pos, type} for essence
 var pickups: Array[Dictionary] = []
+
+# === AOE flashes ===
+var aoe_flashes: Array[Dictionary] = []
+
+# === Essence collect radius ===
+var essence_collect_radius: float = 60.0
 
 # === Contract tracking ===
 var target_kills := 0
@@ -111,13 +120,6 @@ const INGREDIENT_COLORS: Dictionary = {
 	"ingredient_rift_spore": Color(0.9, 0.5, 0.1),
 }
 
-const ALL_UPGRADES: Array = [
-	{id = "ammo", label = "Piercing Rounds", desc = "Bullets deal +1 damage"},
-	{id = "reload", label = "Combat Efficiency", desc = "Faster reload & fire rate"},
-	{id = "tough", label = "Reinforced Suit", desc = "+2 max HP, heal 2 HP now"},
-	{id = "speed", label = "Thruster Boost", desc = "+20 movement speed"},
-	{id = "damage", label = "Overcharge", desc = "+1 bullet damage"},
-]
 
 # =========================================================
 # READY
@@ -128,6 +130,8 @@ func _ready() -> void:
 	contract_type = contract.get("creature_type", "Void Leech")
 	var depth: int = contract.get("depth", 1)
 	target_total = 3 + depth
+
+	active_weapons = [{id="sidearm", level=1, cooldown_timer=0.0, mag_ammo=12, mag_size=12, reload_timer=0.0}]
 
 	_spawn_obstacles()
 	_spawn_enemies(depth)
@@ -264,12 +268,13 @@ func _process(delta: float) -> void:
 
 	_move_player(delta)
 	_update_camera()
-	_auto_attack(delta)
+	_update_weapons(delta)
 	_update_enemies(delta)
 	_update_bullets(delta)
 	_check_pickups()
 	_update_hud_message(delta)
 	_apply_corruption_effects()
+	_update_aoe_flashes(delta)
 
 	queue_redraw()
 
@@ -318,31 +323,11 @@ func _update_camera() -> void:
 	camera_offset.x = clampf(camera_offset.x, 0.0, WORLD_W - vp_size.x)
 	camera_offset.y = clampf(camera_offset.y, 0.0, WORLD_H - vp_size.y)
 
-func _auto_attack(delta: float) -> void:
-	# Handle reload
-	if is_reloading:
-		reload_timer -= delta
-		if reload_timer <= 0.0:
-			is_reloading = false
-			mag_ammo = mag_size
-			_show_message("Reloaded!")
-		return
-
-	attack_cooldown_timer -= delta
-	if attack_cooldown_timer > 0.0:
-		return
-
-	# Out of ammo — start reload
-	if mag_ammo <= 0:
-		is_reloading = true
-		reload_timer = reload_time
-		_show_message("Reloading...")
-		return
-
-	# Find nearest enemy
+func _update_weapons(delta: float) -> void:
+	# Find nearest living enemy once for all weapons
 	var nearest_dist := 999999.0
 	var nearest_pos := Vector2.ZERO
-	var found := false
+	var nearest_found := false
 	for e in enemies:
 		if e.hp <= 0:
 			continue
@@ -350,24 +335,119 @@ func _auto_attack(delta: float) -> void:
 		if d < nearest_dist:
 			nearest_dist = d
 			nearest_pos = e.pos
-			found = true
+			nearest_found = true
 
-	if not found or nearest_dist > 350.0:
-		return
+	for wi in range(active_weapons.size()):
+		var w: Dictionary = active_weapons[wi]
+		var def: Dictionary = WEAPON_DEFS[w.id]
+		var damage: int = def.damage + (w.level - 1)
 
-	# Fire bullet
-	mag_ammo -= 1
-	attack_cooldown_timer = attack_cooldown_base
-	var dir: Vector2 = (nearest_pos - player_pos).normalized()
-	bullets.append({
-		pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-		vel = dir * 400.0,
-		radius = 5.0,
-		color = Color(1.0, 0.9, 0.2),
-		damage = bullet_damage,
-		lifetime = 0.8,
-		from_player = true,
-	})
+		# Handle reload
+		if w.reload_timer > 0.0:
+			w.reload_timer -= delta
+			if w.reload_timer <= 0.0:
+				w.mag_ammo = w.mag_size
+				if wi == 0:
+					_show_message("Reloaded!")
+			active_weapons[wi] = w
+			continue
+
+		# Handle cooldown
+		if w.cooldown_timer > 0.0:
+			w.cooldown_timer -= delta
+
+		# Out of ammo — start reload
+		if w.mag_ammo <= 0 and w.reload_timer <= 0.0:
+			w.reload_timer = 1.5
+			if wi == 0:
+				_show_message("Reloading...")
+			active_weapons[wi] = w
+			continue
+
+		# Fire if ready
+		if w.cooldown_timer <= 0.0 and w.mag_ammo > 0:
+			if not nearest_found or nearest_dist > def.range:
+				active_weapons[wi] = w
+				continue
+
+			var dir: Vector2 = (nearest_pos - player_pos).normalized()
+			w.cooldown_timer = def.fire_rate
+
+			match def.pattern:
+				"single":
+					w.mag_ammo -= 1
+					bullets.append({
+						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+						vel = dir * def.bullet_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = damage,
+						lifetime = def.range / def.bullet_speed,
+						from_player = true,
+					})
+				"scatter":
+					w.mag_ammo -= 1
+					var base_angle: float = dir.angle()
+					for offset_deg in [-15.0, 0.0, 15.0]:
+						var angle: float = base_angle + deg_to_rad(offset_deg)
+						var scatter_dir := Vector2(cos(angle), sin(angle))
+						bullets.append({
+							pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
+							vel = scatter_dir * def.bullet_speed,
+							radius = def.bullet_radius,
+							color = def.color,
+							damage = damage,
+							lifetime = def.range / def.bullet_speed,
+							from_player = true,
+						})
+				"piercing":
+					w.mag_ammo -= 1
+					bullets.append({
+						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+						vel = dir * def.bullet_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = damage,
+						lifetime = def.range / def.bullet_speed,
+						from_player = true,
+						piercing = true,
+						hit_ids = [],
+					})
+				"homing":
+					w.mag_ammo -= 1
+					bullets.append({
+						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+						vel = dir * def.bullet_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = damage,
+						lifetime = def.range / def.bullet_speed,
+						from_player = true,
+						homing = true,
+						bullet_speed = def.bullet_speed,
+					})
+				"melee_aoe":
+					# No bullet — instant AOE damage
+					for ei in range(enemies.size()):
+						var e: Dictionary = enemies[ei]
+						if e.hp <= 0:
+							continue
+						if player_pos.distance_to(e.pos) < def.range:
+							e.hp -= damage
+							enemies[ei] = e
+							if e.hp <= 0:
+								_on_enemy_killed(ei)
+					aoe_flashes.append({pos=player_pos, radius=100.0, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
+
+		active_weapons[wi] = w
+
+func _update_aoe_flashes(delta: float) -> void:
+	var i := aoe_flashes.size() - 1
+	while i >= 0:
+		aoe_flashes[i].timer -= delta
+		if aoe_flashes[i].timer <= 0:
+			aoe_flashes.remove_at(i)
+		i -= 1
 
 # =========================================================
 # ENEMIES
@@ -480,16 +560,36 @@ func _update_bullets(delta: float) -> void:
 
 	for i in range(bullets.size()):
 		var b: Dictionary = bullets[i]
+
+		# Homing steering
+		if b.get("homing", false) and b.from_player:
+			var best_dist := 999999.0
+			var best_pos := Vector2.ZERO
+			var found_target := false
+			for e in enemies:
+				if e.hp <= 0:
+					continue
+				var d: float = b.pos.distance_to(e.pos)
+				if d < best_dist:
+					best_dist = d
+					best_pos = e.pos
+					found_target = true
+			if found_target:
+				var new_dir: Vector2 = b.vel.normalized().lerp((best_pos - b.pos).normalized(), 3.0 * delta)
+				b.vel = new_dir.normalized() * b.bullet_speed
+
 		b.pos += b.vel * delta
 		b.lifetime -= delta
 
 		if b.lifetime <= 0.0:
 			to_remove.append(i)
+			bullets[i] = b
 			continue
 
 		# Out of world
 		if b.pos.x < 0.0 or b.pos.x > WORLD_W or b.pos.y < 0.0 or b.pos.y > WORLD_H:
 			to_remove.append(i)
+			bullets[i] = b
 			continue
 
 		# Obstacle collision
@@ -500,21 +600,33 @@ func _update_bullets(delta: float) -> void:
 				break
 		if hit_obs:
 			to_remove.append(i)
+			bullets[i] = b
 			continue
 
 		if b.from_player:
 			# Hit enemies
+			var is_piercing: bool = b.get("piercing", false)
 			for ei in range(enemies.size()):
 				var e: Dictionary = enemies[ei]
 				if e.hp <= 0:
 					continue
 				if b.pos.distance_to(e.pos) < e.radius + b.radius:
-					e.hp -= b.damage
-					enemies[ei] = e
-					to_remove.append(i)
-					if e.hp <= 0:
-						_on_enemy_killed(ei)
-					break
+					if is_piercing:
+						var hit_ids: Array = b.hit_ids
+						if not hit_ids.has(ei):
+							hit_ids.append(ei)
+							b.hit_ids = hit_ids
+							e.hp -= b.damage
+							enemies[ei] = e
+							if e.hp <= 0:
+								_on_enemy_killed(ei)
+					else:
+						e.hp -= b.damage
+						enemies[ei] = e
+						to_remove.append(i)
+						if e.hp <= 0:
+							_on_enemy_killed(ei)
+						break
 		else:
 			# Hit player
 			if b.pos.distance_to(player_pos) < PLAYER_RADIUS + b.radius:
@@ -583,7 +695,7 @@ func _check_pickups() -> void:
 		var p: Dictionary = pickups[i]
 		var pickup_radius := 20.0
 		if p.type == "essence":
-			pickup_radius = 60.0
+			pickup_radius = essence_collect_radius
 
 		if player_pos.distance_to(p.pos) < pickup_radius + PLAYER_RADIUS:
 			if p.type == "ingredient":
@@ -608,15 +720,56 @@ func _level_up() -> void:
 	paused = true
 	_show_message("Level Up!")
 
-	# Pick 3 random upgrades
-	var shuffled: Array = ALL_UPGRADES.duplicate()
-	shuffled.shuffle()
-	upgrade_choices = []
-	for idx in range(mini(3, shuffled.size())):
-		upgrade_choices.append(shuffled[idx])
+	upgrade_choices = _generate_upgrades()
 
 	# Create upgrade panel using call_deferred
 	call_deferred("_create_upgrade_panel")
+
+func _generate_upgrades() -> Array:
+	var options: Array[Dictionary] = []
+
+	# Upgrade existing weapons (up to 2 offers)
+	var upgradeable: Array[Dictionary] = []
+	for w in active_weapons:
+		if w.level < 5:
+			upgradeable.append(w)
+	upgradeable.shuffle()
+	for w in upgradeable.slice(0, 2):
+		var def: Dictionary = WEAPON_DEFS[w.id]
+		options.append({
+			type="weapon_upgrade", weapon_id=w.id,
+			label=def.name + " Lv" + str(w.level) + "->Lv" + str(w.level+1),
+			desc=def.desc + " (+" + str(w.level) + " dmg total)"
+		})
+
+	# Acquire new weapon if slot open
+	if active_weapons.size() < weapon_slots:
+		var held: Array[String] = []
+		for w in active_weapons:
+			held.append(w.id)
+		var available: Array[String] = []
+		for k in WEAPON_DEFS.keys():
+			if not held.has(k):
+				available.append(k)
+		if not available.is_empty():
+			available.shuffle()
+			var new_id: String = available[0]
+			var def: Dictionary = WEAPON_DEFS[new_id]
+			options.append({type="weapon_acquire", weapon_id=new_id, label="Acquire " + def.name, desc=def.desc})
+
+	# Passives
+	var passives: Array[Dictionary] = [
+		{type="passive", id="tough", label="Reinforced Suit", desc="+2 max HP, heal now"},
+		{type="passive", id="speed", label="Thruster Boost", desc="+20 move speed"},
+		{type="passive", id="xp", label="Void Attunement", desc="Collect essence from further away"}
+	]
+	passives.shuffle()
+	options.append(passives[0])
+
+	options.shuffle()
+	if options.size() > 3:
+		options = options.slice(0, 3)
+	return options
 
 func _create_upgrade_panel() -> void:
 	var vp_size := get_viewport_rect().size
@@ -661,19 +814,30 @@ func _create_upgrade_panel() -> void:
 
 func _on_upgrade_chosen(idx: int) -> void:
 	var choice: Dictionary = upgrade_choices[idx]
-	match choice.id:
-		"ammo":
-			bullet_damage += 1
-		"reload":
-			reload_time = maxf(reload_time - 0.25, 0.5)
-			attack_cooldown_base = maxf(attack_cooldown_base - 0.03, 0.15)
-		"tough":
-			player_max_hp += 2
-			player_hp = mini(player_hp + 2, player_max_hp)
-		"speed":
-			player_speed += 20.0
-		"damage":
-			bullet_damage += 1
+	match choice.type:
+		"weapon_upgrade":
+			for w in active_weapons:
+				if w.id == choice.weapon_id:
+					w.level += 1
+					break
+		"weapon_acquire":
+			var is_baton: bool = choice.weapon_id == "baton"
+			active_weapons.append({
+				id=choice.weapon_id, level=1,
+				cooldown_timer=0.0,
+				mag_ammo=999 if is_baton else 12,
+				mag_size=999 if is_baton else 12,
+				reload_timer=0.0
+			})
+		"passive":
+			match choice.id:
+				"tough":
+					player_max_hp += 2
+					player_hp = mini(player_hp + 2, player_max_hp)
+				"speed":
+					player_speed += 20.0
+				"xp":
+					essence_collect_radius = essence_collect_radius + 20.0
 
 	paused = false
 	upgrade_choices = []
@@ -812,6 +976,13 @@ func _draw() -> void:
 		var sp: Vector2 = _w2s(b.pos)
 		draw_circle(sp, b.radius, b.color)
 
+	# AOE flashes
+	for f in aoe_flashes:
+		var fsp: Vector2 = _w2s(f.pos)
+		var alpha: float = f.timer / 0.3
+		draw_arc(fsp, f.radius, 0.0, TAU, 32, Color(f.color.r, f.color.g, f.color.b, alpha * 0.8), 3.0)
+		draw_circle(fsp, f.radius, Color(f.color.r, f.color.g, f.color.b, alpha * 0.15))
+
 	# Player
 	var pp: Vector2 = _w2s(player_pos)
 	draw_circle(pp, PLAYER_RADIUS, Color(0.2, 0.9, 0.2))
@@ -833,10 +1004,19 @@ func _draw() -> void:
 	var hp_frac: float = clampf(float(player_hp) / float(player_max_hp), 0.0, 1.0)
 	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
 
-	# Ammo text
-	var ammo_color: Color = Color(1.0, 0.8, 0.2) if not is_reloading else Color(1.0, 0.4, 0.2)
-	var ammo_text: String = "RELOADING..." if is_reloading else "%d / %d" % [mag_ammo, mag_size]
-	_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
+	# Primary weapon ammo text (first weapon)
+	if active_weapons.size() > 0:
+		var pw: Dictionary = active_weapons[0]
+		var pw_reloading: bool = pw.reload_timer > 0.0
+		var ammo_color: Color = Color(1.0, 0.8, 0.2) if not pw_reloading else Color(1.0, 0.4, 0.2)
+		var ammo_text: String
+		if pw.mag_size >= 999:
+			ammo_text = WEAPON_DEFS[pw.id].name
+		elif pw_reloading:
+			ammo_text = "RELOADING..."
+		else:
+			ammo_text = "%d / %d" % [pw.mag_ammo, pw.mag_size]
+		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
 	var target_text := "Targets: %d/%d" % [target_kills, target_total]
@@ -866,8 +1046,14 @@ func _draw() -> void:
 	# LV label left of bar
 	_draw_text(Vector2(4.0, xp_bar_y - 4.0), "LV %d" % player_level, Color(0.7, 0.5, 1.0), 12)
 
-	# Skill level tracker (bottom left, above XP bar)
-	_draw_text(Vector2(4.0, xp_bar_y - 20.0), "Sidearm Lv %d" % player_level, Color(0.6, 0.6, 0.8, 0.8), 11)
+	# Weapon list (bottom left, above XP bar)
+	var wy: float = xp_bar_y - 16.0
+	for w in active_weapons:
+		var def: Dictionary = WEAPON_DEFS[w.id]
+		var reload_indicator: String = " (reloading)" if w.reload_timer > 0 else ""
+		var ammo_str: String = "" if w.mag_size >= 999 else "  %d/%d" % [w.mag_ammo, w.mag_size]
+		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(w.level) + ammo_str + reload_indicator, Color(0.6,0.7,0.9,0.85), 11)
+		wy -= 15.0
 
 	# HUD message (center)
 	if hud_message != "":
