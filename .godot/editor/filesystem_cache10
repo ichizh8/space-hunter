@@ -145,10 +145,10 @@ equipment_socket_slot.tres::StyleBoxTexture/StyleBoxTexture::8936708531916197161
 equipment_socket_slot_selected.tres::StyleBoxTexture/StyleBoxTexture::1000459690980624193::1774481889::0::1::::<><><>0<>0<><>::uid://b7vffmbasnc7r::::res://assets/generated/ui.png
 item_panel.tres::StyleBoxTexture/StyleBoxTexture::5026167305771872105::1774481889::0::1::::<><><>0<>0<><>::uid://b7vffmbasnc7r::::res://assets/generated/ui.png
 title_label.tres::LabelSettings/LabelSettings::2100090150919862279::1774481889::0::1::::<><><>0<>0<><>::uid://inknfbca42rs::::res://assets/fonts/pixel_operator/PixelOperator-Bold.ttf
-::res://docs/::1774581821
-index.apple-touch-icon.png::CompressedTexture2D/CompressedTexture2D::4118296541842317683::1774581821::1774481889::1::::<><><>0<>0<>00e8a42dddefcc7e84cef319afee9da6<>res://.godot/imported/index.apple-touch-icon.png-b21a756d869f84af832970a74d8371bc.ctex::
-index.icon.png::CompressedTexture2D/CompressedTexture2D::7108085764026545027::1774581821::1774481889::1::::<><><>0<>0<>7ebde47d893e000d1c33d82e11b6d3fc<>res://.godot/imported/index.icon.png-b92c9a802ad4b78e247784454a6b506f.ctex::
-index.png::CompressedTexture2D/CompressedTexture2D::2348128834158651371::1774581821::1774481889::1::::<><><>0<>0<>024b6359896fbe33583be043fdb04a19<>res://.godot/imported/index.png-0c78d14d192abe5f22f8c25928ca1ab8.ctex::
+::res://docs/::1774582925
+index.apple-touch-icon.png::CompressedTexture2D/CompressedTexture2D::4118296541842317683::1774582925::1774481889::1::::<><><>0<>0<>00e8a42dddefcc7e84cef319afee9da6<>res://.godot/imported/index.apple-touch-icon.png-b21a756d869f84af832970a74d8371bc.ctex::
+index.icon.png::CompressedTexture2D/CompressedTexture2D::7108085764026545027::1774582925::1774481889::1::::<><><>0<>0<>7ebde47d893e000d1c33d82e11b6d3fc<>res://.godot/imported/index.icon.png-b92c9a802ad4b78e247784454a6b506f.ctex::
+index.png::CompressedTexture2D/CompressedTexture2D::2348128834158651371::1774582925::1774481889::1::::<><><>0<>0<>024b6359896fbe33583be043fdb04a19<>res://.godot/imported/index.png-0c78d14d192abe5f22f8c25928ca1ab8.ctex::
 ::res://scenes/::1774492844
 ContractBoard.tscn::PackedScene/PackedScene::3645761287160::1774481889::0::1::::<><><>0<>0<><>::res://scripts/contract_board.gd
 Hunt.tscn::PackedScene/PackedScene::116787188600::1774490250::0::1::::<><><>0<>0<><>::res://scripts/hunt.gd
@@ -220,7 +220,7 @@ reticle.tscn::PackedScene/PackedScene::2775192618194518351::1774481889::0::1::::
 contract_board.gd::GDScript/GDScript::599544261299530705::1774492888::0::1::::<>Control<><>0<>0<><>::
 game_data.gd::GDScript/GDScript::1898902716637574893::1774492776::0::1::::<>Node<><>0<>0<><>::
 grid_drawer.gd::GDScript/GDScript::3149249142061375009::1774481889::0::1::::<>Control<><>0<>0<><>::
-hunt.gd::GDScript::2660498805328036605::1774582889::0::1::::<>Control<><>0<>0<><>::
+hunt.gd::GDScript::2660498805328036605::1774585170::0::1::::<>Control<><>0<>0<><>::
 hunt_turnbased_backup.gd::GDScript/GDScript::8245484403887691910::1774490121::0::1::::<>Control<><>0<>0<><>::
 loadout.gd::GDScript/GDScript::3528114469426545277::1774492875::0::1::::<>Control<><>0<>0<><>::
 results.gd::GDScript/GDScript::8937647699764996871::1774482253::0::1::::<>Control<><>0<>0<><>::

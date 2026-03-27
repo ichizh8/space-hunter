@@ -306,7 +306,7 @@ func _spawn_obstacles() -> void:
 func _generate_rivers() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var river_width := 90.0
+	var river_width := 50.0
 	var center := Vector2(2400.0, 2400.0)
 
 	# River 1: left to right
@@ -351,10 +351,10 @@ func _generate_rivers() -> void:
 			var a: Vector2 = waypoints[si]
 			var b: Vector2 = waypoints[si + 1]
 			var seg_len: float = a.distance_to(b)
-			var steps: int = maxi(1, int(seg_len / 60.0))
+			var steps: int = maxi(1, int(seg_len / 50.0))
 			for step in range(steps + 1):
 				var tf: float = float(step) / float(steps)
-				segs.append({pos = a.lerp(b, tf), radius = 45.0})
+				segs.append({pos = a.lerp(b, tf), radius = 25.0})
 		rivers.append({points = waypoints, width = river_width, segments = segs})
 
 func _generate_bridges() -> void:
@@ -364,7 +364,7 @@ func _generate_bridges() -> void:
 		var mid_idx: int = pts.size() / 2
 		var bridge_pos: Vector2 = (Vector2(pts[mid_idx - 1].x, pts[mid_idx - 1].y) + Vector2(pts[mid_idx].x, pts[mid_idx].y)) * 0.5
 		var bridge_dir: Vector2 = (Vector2(pts[mid_idx].x, pts[mid_idx].y) - Vector2(pts[mid_idx - 1].x, pts[mid_idx - 1].y)).normalized()
-		bridges.append({pos = bridge_pos, dir = bridge_dir, width = 90.0, length = 180.0})
+		bridges.append({pos = bridge_pos, dir = bridge_dir, width = 50.0, length = 180.0})
 
 func _add_river_obstacles() -> void:
 	for ri in range(rivers.size()):
@@ -372,7 +372,7 @@ func _add_river_obstacles() -> void:
 		var bridge_pos: Vector2 = bridges[ri].pos
 		for seg in river.segments:
 			var sp: Vector2 = Vector2(seg.pos.x, seg.pos.y)
-			if sp.distance_to(bridge_pos) < 120.0:
+			if sp.distance_to(bridge_pos) < 160.0:
 				continue
 			obstacles.append({pos = sp, radius = seg.radius})
 
@@ -553,18 +553,35 @@ func _spawn_elite(depth: int) -> void:
 
 	_show_message("⚠ ELITE: %s approaching!" % elite_type)
 
-	# Find a spawn point far from player
+	# Find a spawn point far from player — must not be walled off by rivers
 	var pos := Vector2.ZERO
-	for _try in range(40):
-		pos = Vector2(rng.randf_range(80.0, WORLD_W - 80.0), rng.randf_range(80.0, WORLD_H - 80.0))
-		if pos.distance_to(player_pos) >= 350.0:
-			var blocked := false
-			for obs in obstacles:
-				if pos.distance_to(obs.pos) < obs.radius + 30.0:
-					blocked = true
-					break
-			if not blocked:
+	for _try in range(60):
+		pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
+		if pos.distance_to(player_pos) < 350.0:
+			continue
+		# Check not blocked by obstacles
+		var blocked := false
+		for obs in obstacles:
+			if pos.distance_to(obs.pos) < obs.radius + 30.0:
+				blocked = true
 				break
+		if blocked:
+			continue
+		# Check not isolated by rivers: sample 8 directions, at least 4 must have a clear path of 200px
+		var clear_dirs := 0
+		for di in range(8):
+			var test_angle: float = di * TAU / 8.0
+			var test_end: Vector2 = pos + Vector2(cos(test_angle), sin(test_angle)) * 200.0
+			var path_blocked := false
+			for obs2 in obstacles:
+				# Only check river-segment-sized obstacles (radius <= 30)
+				if obs2.radius <= 30.0 and _segment_intersects_circle(pos, test_end, obs2.pos, obs2.radius + 20.0):
+					path_blocked = true
+					break
+			if not path_blocked:
+				clear_dirs += 1
+		if clear_dirs >= 4:
+			break
 
 	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
 
@@ -1304,6 +1321,13 @@ func _update_enemies(delta: float) -> void:
 			continue
 		if player_pos.distance_to(e.pos) < 160.0:
 			corruption += 2.0 * delta * (1.0 - corr_resist)
+
+func _segment_intersects_circle(a: Vector2, b: Vector2, center: Vector2, radius: float) -> bool:
+	var ab: Vector2 = b - a
+	var ac: Vector2 = center - a
+	var t: float = clampf(ac.dot(ab) / ab.length_squared(), 0.0, 1.0)
+	var closest: Vector2 = a + ab * t
+	return closest.distance_to(center) < radius
 
 func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vector2:
 	for obs in obstacles:
