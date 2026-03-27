@@ -312,7 +312,7 @@ func _update_weapon_highlight() -> void:
 		var wid: String = unlocked[i]
 		if wid == selected_weapon:
 			weapon_buttons[i].text = "> %s <" % wid.capitalize()
-			weapon_buttons[i].disabled = true
+			weapon_buttons[i].disabled = false  # never disable — just highlight with text
 		else:
 			weapon_buttons[i].text = wid.capitalize()
 			weapon_buttons[i].disabled = false

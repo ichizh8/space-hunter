@@ -613,14 +613,10 @@ func _generate_bridges() -> void:
 		bridges.append({pos = bridge_pos, dir = bridge_dir, width = 50.0, length = 180.0})
 
 func _add_river_obstacles() -> void:
-	for ri in range(rivers.size()):
-		var river: Dictionary = rivers[ri]
-		var bridge_pos: Vector2 = bridges[ri].pos
-		for seg in river.segments:
-			var sp: Vector2 = Vector2(seg.pos.x, seg.pos.y)
-			if sp.distance_to(bridge_pos) < 160.0:
-				continue
-			obstacles.append({pos = sp, radius = seg.radius})
+	# Rivers are NOT physical walls — they are slow/corruption zones only.
+	# No obstacles added. Players and enemies can walk through water freely.
+	# Walking in water: corruption gain + speed penalty applied in _process.
+	pass
 
 func _generate_caves() -> void:
 	var rng := RandomNumberGenerator.new()
@@ -813,21 +809,8 @@ func _spawn_elite(depth: int) -> void:
 				break
 		if blocked:
 			continue
-		# Check not isolated by rivers: sample 8 directions, at least 4 must have a clear path of 200px
-		var clear_dirs := 0
-		for di in range(8):
-			var test_angle: float = di * TAU / 8.0
-			var test_end: Vector2 = pos + Vector2(cos(test_angle), sin(test_angle)) * 200.0
-			var path_blocked := false
-			for obs2 in obstacles:
-				# Only check river-segment-sized obstacles (radius <= 30)
-				if obs2.radius <= 30.0 and _segment_intersects_circle(pos, test_end, obs2.pos, obs2.radius + 20.0):
-					path_blocked = true
-					break
-			if not path_blocked:
-				clear_dirs += 1
-		if clear_dirs >= 4:
-			break
+		# Rivers are no longer obstacles — skip river isolation check
+		break
 
 	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
 
@@ -1024,6 +1007,17 @@ func _update_void_pool_corruption(delta: float) -> void:
 			var resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
 			corruption += 4.0 * delta * (1.0 - resist) * fam_corr_mult
 
+func _player_in_river() -> bool:
+	for ri in range(rivers.size()):
+		var bridge_pos: Vector2 = bridges[ri].pos if ri < bridges.size() else Vector2(-9999.0, -9999.0)
+		for seg in rivers[ri].segments:
+			var sp: Vector2 = Vector2(seg.pos.x, seg.pos.y)
+			if sp.distance_to(bridge_pos) < 160.0:
+				continue  # bridge gap — not water
+			if player_pos.distance_to(sp) < seg.radius + 16.0:
+				return true
+	return false
+
 func _move_player(delta: float) -> void:
 	var move_dir := Vector2.ZERO
 
@@ -1044,6 +1038,12 @@ func _move_player(delta: float) -> void:
 	var effective_speed: float = player_speed * stats.move_speed_mult
 	if speed_boost_timer > 0.0 and weapon_mods.get("_player", {}).get("kill_streak_speed", false):
 		effective_speed *= 1.5
+	# River water: slow to 50% + 1.5 corruption/s
+	var in_water: bool = _player_in_river()
+	if in_water:
+		effective_speed *= 0.5
+		var resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
+		corruption += 1.5 * delta * (1.0 - resist)
 	var velocity: Vector2 = move_dir * effective_speed * delta
 	var new_pos: Vector2 = player_pos + velocity
 
