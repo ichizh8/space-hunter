@@ -17,6 +17,9 @@ var stock: Dictionary = {
 	"field_stim": 3,
 	"trap": 2,
 }
+var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
+var kit_tiers: Dictionary = {"stim_pack": 1, "flash_trap": 1}
+var unlocked_kits: Array[String] = ["stim_pack", "flash_trap"]
 var version: int = 1
 
 func to_dict() -> Dictionary:
@@ -30,6 +33,9 @@ func to_dict() -> Dictionary:
 		"unlocked_weapons": unlocked_weapons.duplicate(),
 		"loadout": loadout.duplicate(),
 		"stock": stock.duplicate(),
+		"equipped_kits": equipped_kits.duplicate(),
+		"kit_tiers": kit_tiers.duplicate(),
+		"unlocked_kits": unlocked_kits.duplicate(),
 	}
 
 func from_dict(data: Dictionary) -> void:
@@ -66,3 +72,19 @@ func from_dict(data: Dictionary) -> void:
 		stock = (raw_stock as Dictionary).duplicate()
 	else:
 		stock = {"field_stim": 3, "trap": 2}
+
+	var raw_kits: Variant = data.get("equipped_kits", [])
+	if raw_kits is Array:
+		equipped_kits.clear()
+		for k in raw_kits: equipped_kits.append(str(k))
+	if equipped_kits.is_empty(): equipped_kits = ["stim_pack", "flash_trap"]
+
+	var raw_kit_tiers: Variant = data.get("kit_tiers", {})
+	if raw_kit_tiers is Dictionary: kit_tiers = (raw_kit_tiers as Dictionary).duplicate()
+	if kit_tiers.is_empty(): kit_tiers = {"stim_pack": 1, "flash_trap": 1}
+
+	var raw_unlocked_kits: Variant = data.get("unlocked_kits", [])
+	if raw_unlocked_kits is Array:
+		unlocked_kits.clear()
+		for k in raw_unlocked_kits: unlocked_kits.append(str(k))
+	if unlocked_kits.is_empty(): unlocked_kits = ["stim_pack", "flash_trap"]

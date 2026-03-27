@@ -49,21 +49,70 @@ const WEAPON_LEVEL_PERKS: Dictionary = {
 	},
 }
 
-# Passive pool — drawn randomly, no repeats per run
-const ALL_PASSIVES: Array = [
-	{id="tough",       rarity="common", icon="🛡", name="Reinforced Suit",   desc="+3 max HP, heal to full"},
-	{id="speed",       rarity="common", icon="💨", name="Thruster Boost",    desc="+25 move speed"},
-	{id="xp",          rarity="common", icon="✨", name="Void Attunement",   desc="Essence pickup range +40px"},
-	{id="tough2",      rarity="common", icon="❤", name="Adrenaline Gland",  desc="+2 max HP"},
-	{id="reload",      rarity="common", icon="🔄", name="Speed Loader",      desc="Reload time -30%"},
-	{id="magplus",     rarity="common", icon="📦", name="Extended Mag",      desc="+4 ammo in all weapons"},
-	{id="dodge",       rarity="rare",   icon="👻", name="Phase Shift",       desc="10% chance to dodge a hit"},
-	{id="burst_move",  rarity="rare",   icon="⚡", name="Sprint Capacitor",  desc="Killing 3 enemies: +50% speed for 3s"},
-	{id="vamp",        rarity="rare",   icon="🩸", name="Blood Harvest",     desc="1 in 5 kills restores 1 HP"},
-	{id="elite_dmg",   rarity="rare",   icon="⚔", name="Hunter's Mark",     desc="+30% damage vs elites"},
-	{id="corruption_resist", rarity="rare", icon="🌑", name="Void Skin",    desc="Corruption gain -25%"},
+# Run modifiers — drawn randomly, no repeats per run
+const RUN_MODIFIERS: Array[Dictionary] = [
+	{id="adrenaline",   rarity="rare",   icon="E", name="Adrenaline",    desc="3 kills in 3s: +5% speed stacking (resets on hit)"},
+	{id="void_hunger",  rarity="common", icon="V", name="Void Hunger",   desc="Killing void-type enemies restores 1 HP"},
+	{id="stalker",      rarity="rare",   icon="S", name="Stalker",       desc="+40% damage to enemies not targeting you"},
+	{id="momentum",     rarity="rare",   icon="M", name="Momentum",      desc="+15% bullet speed per consecutive hit, resets on miss"},
+	{id="scavenger",    rarity="common", icon="$", name="Scavenger",     desc="Ingredients also drop 1 essence"},
+	{id="last_stand",   rarity="rare",   icon="L", name="Last Stand",    desc="Below 3 HP: +50% damage and +30% speed"},
+	{id="pack_hunter",  rarity="common", icon="P", name="Pack Hunter",   desc="+8% damage per enemy within 200px"},
+	{id="biome_bond",   rarity="rare",   icon="B", name="Biome Bond",    desc="+20% damage while in your starting biome"},
+	{id="precision",    rarity="rare",   icon="X", name="Precision",     desc="First shot after reload always crits (2x damage)"},
+	{id="void_drain",   rarity="common", icon="D", name="Void Drain",    desc="Killing void enemies reduces corruption by 3"},
+	{id="tough",        rarity="common", icon="T", name="Reinforced Suit", desc="+3 max HP, heal to full"},
+	{id="speed",        rarity="common", icon="F", name="Thruster Boost", desc="+25 move speed"},
+	{id="reload",       rarity="common", icon="R", name="Speed Loader",  desc="Reload time -30%"},
+	{id="magplus",      rarity="common", icon="A", name="Extended Mag",  desc="+4 ammo"},
+	{id="dodge",        rarity="rare",   icon="G", name="Phase Shift",   desc="10% chance to dodge a hit"},
+	{id="vamp",         rarity="rare",   icon="H", name="Blood Harvest", desc="1 in 5 kills restores 1 HP"},
+	{id="elite_dmg",    rarity="rare",   icon="K", name="Hunters Mark",  desc="+30% damage vs elites"},
+	{id="corruption_resist", rarity="rare", icon="C", name="Void Skin", desc="Corruption gain -25%"},
 ]
-var passives_taken: Array[String] = []  # ids of passives already picked this run
+var modifiers_taken: Array[String] = []
+
+# Weapon mutations
+const WEAPON_MUTATIONS: Dictionary = {
+	"sidearm": {
+		"clean": {icon="G", name="Marksman Rifle", desc="Fire rate halved, damage x3, +50% range. First shot after reload: instant."},
+		"void":  {icon="V", name="Entropy Gun",    desc="Each bullet splits into 3 fragments on hit. Fragments bounce off walls once."},
+	},
+	"scatter": {
+		"clean": {icon="G", name="Flechette",      desc="Tighter cone, pellets pierce 2 enemies."},
+		"void":  {icon="V", name="Chaos Spray",    desc="270 degree cone, pellets home slightly. Chip dmg to self if enemies in 40px."},
+	},
+	"lance": {
+		"clean": {icon="G", name="Null Spear",     desc="Fire rate x2, leaves a 3s slow field where it lands."},
+		"void":  {icon="V", name="Singularity",    desc="On hit: 2s gravity vortex. Your bullets deal +50% to pulled enemies."},
+	},
+	"baton": {
+		"clean": {icon="G", name="Arc Blade",      desc="Melee leaves 3s slow fields on the ground."},
+		"void":  {icon="V", name="Consuming Vortex", desc="AOE expands 1.5s. Drains HP from enemies, heals you."},
+	},
+	"dart": {
+		"clean": {icon="G", name="Smart Missile",  desc="Single large slow missile. Massive damage, perfect tracking."},
+		"void":  {icon="V", name="Parasite Swarm", desc="Darts latch on, drain HP 4s. Spreads to 1 nearby enemy on death."},
+	},
+}
+
+# Kit definitions
+const KIT_DEFS: Dictionary = {
+	"stim_pack":    {name="Stim",     icon="S", desc="T1: +4 HP, +15 corruption. 8s cooldown."},
+	"flash_trap":   {name="Trap",     icon="T", desc="T1: Stun trap 80px 2s. 2 charges/hunt."},
+	"blink_kit":    {name="Blink",    icon="B", desc="T1: Teleport 200px. 10s cooldown."},
+	"chain_kit":    {name="Chain",    icon="C", desc="T1: Tether enemy 3s. 12s cooldown."},
+	"charge_kit":   {name="Charge",  icon="X", desc="T1: Knockback 150px. 12s cooldown."},
+	"mirage_kit":   {name="Mirage",  icon="M", desc="T1: Decoy draws aggro 6s. 18s cooldown."},
+	"turret_kit":   {name="Turret",  icon="R", desc="T1: Auto-turret 12s. 1 charge/hunt."},
+	"smoke_kit":    {name="Smoke",   icon="K", desc="T1: Smoke 150px 6s. 14s cooldown."},
+	"anchor_kit":   {name="Anchor",  icon="A", desc="T1: Gravity pull 400px 4s. 20s cooldown."},
+	"drone_kit":    {name="Drone",   icon="D", desc="T1: Intercepts 1 bullet/4s."},
+	"familiar_kit": {name="Familiar",icon="F", desc="T1: Void familiar, rams enemies."},
+	"pack_kit":     {name="Pack",    icon="P", desc="T1: Summon 2 allies 15s. 25s cooldown."},
+	"void_surge":   {name="Surge",   icon="V", desc="T1: Spend 20 corruption: +80% speed 3s."},
+	"rupture_kit":  {name="Rupture", icon="U", desc="T1: Detonate corruption bar AOE."},
+}
 
 # Runtime weapon modifiers (applied to WEAPON_DEFS at fire time)
 var weapon_mods: Dictionary = {}  # weapon_id -> {fire_rate_mult, damage_bonus, extra_pellets, piercing, slow, etc.}
@@ -75,10 +124,9 @@ var player_max_hp := 10
 var player_speed := 180.0
 const PLAYER_RADIUS := 16.0
 
-# === Weapons ===
-var active_weapons: Array[Dictionary] = []
-# Each entry: {id: String, level: int, cooldown_timer: float, mag_ammo: int, mag_size: int, reload_timer: float}
-var weapon_slots: int = 3
+# === Single main weapon ===
+var main_weapon: Dictionary = {}
+# {id, level, cooldown_timer, mag_ammo, mag_size, reload_timer, mutated, mutation_type}
 
 # === Bullets ===
 # {pos, vel, radius, color, damage, lifetime, from_player}
@@ -152,9 +200,34 @@ var corruption_threshold_35 := false
 var corruption_threshold_60 := false
 var corruption_prev_threshold: int = 0  # 0=CLEAN, 1=VALLEY, 2=CORRUPT, 3=VOID
 
-# === Stim system ===
-var stims_remaining: int = 3
-var stim_cooldown: float = 0.0
+# === XP curve ===
+var xp_threshold: int = 20
+
+# === Kit system ===
+var equipped_kits: Array[String] = []
+var kit_states: Dictionary = {}
+var kit_tiers: Dictionary = {}
+var kit_button_rects: Array[Rect2] = []
+
+var traps: Array[Dictionary] = []
+var decoys: Array[Dictionary] = []
+var turrets: Array[Dictionary] = []
+var smoke_zones: Array[Dictionary] = []
+var gravity_wells: Array[Dictionary] = []
+var drone_active: bool = false
+var drone_pos: Vector2 = Vector2.ZERO
+var drone_intercept_timer: float = 0.0
+var familiar_active: bool = false
+var familiar_pos: Vector2 = Vector2.ZERO
+var familiar_attack_timer: float = 0.0
+var familiar_corruption_timer: float = 0.0
+
+# === Modifier runtime state ===
+var adrenaline_stack: int = 0
+var adrenaline_last_kill_time: float = 0.0
+var momentum_stack: int = 0
+var next_shot_crit: bool = false
+var player_start_biome: String = ""
 
 # === Game state ===
 var paused := false
@@ -260,15 +333,21 @@ func _ready() -> void:
 	var xp_bonus: float = SaveManager.data.ship_upgrades.get("xp_rate", 0) * 0.1
 	essence_collect_radius = 60.0 + (60.0 * xp_bonus)
 
-	stims_remaining = GameData.current_contract.get("stims", 3)
-
 	# Starting weapon from loadout
-	var start_wep: String = GameData.starting_weapon
-	if start_wep.is_empty() or not WEAPON_DEFS.has(start_wep):
-		start_wep = "sidearm"
-	var is_baton: bool = start_wep == "baton"
+	var wid: String = GameData.starting_weapon
+	if wid.is_empty() or not WEAPON_DEFS.has(wid): wid = "sidearm"
+	var is_baton: bool = wid == "baton"
 	var base_mag: int = 999 if is_baton else 12
-	active_weapons = [{id=start_wep, level=1, cooldown_timer=0.0, mag_ammo=base_mag + mag_bonus, mag_size=base_mag + mag_bonus, reload_timer=0.0}]
+	main_weapon = {id=wid, level=1, cooldown_timer=0.0, mag_ammo=base_mag+mag_bonus, mag_size=base_mag+mag_bonus, reload_timer=0.0, mutated=false, mutation_type=""}
+
+	# XP curve
+	xp_threshold = _xp_needed_for_level(1)
+
+	# Kit system
+	equipped_kits = GameData.equipped_kits.duplicate()
+	kit_tiers = GameData.kit_tiers.duplicate()
+	for kid in equipped_kits:
+		kit_states[kid] = _init_kit_state(kid)
 
 	# Elite interval: first elite at 3-5 min (shorter at higher depth)
 	elite_interval = randf_range(90.0 - depth * 15.0, 150.0 - depth * 15.0)
@@ -283,6 +362,17 @@ func _ready() -> void:
 	_generate_void_pools()
 	_spawn_biome_enemies()
 	_spawn_wave(depth)
+
+	player_start_biome = _get_biome_at(player_pos)
+
+	# Activate passive kits
+	for kid in equipped_kits:
+		if kid == "drone_kit":
+			drone_active = true
+			drone_pos = player_pos + Vector2(50, 0)
+		elif kid == "familiar_kit":
+			familiar_active = true
+			familiar_pos = player_pos + Vector2(60, 0)
 
 	set_process_input(true)
 	queue_redraw()
@@ -670,6 +760,10 @@ func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGe
 		dormant = type_name == "Cave Lurker",
 		# patrol_river state
 		patrol_river_timer = randf_range(3.0, 4.0),
+		# stun / parasite
+		stunned_timer = 0.0,
+		parasite_timer = 0.0,
+		parasite_dmg = 0.0,
 	}
 	enemies.append(enemy)
 
@@ -690,16 +784,11 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var te: InputEventScreenTouch = event
 		if te.pressed:
-			# Stim button tap check
-			var stim_btn_pos := Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
-			var stim_rect := Rect2(stim_btn_pos, Vector2(80.0, 36.0))
-			if stim_rect.has_point(te.position) and stims_remaining > 0 and stim_cooldown <= 0.0:
-				stims_remaining -= 1
-				stim_cooldown = 8.0
-				player_hp = min(player_hp + 4, player_max_hp)
-				corruption += 15.0
-				_show_message("Stim used! +4 HP / +15 corruption")
-				return
+			# Kit button tap check
+			for ki in range(kit_button_rects.size()):
+				if ki < equipped_kits.size() and kit_button_rects[ki].has_point(te.position):
+					_activate_kit(equipped_kits[ki])
+					return
 			# First finger down anywhere starts the joystick at that point
 			if not joy_active:
 				joy_active = true
@@ -741,8 +830,6 @@ func _process(delta: float) -> void:
 		speed_boost_timer -= delta
 	if player_hit_flash > 0.0:
 		player_hit_flash -= delta
-	if stim_cooldown > 0.0:
-		stim_cooldown -= delta
 
 	_move_player(delta)
 	_update_camera()
@@ -756,6 +843,14 @@ func _process(delta: float) -> void:
 	_apply_corruption_effects()
 	_update_aoe_flashes(delta)
 	_update_waves(delta)
+	_update_kit_cooldowns(delta)
+	_update_traps(delta)
+	_update_decoys(delta)
+	_update_turrets(delta)
+	_update_smoke(delta)
+	_update_gravity_wells(delta)
+	_update_drone(delta)
+	_update_familiar(delta)
 
 	queue_redraw()
 
@@ -822,7 +917,9 @@ func _update_camera() -> void:
 	camera_offset.y = clampf(camera_offset.y, 0.0, WORLD_H - vp_size.y)
 
 func _update_weapons(delta: float) -> void:
-	# Find nearest living enemy once for all weapons
+	if main_weapon.is_empty():
+		return
+	# Find nearest living enemy
 	var nearest_dist := 999999.0
 	var nearest_pos := Vector2.ZERO
 	var nearest_found := false
@@ -837,182 +934,268 @@ func _update_weapons(delta: float) -> void:
 
 	var corr_stats: Dictionary = _get_effective_player_stats()
 
-	for wi in range(active_weapons.size()):
-		var w: Dictionary = active_weapons[wi]
-		var def: Dictionary = WEAPON_DEFS[w.id]
-		var mods_w: Dictionary = weapon_mods.get(w.id, {})
-		var damage: int = def.damage + (w.level - 1) + mods_w.get("damage_bonus", 0)
-		var w_piercing: bool = mods_w.get("piercing", def.pattern == "piercing")
-		var w_fire_rate: float = maxf(0.1, (def.fire_rate + mods_w.get("fire_rate_add", 0.0)) * corr_stats.fire_rate_mult)
-		var w_bullet_speed: float = def.bullet_speed + mods_w.get("bullet_speed_bonus", 0.0)
-		var w_extra_pellets: int = mods_w.get("extra_pellets", 0)
-		var w_range: float = def.range * corr_stats.range_mult
+	var w: Dictionary = main_weapon
+	var def: Dictionary = WEAPON_DEFS[w.id]
+	var mods_w: Dictionary = weapon_mods.get(w.id, {})
+	var damage: int = int(float(def.damage + (w.level - 1) + mods_w.get("damage_bonus", 0)) * corr_stats.damage_mult)
+	var w_piercing: bool = mods_w.get("piercing", def.pattern == "piercing")
+	var w_fire_rate: float = maxf(0.1, (def.fire_rate + mods_w.get("fire_rate_add", 0.0)) * corr_stats.fire_rate_mult)
+	var w_bullet_speed: float = def.bullet_speed + mods_w.get("bullet_speed_bonus", 0.0)
+	var w_extra_pellets: int = mods_w.get("extra_pellets", 0)
+	var w_range: float = def.range * corr_stats.range_mult * mods_w.get("range_mult", 1.0)
 
-		# Handle reload
-		if w.reload_timer > 0.0:
-			w.reload_timer -= delta
-			if w.reload_timer <= 0.0:
-				w.mag_ammo = w.mag_size
-				if wi == 0:
-					_show_message("Reloaded!")
-			active_weapons[wi] = w
-			continue
+	# Momentum bullet speed modifier
+	if "momentum" in modifiers_taken:
+		w_bullet_speed *= (1.0 + momentum_stack * 0.15)
 
-		# Handle cooldown
-		if w.cooldown_timer > 0.0:
-			w.cooldown_timer -= delta
+	# Handle reload
+	if w.reload_timer > 0.0:
+		w.reload_timer -= delta
+		if w.reload_timer <= 0.0:
+			w.mag_ammo = w.mag_size
+			_show_message("Reloaded!")
+			if "precision" in modifiers_taken:
+				next_shot_crit = true
+			if mods_w.get("instant_after_reload", false):
+				w.cooldown_timer = 0.0
+		main_weapon = w
+		return
 
-		# Out of ammo — start reload
-		if w.mag_ammo <= 0 and w.reload_timer <= 0.0:
-			var reload_mult: float = mods_w.get("reload_mult", 1.0) * corr_stats.reload_mult
-			w.reload_timer = 1.5 * reload_mult
-			if wi == 0:
-				_show_message("Reloading...")
-			active_weapons[wi] = w
-			continue
+	# Handle cooldown
+	if w.cooldown_timer > 0.0:
+		w.cooldown_timer -= delta
 
-		# Fire if ready
-		if w.cooldown_timer <= 0.0 and w.mag_ammo > 0:
-			if not nearest_found or nearest_dist > w_range:
-				active_weapons[wi] = w
-				continue
+	# Out of ammo — start reload
+	if w.mag_ammo <= 0 and w.reload_timer <= 0.0:
+		var reload_mult: float = mods_w.get("reload_mult", 1.0) * corr_stats.reload_mult
+		w.reload_timer = 1.5 * reload_mult
+		_show_message("Reloading...")
+		main_weapon = w
+		return
 
-			var dir: Vector2 = (nearest_pos - player_pos).normalized()
-			w.cooldown_timer = w_fire_rate
+	# Fire if ready
+	if w.cooldown_timer <= 0.0 and w.mag_ammo > 0:
+		if not nearest_found or nearest_dist > w_range:
+			main_weapon = w
+			return
 
-			match def.pattern:
-				"single":
-					w.mag_ammo -= 1
-					var single_b: Dictionary = {
-						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-						vel = dir * w_bullet_speed,
+		var dir: Vector2 = (nearest_pos - player_pos).normalized()
+		w.cooldown_timer = w_fire_rate
+
+		# Precision crit
+		var fire_damage: int = damage
+		if next_shot_crit:
+			fire_damage = damage * 2
+			next_shot_crit = false
+
+		# Smart missile mutation (dart clean)
+		if mods_w.get("smart_missile", false) and def.pattern == "homing":
+			w.mag_ammo -= 1
+			bullets.append({
+				pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+				vel = dir * 120.0,
+				radius = 12.0,
+				color = def.color,
+				damage = 15,
+				lifetime = 4.0,
+				from_player = true,
+				homing = true,
+				bullet_speed = 120.0,
+				weapon_id = w.id,
+			})
+			main_weapon = w
+			return
+
+		# Chaos spray mutation (scatter void)
+		if mods_w.get("chaos_spray", false) and def.pattern == "scatter":
+			w.mag_ammo -= 1
+			var base_angle: float = dir.angle()
+			for pi in range(8):
+				var angle: float = base_angle + deg_to_rad(float(pi) * 33.75)
+				var scatter_dir := Vector2(cos(angle), sin(angle))
+				var scatter_b: Dictionary = {
+					pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
+					vel = scatter_dir * w_bullet_speed,
+					radius = def.bullet_radius,
+					color = def.color,
+					damage = fire_damage,
+					lifetime = w_range / maxf(1.0, w_bullet_speed),
+					from_player = true,
+					homing = true,
+					bullet_speed = w_bullet_speed,
+					weapon_id = w.id,
+				}
+				bullets.append(scatter_b)
+			# Self chip damage
+			if mods_w.get("self_chip", false):
+				for e in enemies:
+					if e.hp > 0 and player_pos.distance_to(e.pos) < 40.0:
+						player_hp -= 1
+						if player_hp <= 0:
+							_die()
+							return
+						break
+			main_weapon = w
+			return
+
+		match def.pattern:
+			"single":
+				w.mag_ammo -= 1
+				var single_b: Dictionary = {
+					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+					vel = dir * w_bullet_speed,
+					radius = def.bullet_radius,
+					color = def.color,
+					damage = fire_damage,
+					lifetime = w_range / maxf(1.0, w_bullet_speed),
+					from_player = true,
+					piercing = w_piercing,
+					hit_ids = [] if w_piercing else [],
+					weapon_id = w.id,
+				}
+				if mods_w.get("explode_on_hit", false):
+					single_b["explode"] = true
+				if mods_w.get("fragment_on_hit", false):
+					single_b["fragment_on_hit"] = true
+				bullets.append(single_b)
+			"scatter":
+				w.mag_ammo -= 1
+				var base_angle: float = dir.angle()
+				var spread_deg: float = 15.0
+				if mods_w.get("tight_cone", false):
+					spread_deg = 8.0
+				var pellet_angles: Array = [-spread_deg, 0.0, spread_deg]
+				for _ep in range(w_extra_pellets):
+					pellet_angles.append(randf_range(-spread_deg * 1.5, spread_deg * 1.5))
+				for offset_deg in pellet_angles:
+					var angle: float = base_angle + deg_to_rad(float(offset_deg))
+					var scatter_dir := Vector2(cos(angle), sin(angle))
+					var scatter_b: Dictionary = {
+						pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
+						vel = scatter_dir * w_bullet_speed,
 						radius = def.bullet_radius,
 						color = def.color,
-						damage = damage,
+						damage = fire_damage,
 						lifetime = w_range / maxf(1.0, w_bullet_speed),
 						from_player = true,
-						piercing = w_piercing,
-						hit_ids = [] if w_piercing else [],
+						weapon_id = w.id,
+					}
+					if mods_w.get("slow_on_hit", false):
+						scatter_b["slow_on_hit"] = true
+					if mods_w.get("explode_on_hit", false):
+						scatter_b["explode"] = true
+					if mods_w.get("piercing", false):
+						scatter_b["piercing"] = true
+						scatter_b["hit_ids"] = []
+						scatter_b["pierce_count"] = mods_w.get("pierce_count", 2)
+					bullets.append(scatter_b)
+			"piercing":
+				w.mag_ammo -= 1
+				var pierce_b: Dictionary = {
+					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+					vel = dir * w_bullet_speed,
+					radius = def.bullet_radius,
+					color = def.color,
+					damage = fire_damage,
+					lifetime = w_range / maxf(1.0, w_bullet_speed),
+					from_player = true,
+					piercing = true,
+					hit_ids = [],
+					weapon_id = w.id,
+				}
+				if mods_w.get("explode_on_hit", false):
+					pierce_b["explode"] = true
+				if mods_w.get("slow_field_on_land", false):
+					pierce_b["slow_field_on_land"] = true
+				if mods_w.get("singularity_on_hit", false):
+					pierce_b["singularity_on_hit"] = true
+				bullets.append(pierce_b)
+			"homing":
+				w.mag_ammo -= 1
+				var dart_count: int = 2 if mods_w.get("dual_dart", false) else 1
+				for _di in range(dart_count):
+					var dart_offset := Vector2.ZERO
+					if dart_count > 1 and _di == 1:
+						dart_offset = Vector2(-dir.y, dir.x) * 10.0
+					var dart_b: Dictionary = {
+						pos = player_pos + dir * (PLAYER_RADIUS + 6.0) + dart_offset,
+						vel = dir * def.bullet_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = fire_damage,
+						lifetime = w_range / def.bullet_speed,
+						from_player = true,
+						homing = true,
+						bullet_speed = def.bullet_speed,
 						weapon_id = w.id,
 					}
 					if mods_w.get("explode_on_hit", false):
-						single_b["explode"] = true
-					bullets.append(single_b)
-				"scatter":
-					w.mag_ammo -= 1
-					var base_angle: float = dir.angle()
-					var pellet_angles: Array = [-15.0, 0.0, 15.0]
-					for _ep in range(w_extra_pellets):
-						pellet_angles.append(randf_range(-25.0, 25.0))
-					for offset_deg in pellet_angles:
-						var angle: float = base_angle + deg_to_rad(float(offset_deg))
-						var scatter_dir := Vector2(cos(angle), sin(angle))
-						var scatter_b: Dictionary = {
-							pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
-							vel = scatter_dir * w_bullet_speed,
-							radius = def.bullet_radius,
-							color = def.color,
-							damage = damage,
-							lifetime = w_range / maxf(1.0, w_bullet_speed),
-							from_player = true,
-							weapon_id = w.id,
-						}
-						if mods_w.get("slow_on_hit", false):
-							scatter_b["slow_on_hit"] = true
-						if mods_w.get("explode_on_hit", false):
-							scatter_b["explode"] = true
-						bullets.append(scatter_b)
-				"piercing":
-					w.mag_ammo -= 1
-					var pierce_b: Dictionary = {
-						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-						vel = dir * w_bullet_speed,
-						radius = def.bullet_radius,
-						color = def.color,
-						damage = damage,
-						lifetime = w_range / maxf(1.0, w_bullet_speed),
-						from_player = true,
-						piercing = true,
-						hit_ids = [],
-						weapon_id = w.id,
-					}
-					if mods_w.get("explode_on_hit", false):
-						pierce_b["explode"] = true
-					bullets.append(pierce_b)
-				"homing":
-					w.mag_ammo -= 1
-					var dart_count: int = 2 if mods_w.get("dual_dart", false) else 1
-					for _di in range(dart_count):
-						var dart_offset := Vector2.ZERO
-						if dart_count > 1 and _di == 1:
-							dart_offset = Vector2(-dir.y, dir.x) * 10.0
-						var dart_b: Dictionary = {
-							pos = player_pos + dir * (PLAYER_RADIUS + 6.0) + dart_offset,
-							vel = dir * def.bullet_speed,
-							radius = def.bullet_radius,
-							color = def.color,
-							damage = damage,
-							lifetime = w_range / def.bullet_speed,
-							from_player = true,
-							homing = true,
-							bullet_speed = def.bullet_speed,
-							weapon_id = w.id,
-						}
-						if mods_w.get("explode_on_hit", false):
-							dart_b["explode"] = true
-						bullets.append(dart_b)
-				"melee_aoe":
-					# No bullet — instant AOE damage
-					var melee_range: float = def.range + mods_w.get("radius_bonus", 0.0)
-					var melee_hits: int = 0
-					var melee_hit_indices: Array[int] = []
-					for ei in range(enemies.size()):
-						var e: Dictionary = enemies[ei]
-						if e.hp <= 0:
-							continue
-						if player_pos.distance_to(e.pos) < melee_range:
-							e.hp -= damage
-							melee_hits += 1
-							melee_hit_indices.append(ei)
-							# Knockback (#5)
-							if mods_w.get("knockback", false):
-								var push_dir: Vector2 = (e.pos - player_pos).normalized()
-								e.pos += push_dir * 80.0
-							enemies[ei] = e
-							if e.hp <= 0:
-								_on_enemy_killed(ei)
-					# Chain lightning (#7)
-					if mods_w.get("chain", false):
-						for hi in melee_hit_indices:
-							var hit_e: Dictionary = enemies[hi]
-							if hit_e.hp <= 0:
-								continue
-							var chain_targets: Array[int] = []
-							for ci in range(enemies.size()):
-								if ci == hi or enemies[ci].hp <= 0:
-									continue
-								if melee_hit_indices.has(ci):
-									continue
-								if hit_e.pos.distance_to(enemies[ci].pos) < 150.0:
-									chain_targets.append(ci)
-							# Sort by distance, take up to 2
-							chain_targets.sort_custom(func(a: int, b: int) -> bool: return hit_e.pos.distance_to(enemies[a].pos) < hit_e.pos.distance_to(enemies[b].pos))
-							for ct_idx in range(mini(2, chain_targets.size())):
-								var ct: int = chain_targets[ct_idx]
-								var ce: Dictionary = enemies[ct]
-								ce.hp -= damage
-								enemies[ct] = ce
-								if ce.hp <= 0:
-									_on_enemy_killed(ct)
-					# Leech (#6)
-					if mods_w.get("leech", false) and melee_hits > 0:
-						leech_accumulator += float(melee_hits) * 0.5
-						while leech_accumulator >= 1.0:
-							leech_accumulator -= 1.0
+						dart_b["explode"] = true
+					if mods_w.get("parasite", false):
+						dart_b["parasite"] = true
+					bullets.append(dart_b)
+			"melee_aoe":
+				# No bullet — instant AOE damage
+				var melee_range: float = def.range + mods_w.get("radius_bonus", 0.0)
+				var melee_hits: int = 0
+				var melee_hit_indices: Array[int] = []
+				# Consuming vortex: expand AOE
+				var vortex_active: bool = mods_w.get("consuming_vortex", false)
+				if vortex_active:
+					melee_range += 100.0
+				for ei in range(enemies.size()):
+					var e: Dictionary = enemies[ei]
+					if e.hp <= 0:
+						continue
+					if player_pos.distance_to(e.pos) < melee_range:
+						var apply_dmg: int = fire_damage
+						e.hp -= apply_dmg
+						melee_hits += 1
+						melee_hit_indices.append(ei)
+						# Knockback (#5)
+						if mods_w.get("knockback", false):
+							var push_dir: Vector2 = (e.pos - player_pos).normalized()
+							e.pos += push_dir * 80.0
+						# Consuming vortex drain
+						if vortex_active:
 							player_hp = mini(player_hp + 1, player_max_hp)
-					aoe_flashes.append({pos=player_pos, radius=melee_range, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
+						enemies[ei] = e
+						if e.hp <= 0:
+							_on_enemy_killed(ei)
+				# Chain lightning (#7)
+				if mods_w.get("chain", false):
+					for hi in melee_hit_indices:
+						var hit_e: Dictionary = enemies[hi]
+						if hit_e.hp <= 0:
+							continue
+						var chain_targets: Array[int] = []
+						for ci in range(enemies.size()):
+							if ci == hi or enemies[ci].hp <= 0:
+								continue
+							if melee_hit_indices.has(ci):
+								continue
+							if hit_e.pos.distance_to(enemies[ci].pos) < 150.0:
+								chain_targets.append(ci)
+						chain_targets.sort_custom(func(a: int, b: int) -> bool: return hit_e.pos.distance_to(enemies[a].pos) < hit_e.pos.distance_to(enemies[b].pos))
+						for ct_idx in range(mini(2, chain_targets.size())):
+							var ct: int = chain_targets[ct_idx]
+							var ce: Dictionary = enemies[ct]
+							ce.hp -= fire_damage
+							enemies[ct] = ce
+							if ce.hp <= 0:
+								_on_enemy_killed(ct)
+				# Leech (#6)
+				if mods_w.get("leech", false) and melee_hits > 0:
+					leech_accumulator += float(melee_hits) * 0.5
+					while leech_accumulator >= 1.0:
+						leech_accumulator -= 1.0
+						player_hp = mini(player_hp + 1, player_max_hp)
+				aoe_flashes.append({pos=player_pos, radius=melee_range, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
+				# Arc blade mutation: place slow field
+				if mods_w.get("arc_fields", false):
+					smoke_zones.append({pos=player_pos, radius=80.0, timer=3.0, slowing=true})
 
-		active_weapons[wi] = w
+	main_weapon = w
 
 func _update_aoe_flashes(delta: float) -> void:
 	var i := aoe_flashes.size() - 1
@@ -1031,6 +1214,38 @@ func _update_enemies(delta: float) -> void:
 	for i in range(enemies.size()):
 		var e: Dictionary = enemies[i]
 		if e.hp <= 0:
+			continue
+
+		# Parasite tick
+		if e.get("parasite_timer", 0.0) > 0.0:
+			e.parasite_timer -= delta
+			e.hp -= int(e.get("parasite_dmg", 1.0) * delta + 0.5)
+			if e.hp <= 0:
+				enemies[i] = e
+				_on_enemy_killed(i)
+				# Parasite spread
+				var nearest_spread_dist: float = 150.0
+				var nearest_spread_idx: int = -1
+				for si in range(enemies.size()):
+					if si == i or enemies[si].hp <= 0:
+						continue
+					if enemies[si].get("parasite_timer", 0.0) > 0.0:
+						continue
+					var sd: float = e.pos.distance_to(enemies[si].pos)
+					if sd < nearest_spread_dist:
+						nearest_spread_dist = sd
+						nearest_spread_idx = si
+				if nearest_spread_idx >= 0:
+					var se: Dictionary = enemies[nearest_spread_idx]
+					se.parasite_timer = 4.0
+					se.parasite_dmg = 1.0
+					enemies[nearest_spread_idx] = se
+				continue
+
+		# Stunned check
+		if e.get("stunned_timer", 0.0) > 0.0:
+			e.stunned_timer -= delta
+			enemies[i] = e
 			continue
 
 		var dist_to_player: float = e.pos.distance_to(player_pos)
@@ -1054,11 +1269,21 @@ func _update_enemies(delta: float) -> void:
 		if e.is_aggroed:
 			var move_dir := Vector2.ZERO
 
+			# Decoy targeting: if decoy is closer than player, move toward decoy
+			var move_target: Vector2 = player_pos
+			for dc in decoys:
+				if dc.get("timer", 0.0) > 0.0:
+					var dc_dist: float = e.pos.distance_to(dc.pos)
+					if dc_dist < e.detection and dc_dist < e.pos.distance_to(move_target):
+						move_target = dc.pos
+			# Replace player_pos with move_target in charge-like behaviors below
+			var dist_to_target: float = e.pos.distance_to(move_target)
+
 			match e.behavior:
 				"charge":
 					# Dumb straight-line rush
-					if dist_to_player > e.radius + PLAYER_RADIUS:
-						move_dir = (player_pos - e.pos).normalized()
+					if dist_to_target > e.radius + PLAYER_RADIUS:
+						move_dir = (move_target - e.pos).normalized()
 
 				"flank":
 					# Circle to the side, then close in
@@ -1066,25 +1291,25 @@ func _update_enemies(delta: float) -> void:
 					if e.flank_timer <= 0.0:
 						e.flank_side *= -1.0
 						e.flank_timer = randf_range(1.0, 2.5)
-					var to_player: Vector2 = (player_pos - e.pos).normalized()
+					var to_player: Vector2 = (move_target - e.pos).normalized()
 					var perp: Vector2 = Vector2(-to_player.y, to_player.x) * e.flank_side
-					if dist_to_player > 80.0:
+					if dist_to_target > 80.0:
 						move_dir = (to_player + perp * 0.7).normalized()
 					else:
-						move_dir = to_player  # close enough, just hit
+						move_dir = to_player
 
 				"burst":
 					# Slow stalk, then sudden lunge
 					e.burst_timer -= delta
 					if e.burst_active:
-						move_dir = (player_pos - e.pos).normalized()
+						move_dir = (move_target - e.pos).normalized()
 						if e.burst_timer <= 0.0:
 							e.burst_active = false
 							e.burst_timer = randf_range(1.5, 3.0)
 					else:
-						# Slow stalk toward player
-						if dist_to_player > e.radius + PLAYER_RADIUS:
-							move_dir = (player_pos - e.pos).normalized() * 0.35
+						# Slow stalk toward target
+						if dist_to_target > e.radius + PLAYER_RADIUS:
+							move_dir = (move_target - e.pos).normalized() * 0.35
 						if e.burst_timer <= 0.0:
 							e.burst_active = true
 							e.burst_timer = 0.55  # lunge duration
@@ -1125,8 +1350,8 @@ func _update_enemies(delta: float) -> void:
 							if e.pos.distance_to(other.pos) < 160.0:
 								nearby += 1
 					var pack_mult: float = 1.0 + nearby * 0.25
-					if dist_to_player > e.radius + PLAYER_RADIUS:
-						move_dir = (player_pos - e.pos).normalized()
+					if dist_to_target > e.radius + PLAYER_RADIUS:
+						move_dir = (move_target - e.pos).normalized()
 					# Apply pack speed directly here
 					if move_dir != Vector2.ZERO:
 						var new_pos: Vector2 = e.pos + move_dir.normalized() * e.speed * pack_mult * delta
@@ -1145,8 +1370,8 @@ func _update_enemies(delta: float) -> void:
 							move_dir = Vector2.ZERO
 					if not e.get("dormant", false) and e.is_aggroed:
 						# Charge behavior once triggered
-						if dist_to_player > e.radius + PLAYER_RADIUS:
-							move_dir = (player_pos - e.pos).normalized()
+						if dist_to_target > e.radius + PLAYER_RADIUS:
+							move_dir = (move_target - e.pos).normalized()
 
 				"patrol_river":
 					# Tide Wraith: patrol along river, shoot at player
@@ -1263,6 +1488,11 @@ func _update_enemies(delta: float) -> void:
 				var now_sec: float = Time.get_ticks_msec() * 0.001
 				if e.get("slow_until", 0.0) > now_sec:
 					spd *= 0.6
+				# Smoke/slow field speed reduction
+				for sz in smoke_zones:
+					if sz.get("slowing", false) and e.pos.distance_to(sz.pos) < sz.radius:
+						spd *= 0.5
+						break
 				var new_pos: Vector2 = e.pos + move_dir.normalized() * spd * delta
 				new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 				e.pos = new_pos
@@ -1272,16 +1502,23 @@ func _update_enemies(delta: float) -> void:
 				var cd_key: int = i
 				var cd: float = enemy_melee_cooldowns.get(cd_key, 0.0)
 				if cd <= 0.0:
-					player_hp -= e.melee_dmg
-					enemy_melee_cooldowns[cd_key] = 1.0
-					player_hit_flash = 0.2
-					_show_message("Hit! -%d HP" % e.melee_dmg)
-					# Corrupted path melee heal (#17)
-					if corruption >= 36.0:
-						player_hp = mini(player_hp + 1, player_max_hp)
-					if player_hp <= 0:
-						_die()
-						return
+					# Dodge chance
+					var dodge_ch: float = weapon_mods.get("_player", {}).get("dodge_chance", 0.0)
+					if dodge_ch > 0.0 and randf() < dodge_ch:
+						_show_message("Dodged!")
+					else:
+						player_hp -= e.melee_dmg
+						enemy_melee_cooldowns[cd_key] = 1.0
+						player_hit_flash = 0.2
+						_show_message("Hit! -%d HP" % e.melee_dmg)
+						# Adrenaline reset on hit
+						adrenaline_stack = 0
+						# Corrupted path melee heal (#17)
+						if corruption >= 36.0:
+							player_hp = mini(player_hp + 1, player_max_hp)
+						if player_hp <= 0:
+							_die()
+							return
 		else:
 			# Patrol: random walk near aggro_origin
 			if e.pos.distance_to(e.patrol_target) < 5.0:
@@ -1346,6 +1583,7 @@ func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vect
 # =========================================================
 func _update_bullets(delta: float) -> void:
 	var to_remove: Array[int] = []
+	var new_bullets: Array[Dictionary] = []
 
 	for i in range(bullets.size()):
 		var b: Dictionary = bullets[i]
@@ -1366,12 +1604,18 @@ func _update_bullets(delta: float) -> void:
 			if found_target:
 				var track_mult: float = weapon_mods.get(b.get("weapon_id", ""), {}).get("tracking_mult", 1.0)
 				var new_dir: Vector2 = b.vel.normalized().lerp((best_pos - b.pos).normalized(), 3.0 * track_mult * delta)
-				b.vel = new_dir.normalized() * b.bullet_speed
+				b.vel = new_dir.normalized() * b.get("bullet_speed", b.vel.length())
 
 		b.pos += b.vel * delta
 		b.lifetime -= delta
 
 		if b.lifetime <= 0.0:
+			# Slow field on land (lance clean mutation)
+			if b.get("slow_field_on_land", false) and b.from_player:
+				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
+			# Momentum reset on miss
+			if b.from_player and "momentum" in modifiers_taken and not b.get("hit_enemy", false):
+				momentum_stack = 0
 			to_remove.append(i)
 			bullets[i] = b
 			continue
@@ -1389,11 +1633,28 @@ func _update_bullets(delta: float) -> void:
 				hit_obs = true
 				break
 		if hit_obs:
+			if b.get("slow_field_on_land", false) and b.from_player:
+				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 			to_remove.append(i)
 			bullets[i] = b
 			continue
 
 		if b.from_player:
+			# Tether bullet (chain kit)
+			if b.get("tether", false):
+				for ei in range(enemies.size()):
+					var e: Dictionary = enemies[ei]
+					if e.hp <= 0:
+						continue
+					if b.pos.distance_to(e.pos) < e.radius + b.radius:
+						e.stunned_timer = 3.0
+						enemies[ei] = e
+						to_remove.append(i)
+						_show_message("Tethered!")
+						break
+				bullets[i] = b
+				continue
+
 			# Hit enemies
 			var is_piercing: bool = b.get("piercing", false)
 			var b_elite_bonus: float = weapon_mods.get("_player", {}).get("elite_dmg_bonus", 1.0)
@@ -1403,52 +1664,107 @@ func _update_bullets(delta: float) -> void:
 					continue
 				if b.pos.distance_to(e.pos) < e.radius + b.radius:
 					var hit_dmg: int = b.damage
-					# Elite damage bonus (#14)
+					# Elite damage bonus
 					if e.get("is_elite", false) and b_elite_bonus > 1.0:
 						hit_dmg = int(ceil(float(hit_dmg) * b_elite_bonus))
+					# Stalker: +40% to non-aggroed
+					if not e.is_aggroed and "stalker" in modifiers_taken:
+						hit_dmg = int(float(hit_dmg) * 1.4)
+					# Pack hunter: +8% per enemy within 200px
+					if "pack_hunter" in modifiers_taken:
+						var nearby_count: int = 0
+						for ne in enemies:
+							if ne.hp > 0 and player_pos.distance_to(ne.pos) < 200.0:
+								nearby_count += 1
+						hit_dmg = int(float(hit_dmg) * (1.0 + nearby_count * 0.08))
+					# Biome bond: +20% in starting biome
+					if "biome_bond" in modifiers_taken and _get_biome_at(player_pos) == player_start_biome:
+						hit_dmg = int(float(hit_dmg) * 1.2)
+					# Singularity on hit (lance void mutation)
+					if b.get("singularity_on_hit", false):
+						gravity_wells.append({pos=b.pos, radius=200.0, timer=2.0})
+					# Momentum tracking
+					if "momentum" in modifiers_taken:
+						momentum_stack = mini(momentum_stack + 1, 10)
+					b["hit_enemy"] = true
+
 					if is_piercing:
 						var hit_ids: Array = b.hit_ids
 						if not hit_ids.has(ei):
 							hit_ids.append(ei)
 							b.hit_ids = hit_ids
 							e.hp -= hit_dmg
-							# Slow on hit (#1)
 							if b.get("slow_on_hit", false):
 								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
+							# Parasite dart
+							if b.get("parasite", false):
+								e.parasite_timer = 4.0
+								e.parasite_dmg = 1.0
 							enemies[ei] = e
-							# Explode on hit (#3)
 							if b.get("explode", false):
 								_bullet_explode(b.pos, hit_dmg)
+							if b.get("slow_field_on_land", false):
+								smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 							if e.hp <= 0:
 								_on_enemy_killed(ei, b.get("weapon_id", ""))
+							# Pierce count limit for scatter clean
+							var max_pierce: int = b.get("pierce_count", 9999)
+							if hit_ids.size() >= max_pierce:
+								to_remove.append(i)
+								break
 					else:
 						e.hp -= hit_dmg
-						# Slow on hit (#1)
 						if b.get("slow_on_hit", false):
 							e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
+						if b.get("parasite", false):
+							e.parasite_timer = 4.0
+							e.parasite_dmg = 1.0
 						enemies[ei] = e
+						# Fragment on hit (sidearm void mutation)
+						if b.get("fragment_on_hit", false) and not b.get("is_fragment", false):
+							var frag_dmg: int = maxi(1, int(hit_dmg * 0.5))
+							for fa in [deg_to_rad(30.0), deg_to_rad(150.0), deg_to_rad(270.0)]:
+								var fdir: Vector2 = Vector2(cos(b.vel.angle() + fa), sin(b.vel.angle() + fa))
+								new_bullets.append({
+									pos = b.pos,
+									vel = fdir * 300.0,
+									radius = 3.0,
+									color = b.color,
+									damage = frag_dmg,
+									lifetime = 0.3,
+									from_player = true,
+									weapon_id = b.get("weapon_id", ""),
+									is_fragment = true,
+								})
 						to_remove.append(i)
-						# Explode on hit (#3)
 						if b.get("explode", false):
 							_bullet_explode(b.pos, hit_dmg)
+						if b.get("slow_field_on_land", false):
+							smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 						if e.hp <= 0:
 							_on_enemy_killed(ei, b.get("weapon_id", ""))
 						break
 		else:
+			# Drone intercept check
+			if drone_active and b.pos.distance_to(drone_pos) < 100.0 and drone_intercept_timer <= 0.0:
+				drone_intercept_timer = 4.0
+				to_remove.append(i)
+				aoe_flashes.append({pos=drone_pos, radius=15.0, timer=0.2, color=Color(1.0, 1.0, 1.0, 0.8)})
+				bullets[i] = b
+				continue
 			# Hit player
 			if b.pos.distance_to(player_pos) < PLAYER_RADIUS + b.radius:
-				# Dodge chance (#11)
 				var dodge_ch: float = weapon_mods.get("_player", {}).get("dodge_chance", 0.0)
 				if dodge_ch > 0.0 and randf() < dodge_ch:
 					to_remove.append(i)
 					_show_message("Dodged!")
 				else:
 					var recv_dmg: int = b.damage
-					# Corrupted path armor vs commons (#17)
 					if corruption >= 36.0:
 						recv_dmg = maxi(1, recv_dmg - 1)
 					player_hp -= recv_dmg
 					player_hit_flash = 0.2
+					adrenaline_stack = 0
 					to_remove.append(i)
 					_show_message("Shot! -%d HP" % recv_dmg)
 					if player_hp <= 0:
@@ -1462,61 +1778,79 @@ func _update_bullets(delta: float) -> void:
 	for idx in range(to_remove.size() - 1, -1, -1):
 		bullets.remove_at(to_remove[idx])
 
+	# Add new bullets (fragments etc)
+	for nb in new_bullets:
+		bullets.append(nb)
+
 func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
 
-	# --- Passive procs on kill ---
-	# Vamp chance (#13)
+	# --- Modifier procs on kill ---
+	# Vamp chance
 	var vamp_ch: float = weapon_mods.get("_player", {}).get("vamp_chance", 0.0)
 	if vamp_ch > 0.0 and randf() < vamp_ch:
 		player_hp = mini(player_hp + 1, player_max_hp)
 		_show_message("+1 HP")
 
-	# Kill streak speed (#12)
+	# Kill streak speed
 	if weapon_mods.get("_player", {}).get("kill_streak_speed", false):
 		kill_streak_count += 1
 		if kill_streak_count >= 3:
 			kill_streak_count = 0
 			speed_boost_timer = 3.0
 
+	# Adrenaline
+	if "adrenaline" in modifiers_taken:
+		if (hunt_elapsed - adrenaline_last_kill_time) < 3.0:
+			adrenaline_stack += 1
+		else:
+			adrenaline_stack = 1
+		adrenaline_last_kill_time = hunt_elapsed
+
+	# Void hunger: heal from void kills
+	if e.void_type and "void_hunger" in modifiers_taken:
+		player_hp = mini(player_hp + 1, player_max_hp)
+
+	# Void drain: reduce corruption from void kills
+	if e.void_type and "void_drain" in modifiers_taken:
+		corruption = maxf(0.0, corruption - 3.0)
+
+	# Scavenger: elites drop extra essence
+	if "scavenger" in modifiers_taken and e.get("is_elite", false):
+		pickups.append({pos = death_pos + Vector2(randf_range(-10, 10), randf_range(-10, 10)), type = "essence"})
+
 	# On-kill lance (#2)
 	var lance_mods: Dictionary = weapon_mods.get("lance", {})
-	if lance_mods.get("on_kill_lance", false):
-		var has_lance: bool = false
-		for aw in active_weapons:
-			if aw.id == "lance":
-				has_lance = true
-				break
-		if has_lance:
-			var nearest_e_dist: float = 999999.0
-			var nearest_e_pos := Vector2.ZERO
-			var found_ne := false
-			for ne in enemies:
-				if ne.hp <= 0:
-					continue
-				var nd: float = death_pos.distance_to(ne.pos)
-				if nd < nearest_e_dist and nd > 1.0:
-					nearest_e_dist = nd
-					nearest_e_pos = ne.pos
-					found_ne = true
-			if found_ne:
-				var lance_def: Dictionary = WEAPON_DEFS["lance"]
-				var lance_dmg: int = lance_def.damage + lance_mods.get("damage_bonus", 0)
-				var lance_dir: Vector2 = (nearest_e_pos - death_pos).normalized()
-				var lance_spd: float = lance_def.bullet_speed + lance_mods.get("bullet_speed_bonus", 0.0)
-				bullets.append({
-					pos = death_pos,
-					vel = lance_dir * lance_spd,
-					radius = lance_def.bullet_radius,
-					color = lance_def.color,
-					damage = lance_dmg,
-					lifetime = lance_def.range / maxf(1.0, lance_spd),
-					from_player = true,
-					piercing = true,
-					hit_ids = [],
-					weapon_id = "lance",
-				})
+	if lance_mods.get("on_kill_lance", false) and main_weapon.get("id", "") == "lance":
+		var nearest_e_dist: float = 999999.0
+		var nearest_e_pos := Vector2.ZERO
+		var found_ne := false
+		for ne in enemies:
+			if ne.hp <= 0:
+				continue
+			var nd: float = death_pos.distance_to(ne.pos)
+			if nd < nearest_e_dist and nd > 1.0:
+				nearest_e_dist = nd
+				nearest_e_pos = ne.pos
+				found_ne = true
+		if found_ne:
+			var lance_def: Dictionary = WEAPON_DEFS["lance"]
+			var lance_dmg: int = lance_def.damage + lance_mods.get("damage_bonus", 0)
+			var lance_dir: Vector2 = (nearest_e_pos - death_pos).normalized()
+			var lance_spd: float = lance_def.bullet_speed + lance_mods.get("bullet_speed_bonus", 0.0)
+			bullets.append({
+				pos = death_pos,
+				vel = lance_dir * lance_spd,
+				radius = lance_def.bullet_radius,
+				color = lance_def.color,
+				damage = lance_dmg,
+				lifetime = lance_def.range / maxf(1.0, lance_spd),
+				from_player = true,
+				piercing = true,
+				hit_ids = [],
+				weapon_id = "lance",
+			})
 
 	# Split on kill — dart (#10)
 	if killer_weapon == "dart" and weapon_mods.get("dart", {}).get("split_on_kill", false):
@@ -1665,8 +1999,10 @@ func _check_pickups() -> void:
 				_show_message("\u2713 " + p.ingredient_data.name)
 			elif p.type == "essence":
 				essence_collected += 1
-				if essence_collected >= 20:
-					essence_collected -= 20
+				if essence_collected >= xp_threshold:
+					essence_collected -= xp_threshold
+					player_level += 1
+					xp_threshold = _xp_needed_for_level(player_level)
 					_level_up()
 			to_remove.append(i)
 
@@ -1690,7 +2026,6 @@ func _check_pickups() -> void:
 # LEVEL UP
 # =========================================================
 func _level_up() -> void:
-	player_level += 1
 	paused = true
 	_show_message("Level Up!")
 
@@ -1704,13 +2039,22 @@ func _generate_upgrades() -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 
-	# --- Weapon upgrades: offer named perk for each held weapon ---
-	var upgradeable: Array[Dictionary] = []
-	for w in active_weapons:
-		if w.level < 5:
-			upgradeable.append(w)
-	upgradeable.shuffle()
-	for w in upgradeable.slice(0, 2):
+	# --- Slot 1: WEAPON ---
+	var w: Dictionary = main_weapon
+	if w.level >= 5 and not w.mutated and WEAPON_MUTATIONS.has(w.id):
+		# Offer mutation cards based on corruption
+		if corruption < 35.0:
+			var mut: Dictionary = WEAPON_MUTATIONS[w.id]["clean"]
+			options.append({type="mutation", mutation_type="clean", rarity="legendary", icon=mut.icon, label=mut.name, desc=mut.desc, perk={}})
+		if corruption > 20.0:
+			var mut_v: Dictionary = WEAPON_MUTATIONS[w.id]["void"]
+			options.append({type="mutation", mutation_type="void", rarity="legendary", icon=mut_v.icon, label=mut_v.name, desc=mut_v.desc, perk={}})
+		# If only 1 mutation card, pad slot 1 with it
+		if options.size() == 0:
+			# No mutations available, offer mastery
+			var wdef_m: Dictionary = WEAPON_DEFS[w.id]
+			options.append({type="modifier", id="mastery_dmg", rarity="common", icon="W", label="Mastery: " + wdef_m.name, desc="+2 damage", perk={}})
+	elif w.level < 5:
 		var next_level: int = w.level + 1
 		if WEAPON_LEVEL_PERKS.has(w.id) and WEAPON_LEVEL_PERKS[w.id].has(next_level):
 			var perk: Dictionary = WEAPON_LEVEL_PERKS[w.id][next_level]
@@ -1720,68 +2064,74 @@ func _generate_upgrades() -> Array:
 				weapon_id = w.id,
 				rarity = "rare" if next_level >= 4 else "common",
 				icon = perk.icon,
-				label = wdef.name + " — " + perk.name,
+				label = wdef.name + " -- " + perk.name,
 				desc = perk.desc,
 				perk = perk,
 			})
 		else:
-			# Fallback generic upgrade
 			var wdef2: Dictionary = WEAPON_DEFS[w.id]
 			options.append({
 				type = "weapon_upgrade", weapon_id = w.id,
-				rarity = "common", icon = "⬆",
+				rarity = "common", icon = "W",
 				label = wdef2.name + " Lv" + str(w.level + 1),
 				desc = "+1 damage",
 				perk = {effect = "damage", value = 1},
 			})
+	else:
+		# Mutated, offer mastery card
+		var wdef_m2: Dictionary = WEAPON_DEFS[w.id]
+		options.append({type="modifier", id="mastery_dmg", rarity="common", icon="W", label="Mastery: " + wdef_m2.name, desc="+2 damage", perk={}})
 
-	# --- New weapon acquisition if slot open ---
-	if active_weapons.size() < weapon_slots:
-		var held: Array[String] = []
-		for w in active_weapons:
-			held.append(w.id)
-		var available: Array[String] = []
-		for k in WEAPON_DEFS.keys():
-			if not held.has(k):
-				available.append(k)
-		if not available.is_empty():
-			available.shuffle()
-			var new_id: String = available[0]
-			var wdef3: Dictionary = WEAPON_DEFS[new_id]
+	# --- Slot 2: KIT TIER OR MODIFIER ---
+	var slot2_done := false
+	for kid in equipped_kits:
+		var kt: int = kit_tiers.get(kid, 1)
+		if kt < 3:
+			var kdef: Dictionary = KIT_DEFS.get(kid, {})
 			options.append({
-				type = "weapon_acquire", weapon_id = new_id,
-				rarity = "rare", icon = "🔫",
-				label = "Acquire: " + wdef3.name,
-				desc = wdef3.desc,
+				type = "kit_tier",
+				kit_id = kid,
+				new_tier = kt + 1,
+				rarity = "rare",
+				icon = kdef.get("icon", "K"),
+				label = kdef.get("name", kid) + " Tier " + str(kt + 1),
+				desc = "+1 max HP (tier upgrade)",
 				perk = {},
 			})
+			slot2_done = true
+			break
+	if not slot2_done:
+		var avail2: Array[Dictionary] = []
+		for m in RUN_MODIFIERS:
+			if not modifiers_taken.has(m.id):
+				avail2.append(m)
+		avail2.shuffle()
+		if avail2.size() > 0:
+			var m2: Dictionary = avail2[0]
+			options.append({type="modifier", id=m2.id, rarity=m2.rarity, icon=m2.icon, label=m2.name, desc=m2.desc, perk={}})
 
-	# --- Passives: pick from pool, exclude already taken ---
-	var available_passives: Array[Dictionary] = []
-	for p in ALL_PASSIVES:
-		if not passives_taken.has(p.id):
-			available_passives.append(p)
-	available_passives.shuffle()
-	# Always offer at least 1 passive, prefer rare if level is high
-	var passive_count: int = 1 if options.size() >= 2 else 2
-	for p in available_passives.slice(0, passive_count):
-		options.append({
-			type = "passive", id = p.id,
-			rarity = p.rarity, icon = p.icon,
-			label = p.name, desc = p.desc,
-			perk = {},
-		})
+	# --- Slot 3: MODIFIER ---
+	var used_mod_ids: Array[String] = modifiers_taken.duplicate()
+	for o in options:
+		if o.type == "modifier":
+			used_mod_ids.append(o.get("id", ""))
+	var avail3: Array[Dictionary] = []
+	for m in RUN_MODIFIERS:
+		if not used_mod_ids.has(m.id):
+			avail3.append(m)
+	avail3.shuffle()
+	if avail3.size() > 0:
+		var m3: Dictionary = avail3[0]
+		options.append({type="modifier", id=m3.id, rarity=m3.rarity, icon=m3.icon, label=m3.name, desc=m3.desc, perk={}})
 
 	# --- Guaranteed fallbacks so panel is never empty ---
 	if options.size() < 3:
 		var fallbacks: Array[Dictionary] = [
-			{type="fallback", id="hp_restore",   rarity="common", icon="❤", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
-			{type="fallback", id="dmg_boost",    rarity="common", icon="💥", label="Weapon Calibration", desc="+1 damage on all held weapons",       perk={}},
-			{type="fallback", id="speed_boost",  rarity="common", icon="💨", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
-			{type="fallback", id="corr_purge",   rarity="rare",   icon="🌑", label="Void Purge",         desc="Reduce corruption by 20",             perk={}},
-			{type="fallback", id="mag_all",      rarity="common", icon="📦", label="Ammo Cache",         desc="+3 ammo in all weapons",              perk={}},
+			{type="fallback", id="hp_restore",   rarity="common", icon="H", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
+			{type="fallback", id="dmg_boost",    rarity="common", icon="D", label="Weapon Calibration", desc="+1 damage",                           perk={}},
+			{type="fallback", id="speed_boost",  rarity="common", icon="S", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
+			{type="fallback", id="corr_purge",   rarity="rare",   icon="P", label="Void Purge",         desc="Reduce corruption by 20",             perk={}},
 		]
-		# Only offer fallbacks not already in options
 		var existing_ids: Array = []
 		for o in options:
 			existing_ids.append(o.get("id", o.get("weapon_id", "")))
@@ -1792,7 +2142,6 @@ func _generate_upgrades() -> Array:
 			if not existing_ids.has(fb.id):
 				options.append(fb)
 
-	options.shuffle()
 	if options.size() > 3:
 		options = options.slice(0, 3)
 	return options
@@ -1891,94 +2240,44 @@ func _on_upgrade_chosen(idx: int) -> void:
 	var choice: Dictionary = upgrade_choices[idx]
 	match choice.type:
 		"weapon_upgrade":
-			for wi in range(active_weapons.size()):
-				var w: Dictionary = active_weapons[wi]
-				if w.id == choice.weapon_id:
-					w.level += 1
-					active_weapons[wi] = w
-					# Apply perk effect to weapon_mods
-					var perk: Dictionary = choice.get("perk", {})
-					_apply_weapon_perk(choice.weapon_id, perk)
-					break
-		"weapon_acquire":
-			var is_baton: bool = choice.weapon_id == "baton"
-			var acq_mag_bonus: int = SaveManager.data.ship_upgrades.get("mag_size", 0) * 3
-			var acq_base: int = 999 if is_baton else 12 + acq_mag_bonus
-			active_weapons.append({
-				id=choice.weapon_id, level=1,
-				cooldown_timer=0.0,
-				mag_ammo=acq_base,
-				mag_size=acq_base,
-				reload_timer=0.0
-			})
-		"passive":
-			passives_taken.append(choice.id)
-			match choice.id:
-				"tough":
-					player_max_hp += 3
-					player_hp = player_max_hp  # full heal
-				"tough2":
-					player_max_hp += 2
-					player_hp = mini(player_hp + 2, player_max_hp)
-				"speed":
-					player_speed += 25.0
-				"xp":
-					essence_collect_radius += 40.0
-				"reload":
-					for wi2 in range(active_weapons.size()):
-						var w2: Dictionary = active_weapons[wi2]
-						# Stored in weapon_mods for fire logic to read
-						var mods: Dictionary = weapon_mods.get(w2.id, {})
-						mods["reload_mult"] = mods.get("reload_mult", 1.0) * 0.7
-						weapon_mods[w2.id] = mods
-				"magplus":
-					for wi3 in range(active_weapons.size()):
-						var w3: Dictionary = active_weapons[wi3]
-						w3.mag_size += 4
-						w3.mag_ammo = mini(w3.mag_ammo + 4, w3.mag_size)
-						active_weapons[wi3] = w3
-				"dodge":
-					var mods_d: Dictionary = weapon_mods.get("_player", {})
-					mods_d["dodge_chance"] = mods_d.get("dodge_chance", 0.0) + 0.1
-					weapon_mods["_player"] = mods_d
-				"burst_move":
-					var mods_bm: Dictionary = weapon_mods.get("_player", {})
-					mods_bm["kill_streak_speed"] = true
-					weapon_mods["_player"] = mods_bm
-				"vamp":
-					var mods_v: Dictionary = weapon_mods.get("_player", {})
-					mods_v["vamp_chance"] = mods_v.get("vamp_chance", 0.0) + 0.2
-					weapon_mods["_player"] = mods_v
-				"elite_dmg":
-					var mods_e: Dictionary = weapon_mods.get("_player", {})
-					mods_e["elite_dmg_bonus"] = mods_e.get("elite_dmg_bonus", 1.0) + 0.3
-					weapon_mods["_player"] = mods_e
-				"corruption_resist":
-					var mods_cr: Dictionary = weapon_mods.get("_player", {})
-					mods_cr["corruption_resist"] = mods_cr.get("corruption_resist", 0.0) + 0.25
-					weapon_mods["_player"] = mods_cr
+			if main_weapon.id == choice.get("weapon_id", ""):
+				main_weapon.level += 1
+				var perk: Dictionary = choice.get("perk", {})
+				_apply_weapon_perk(choice.weapon_id, perk)
+		"mutation":
+			main_weapon.mutated = true
+			main_weapon.mutation_type = choice.mutation_type
+			main_weapon.level = 6
+			_apply_mutation(main_weapon.id, choice.mutation_type)
+		"kit_tier":
+			var kit_id: String = choice.get("kit_id", "")
+			var new_tier: int = choice.get("new_tier", 2)
+			kit_tiers[kit_id] = new_tier
+			player_max_hp += 1
+			_show_message(KIT_DEFS.get(kit_id, {}).get("name", kit_id) + " upgraded to Tier " + str(new_tier) + "!")
+		"modifier":
+			var mod_id: String = choice.get("id", "")
+			if mod_id == "mastery_dmg":
+				var mods_m: Dictionary = weapon_mods.get(main_weapon.id, {})
+				mods_m["damage_bonus"] = mods_m.get("damage_bonus", 0) + 2
+				weapon_mods[main_weapon.id] = mods_m
+			else:
+				modifiers_taken.append(mod_id)
+				_apply_modifier(mod_id)
 		"fallback":
 			match choice.id:
 				"hp_restore":
 					player_hp = mini(player_hp + 3, player_max_hp)
 					_show_message("+3 HP")
 				"dmg_boost":
-					for wi_fb in range(active_weapons.size()):
-						var w_fb: Dictionary = active_weapons[wi_fb]
-						var mods_fb: Dictionary = weapon_mods.get(w_fb.id, {})
-						mods_fb["damage_bonus"] = mods_fb.get("damage_bonus", 0) + 1
-						weapon_mods[w_fb.id] = mods_fb
+					var mods_fb: Dictionary = weapon_mods.get(main_weapon.id, {})
+					mods_fb["damage_bonus"] = mods_fb.get("damage_bonus", 0) + 1
+					weapon_mods[main_weapon.id] = mods_fb
 				"speed_boost":
 					player_speed += 20.0
 				"corr_purge":
 					corruption = maxf(0.0, corruption - 20.0)
 					_show_message("Corruption -20")
-				"mag_all":
-					for wi_fb2 in range(active_weapons.size()):
-						var w_fb2: Dictionary = active_weapons[wi_fb2]
-						w_fb2.mag_size += 3
-						w_fb2.mag_ammo = mini(w_fb2.mag_ammo + 3, w_fb2.mag_size)
-						active_weapons[wi_fb2] = w_fb2
 
 	paused = false
 	upgrade_choices = []
@@ -2007,12 +2306,9 @@ func _apply_weapon_perk(wid: String, perk: Dictionary) -> void:
 			mods["piercing"] = true
 		"fire_rate_mag":
 			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.14
-			for wi in range(active_weapons.size()):
-				if active_weapons[wi].id == wid:
-					var w: Dictionary = active_weapons[wi]
-					w.mag_size += 6
-					w.mag_ammo = mini(w.mag_ammo + 6, w.mag_size)
-					active_weapons[wi] = w
+			if main_weapon.id == wid:
+				main_weapon.mag_size += 6
+				main_weapon.mag_ammo = mini(main_weapon.mag_ammo + 6, main_weapon.mag_size)
 		"pellets":
 			mods["extra_pellets"] = mods.get("extra_pellets", 0) + int(perk.value)
 		"slow":
@@ -2104,6 +2400,7 @@ func _get_effective_player_stats() -> Dictionary:
 	var range_mult: float = 1.0
 	var fire_rate_mult: float = 1.0
 	var reload_mult: float = 1.0
+	var damage_mult: float = 1.0
 	if corruption < 15.0:
 		move_speed_mult = 1.15
 		range_mult = 1.2
@@ -2112,8 +2409,18 @@ func _get_effective_player_stats() -> Dictionary:
 	elif corruption >= 36.0:
 		move_speed_mult = 1.2
 		range_mult = 0.7
-	# else 15-35: all 1.0
-	return {move_speed_mult = move_speed_mult, range_mult = range_mult, fire_rate_mult = fire_rate_mult, reload_mult = reload_mult}
+	# Adrenaline stacking speed
+	if "adrenaline" in modifiers_taken:
+		move_speed_mult *= (1.0 + adrenaline_stack * 0.05)
+	# Last stand
+	if player_hp <= 3 and "last_stand" in modifiers_taken:
+		damage_mult *= 1.5
+		move_speed_mult *= 1.3
+	# Void surge active
+	if "void_surge" in equipped_kits and kit_states.has("void_surge"):
+		if kit_states["void_surge"].get("active", false):
+			move_speed_mult *= 1.8
+	return {move_speed_mult = move_speed_mult, range_mult = range_mult, fire_rate_mult = fire_rate_mult, reload_mult = reload_mult, damage_mult = damage_mult}
 
 # =========================================================
 # CORRUPTION
@@ -2291,6 +2598,35 @@ func _draw() -> void:
 	if player_in_cave >= 0:
 		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0.1, 0.05, 0.15, 0.18))
 
+	# Kit entities
+	for trap in traps:
+		if trap.get("active", true):
+			var tsp: Vector2 = _w2s(trap.pos)
+			var diamond_pts := PackedVector2Array([tsp + Vector2(0, -5), tsp + Vector2(5, 0), tsp + Vector2(0, 5), tsp + Vector2(-5, 0)])
+			draw_colored_polygon(diamond_pts, Color(1.0, 0.9, 0.1))
+	for dc in decoys:
+		if dc.get("timer", 0.0) > 0.0:
+			var dsp: Vector2 = _w2s(dc.pos)
+			draw_circle(dsp, 12.0, Color(0.2, 0.9, 0.2))
+	for tr in turrets:
+		var tsp2: Vector2 = _w2s(tr.pos)
+		draw_rect(Rect2(tsp2 - Vector2(7, 7), Vector2(14, 14)), Color(0.1, 0.8, 0.9))
+	for sz in smoke_zones:
+		var ssp: Vector2 = _w2s(sz.pos)
+		var s_pulse: float = 0.15 + 0.05 * sin(hunt_elapsed * 3.0)
+		draw_circle(ssp, sz.radius, Color(0.4, 0.5, 0.6, s_pulse))
+		draw_arc(ssp, sz.radius, 0.0, TAU, 32, Color(0.5, 0.6, 0.7, 0.4), 1.5)
+	for gw in gravity_wells:
+		var gwsp: Vector2 = _w2s(gw.pos)
+		var gw_pulse: float = gw.radius + 10.0 * sin(hunt_elapsed * 4.0)
+		draw_arc(gwsp, gw_pulse, 0.0, TAU, 32, Color(0.6, 0.1, 0.8, 0.6), 2.0)
+	if drone_active:
+		var dsp2: Vector2 = _w2s(drone_pos)
+		draw_circle(dsp2, 6.0, Color(1.0, 1.0, 1.0))
+	if familiar_active:
+		var fsp: Vector2 = _w2s(familiar_pos)
+		draw_circle(fsp, 6.0, Color(0.6, 0.1, 0.8))
+
 	# Bullets
 	for b in bullets:
 		var sp: Vector2 = _w2s(b.pos)
@@ -2325,9 +2661,9 @@ func _draw() -> void:
 	var hp_frac: float = clampf(float(player_hp) / float(player_max_hp), 0.0, 1.0)
 	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
 
-	# Primary weapon ammo text (first weapon)
-	if active_weapons.size() > 0:
-		var pw: Dictionary = active_weapons[0]
+	# Primary weapon ammo text
+	if not main_weapon.is_empty():
+		var pw: Dictionary = main_weapon
 		var pw_reloading: bool = pw.reload_timer > 0.0
 		var ammo_color: Color = Color(1.0, 0.8, 0.2) if not pw_reloading else Color(1.0, 0.4, 0.2)
 		var ammo_text: String
@@ -2399,38 +2735,54 @@ func _draw() -> void:
 			_show_message(transition_msg)
 			hud_message_timer = 3.0
 
-	# Stim button (bottom right)
-	var stim_btn_pos := Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
-	var stim_btn_color: Color
-	if stim_cooldown > 0.0 or stims_remaining <= 0:
-		stim_btn_color = Color(0.3, 0.3, 0.3, 0.7)
-	else:
-		stim_btn_color = Color(0.15, 0.5, 0.15, 0.85)
-	draw_rect(Rect2(stim_btn_pos, Vector2(80.0, 36.0)), stim_btn_color)
-	_draw_text(stim_btn_pos + Vector2(8.0, 6.0), "STIM (%d)" % stims_remaining, Color.WHITE, 13)
-	# Cooldown bar under stim button
-	if stim_cooldown > 0.0:
-		var cd_frac: float = clampf(stim_cooldown / 8.0, 0.0, 1.0)
-		draw_rect(Rect2(stim_btn_pos.x, stim_btn_pos.y + 36.0, 80.0, 4.0), Color(0.2, 0.2, 0.2, 0.6))
-		draw_rect(Rect2(stim_btn_pos.x, stim_btn_pos.y + 36.0, 80.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
+	# Kit buttons (bottom right)
+	kit_button_rects.clear()
+	for ki in range(equipped_kits.size()):
+		var kit_id: String = equipped_kits[ki]
+		var kdef: Dictionary = KIT_DEFS.get(kit_id, {})
+		var btn_pos: Vector2
+		if equipped_kits.size() == 1:
+			btn_pos = Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
+		else:
+			btn_pos = Vector2(vp_size.x - 180.0 + ki * 90.0, vp_size.y - 55.0)
+		var btn_rect := Rect2(btn_pos, Vector2(70.0, 36.0))
+		kit_button_rects.append(btn_rect)
+		var state: Dictionary = kit_states.get(kit_id, {})
+		var cd: float = state.get("cooldown", 0.0)
+		var charges: int = state.get("charges", -1)
+		var can_use: bool = cd <= 0.0 and (charges < 0 or charges > 0)
+		var btn_color: Color = Color(0.15, 0.5, 0.15, 0.85) if can_use else Color(0.3, 0.3, 0.3, 0.7)
+		draw_rect(btn_rect, btn_color)
+		var kit_label: String = kdef.get("name", kit_id)
+		if charges >= 0:
+			kit_label += " (%d)" % charges
+		_draw_text(btn_pos + Vector2(4.0, 6.0), kit_label, Color.WHITE, 11)
+		# Cooldown bar
+		if cd > 0.0:
+			var max_cd: float = state.get("max_cooldown", 10.0)
+			var cd_frac: float = clampf(cd / max_cd, 0.0, 1.0)
+			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0, 4.0), Color(0.2, 0.2, 0.2, 0.6))
+			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
 
 	# XP bar (full width, bottom of screen)
 	var xp_bar_y: float = vp_size.y - 20.0
 	var xp_bar_h := 8.0
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), Color(0.1, 0.1, 0.15))
-	var xp_frac: float = float(essence_collected) / 20.0
+	var xp_frac: float = float(essence_collected) / float(xp_threshold)
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), Color(0.5, 0.0, 0.9))
 	# LV label left of bar
 	_draw_text(Vector2(4.0, xp_bar_y - 4.0), "LV %d" % player_level, Color(0.7, 0.5, 1.0), 12)
 
-	# Weapon list (bottom left, above XP bar)
-	var wy: float = xp_bar_y - 16.0
-	for w in active_weapons:
-		var def: Dictionary = WEAPON_DEFS[w.id]
-		var reload_indicator: String = " (reloading)" if w.reload_timer > 0 else ""
-		var ammo_str: String = "" if w.mag_size >= 999 else "  %d/%d" % [w.mag_ammo, w.mag_size]
-		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(w.level) + ammo_str + reload_indicator, Color(0.6,0.7,0.9,0.85), 11)
-		wy -= 15.0
+	# Weapon display (bottom left, above XP bar)
+	if not main_weapon.is_empty():
+		var wy: float = xp_bar_y - 16.0
+		var def: Dictionary = WEAPON_DEFS[main_weapon.id]
+		var reload_indicator: String = " (reloading)" if main_weapon.reload_timer > 0 else ""
+		var ammo_str: String = "" if main_weapon.mag_size >= 999 else "  %d/%d" % [main_weapon.mag_ammo, main_weapon.mag_size]
+		var mut_str: String = ""
+		if main_weapon.mutated:
+			mut_str = " [%s]" % main_weapon.mutation_type.to_upper()
+		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(main_weapon.level) + mut_str + ammo_str + reload_indicator, Color(0.6,0.7,0.9,0.85), 11)
 
 	# HUD message (center)
 	if hud_message != "":
@@ -2504,3 +2856,392 @@ func _w2s(world_pos: Vector2) -> Vector2:
 func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -> void:
 	var font: Font = ThemeDB.fallback_font
 	draw_string(font, pos + Vector2(0, font_size), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+# =========================================================
+# XP CURVE
+# =========================================================
+func _xp_needed_for_level(lv: int) -> int:
+	if lv <= 5: return 20
+	elif lv <= 10: return 35
+	else: return 55
+
+# =========================================================
+# KIT SYSTEM
+# =========================================================
+func _init_kit_state(kit_id: String) -> Dictionary:
+	match kit_id:
+		"stim_pack": return {cooldown = 0.0, max_cooldown = 8.0}
+		"flash_trap": return {cooldown = 0.0, charges = 2}
+		"blink_kit": return {cooldown = 0.0, max_cooldown = 10.0}
+		"chain_kit": return {cooldown = 0.0, max_cooldown = 12.0}
+		"charge_kit": return {cooldown = 0.0, max_cooldown = 12.0, charging = false}
+		"mirage_kit": return {cooldown = 0.0, max_cooldown = 18.0}
+		"turret_kit": return {charges = 1}
+		"smoke_kit": return {cooldown = 0.0, max_cooldown = 14.0}
+		"anchor_kit": return {cooldown = 0.0, max_cooldown = 20.0}
+		"drone_kit": return {active = true}
+		"familiar_kit": return {active = true}
+		"pack_kit": return {cooldown = 0.0, max_cooldown = 25.0}
+		"void_surge": return {cooldown = 0.0, max_cooldown = 5.0, active = false, timer = 0.0}
+		"rupture_kit": return {cooldown = 0.0, max_cooldown = 30.0}
+		_: return {cooldown = 0.0, max_cooldown = 15.0}
+
+func _activate_kit(kit_id: String) -> void:
+	if not kit_states.has(kit_id):
+		return
+	var state: Dictionary = kit_states[kit_id]
+	var cd: float = state.get("cooldown", 0.0)
+	if cd > 0.0:
+		return
+	var charges: int = state.get("charges", -1)
+	if charges == 0:
+		return
+
+	match kit_id:
+		"stim_pack":
+			player_hp = mini(player_hp + 4, player_max_hp)
+			corruption += 15.0
+			_show_message("Stim! +4HP +15 corruption")
+			state.cooldown = 8.0
+		"flash_trap":
+			if charges > 0:
+				traps.append({pos = player_pos, radius = 80.0, active = true})
+				state.charges = charges - 1
+				_show_message("Trap placed!")
+		"blink_kit":
+			var blink_dir: Vector2 = Vector2.UP
+			if joy_active:
+				var diff: Vector2 = joy_knob - joy_base
+				if diff.length() > 5.0:
+					blink_dir = diff.normalized()
+			player_pos += blink_dir * 200.0
+			player_pos.x = clampf(player_pos.x, PLAYER_RADIUS, WORLD_W - PLAYER_RADIUS)
+			player_pos.y = clampf(player_pos.y, PLAYER_RADIUS, WORLD_H - PLAYER_RADIUS)
+			state.cooldown = 10.0
+			_show_message("Blink!")
+		"chain_kit":
+			var chain_dir: Vector2 = Vector2.UP
+			var nearest_d: float = 999999.0
+			for e in enemies:
+				if e.hp > 0:
+					var d: float = player_pos.distance_to(e.pos)
+					if d < nearest_d:
+						nearest_d = d
+						chain_dir = (e.pos - player_pos).normalized()
+			bullets.append({
+				pos = player_pos + chain_dir * (PLAYER_RADIUS + 6.0),
+				vel = chain_dir * 350.0,
+				radius = 6.0,
+				color = Color(0.3, 0.9, 1.0),
+				damage = 0,
+				lifetime = 1.0,
+				from_player = true,
+				tether = true,
+			})
+			state.cooldown = 12.0
+		"charge_kit":
+			if not state.get("charging", false):
+				state.charging = true
+				_show_message("Charging...")
+			else:
+				# Release knockback blast
+				for ei in range(enemies.size()):
+					var e: Dictionary = enemies[ei]
+					if e.hp <= 0:
+						continue
+					if player_pos.distance_to(e.pos) < 150.0:
+						var push_dir: Vector2 = (e.pos - player_pos).normalized()
+						e.pos += push_dir * 200.0
+						e.hp -= 2
+						enemies[ei] = e
+						if e.hp <= 0:
+							_on_enemy_killed(ei)
+				aoe_flashes.append({pos = player_pos, radius = 150.0, timer = 0.3, color = Color(1.0, 0.8, 0.2, 0.6)})
+				state.charging = false
+				state.cooldown = 12.0
+				_show_message("CHARGE!")
+		"mirage_kit":
+			decoys.append({pos = player_pos + Vector2(randf_range(-40, 40), randf_range(-40, 40)), hp = 5, timer = 6.0})
+			state.cooldown = 18.0
+			_show_message("Decoy deployed!")
+		"turret_kit":
+			if charges > 0:
+				turrets.append({pos = player_pos, timer = 12.0, fire_timer = 0.0})
+				state.charges = charges - 1
+				_show_message("Turret deployed!")
+		"smoke_kit":
+			smoke_zones.append({pos = player_pos, radius = 150.0, timer = 6.0})
+			state.cooldown = 14.0
+			_show_message("Smoke!")
+		"anchor_kit":
+			gravity_wells.append({pos = player_pos, radius = 400.0, timer = 4.0})
+			state.cooldown = 20.0
+			_show_message("Gravity well!")
+		"drone_kit":
+			drone_active = true
+			drone_pos = player_pos + Vector2(50, 0)
+		"familiar_kit":
+			familiar_active = true
+			familiar_pos = player_pos + Vector2(60, 0)
+		"pack_kit":
+			if state.cooldown <= 0.0:
+				var rng := RandomNumberGenerator.new()
+				rng.randomize()
+				for _a in range(2):
+					_spawn_single_enemy("Rift Parasite", false, rng)
+					enemies[-1].is_aggroed = true
+					enemies[-1].cave_id = -1
+					enemies[-1].pos = player_pos + Vector2(randf_range(-60, 60), randf_range(-60, 60))
+				state.cooldown = 25.0
+				_show_message("Allies summoned!")
+		"void_surge":
+			if corruption >= 20.0:
+				corruption -= 20.0
+				state.active = true
+				state.timer = 3.0
+				state.cooldown = 5.0
+				_show_message("Void Surge!")
+		"rupture_kit":
+			var dmg: int = int(corruption / 5.0)
+			for ei in range(enemies.size()):
+				var e: Dictionary = enemies[ei]
+				if e.hp <= 0:
+					continue
+				if player_pos.distance_to(e.pos) < 200.0:
+					e.hp -= dmg
+					enemies[ei] = e
+					if e.hp <= 0:
+						_on_enemy_killed(ei)
+			aoe_flashes.append({pos = player_pos, radius = 200.0, timer = 0.3, color = Color(0.6, 0.0, 0.9, 0.7)})
+			corruption = 0.0
+			state.cooldown = 30.0
+			_show_message("RUPTURE! -%d corruption" % dmg)
+
+	kit_states[kit_id] = state
+
+func _update_kit_cooldowns(delta: float) -> void:
+	for kit_id in equipped_kits:
+		if not kit_states.has(kit_id): continue
+		var state: Dictionary = kit_states[kit_id]
+		if state.has("cooldown") and state.cooldown > 0.0:
+			state.cooldown -= delta
+		if kit_id == "void_surge" and state.get("active", false):
+			state.timer -= delta
+			if state.timer <= 0.0:
+				state.active = false
+		kit_states[kit_id] = state
+
+func _update_traps(delta: float) -> void:
+	var i := traps.size() - 1
+	while i >= 0:
+		var trap: Dictionary = traps[i]
+		if not trap.get("active", true):
+			traps.remove_at(i)
+			i -= 1
+			continue
+		for ei in range(enemies.size()):
+			var e: Dictionary = enemies[ei]
+			if e.hp <= 0:
+				continue
+			if e.pos.distance_to(trap.pos) < trap.get("radius", 80.0):
+				e.stunned_timer = 2.0
+				enemies[ei] = e
+				trap.active = false
+				traps[i] = trap
+				aoe_flashes.append({pos = trap.pos, radius = 80.0, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
+				break
+		i -= 1
+
+func _update_decoys(delta: float) -> void:
+	var i := decoys.size() - 1
+	while i >= 0:
+		decoys[i].timer -= delta
+		if decoys[i].timer <= 0.0:
+			decoys.remove_at(i)
+		i -= 1
+
+func _update_turrets(delta: float) -> void:
+	var i := turrets.size() - 1
+	while i >= 0:
+		var tr: Dictionary = turrets[i]
+		tr.timer -= delta
+		if tr.timer <= 0.0:
+			turrets.remove_at(i)
+			i -= 1
+			continue
+		tr.fire_timer -= delta
+		if tr.fire_timer <= 0.0:
+			tr.fire_timer = 0.125
+			# Find nearest enemy
+			var best_dist: float = 300.0
+			var best_idx: int = -1
+			for ei in range(enemies.size()):
+				var e: Dictionary = enemies[ei]
+				if e.hp <= 0:
+					continue
+				var d: float = tr.pos.distance_to(e.pos)
+				if d < best_dist:
+					best_dist = d
+					best_idx = ei
+			if best_idx >= 0:
+				var e: Dictionary = enemies[best_idx]
+				e.hp -= 1
+				enemies[best_idx] = e
+				if e.hp <= 0:
+					_on_enemy_killed(best_idx)
+		turrets[i] = tr
+		i -= 1
+
+func _update_smoke(delta: float) -> void:
+	var i := smoke_zones.size() - 1
+	while i >= 0:
+		smoke_zones[i].timer -= delta
+		if smoke_zones[i].timer <= 0.0:
+			smoke_zones.remove_at(i)
+		else:
+			# Enemies inside smoke lose aggro (if not slowing-only zone)
+			if not smoke_zones[i].get("slowing", false):
+				for ei in range(enemies.size()):
+					var e: Dictionary = enemies[ei]
+					if e.hp > 0 and not e.is_aggroed:
+						continue
+					if e.hp > 0 and e.pos.distance_to(smoke_zones[i].pos) < smoke_zones[i].radius:
+						e.is_aggroed = false
+						enemies[ei] = e
+		i -= 1
+
+func _update_gravity_wells(delta: float) -> void:
+	var i := gravity_wells.size() - 1
+	while i >= 0:
+		gravity_wells[i].timer -= delta
+		if gravity_wells[i].timer <= 0.0:
+			gravity_wells.remove_at(i)
+		else:
+			var gw: Dictionary = gravity_wells[i]
+			for ei in range(enemies.size()):
+				var e: Dictionary = enemies[ei]
+				if e.hp <= 0:
+					continue
+				var d: float = e.pos.distance_to(gw.pos)
+				if d < gw.radius and d > 5.0:
+					var pull_dir: Vector2 = (gw.pos - e.pos).normalized()
+					e.pos += pull_dir * 120.0 * delta
+					enemies[ei] = e
+		i -= 1
+
+func _update_drone(delta: float) -> void:
+	if not drone_active:
+		return
+	# Orbit player
+	var orbit_angle: float = fmod(hunt_elapsed * 2.0, TAU)
+	drone_pos = player_pos + Vector2(cos(orbit_angle), sin(orbit_angle)) * 50.0
+	drone_intercept_timer -= delta
+
+func _update_familiar(delta: float) -> void:
+	if not familiar_active:
+		return
+	# Orbit player
+	var orbit_angle: float = fmod(hunt_elapsed * 1.5 + PI, TAU)
+	familiar_pos = player_pos + Vector2(cos(orbit_angle), sin(orbit_angle)) * 60.0
+	# Corruption cost
+	familiar_corruption_timer -= delta
+	if familiar_corruption_timer <= 0.0:
+		corruption += 1.0
+		familiar_corruption_timer = 8.0
+	# Attack nearby enemy
+	familiar_attack_timer -= delta
+	if familiar_attack_timer <= 0.0:
+		familiar_attack_timer = 3.0
+		var best_dist: float = 120.0
+		var best_idx: int = -1
+		for ei in range(enemies.size()):
+			var e: Dictionary = enemies[ei]
+			if e.hp <= 0:
+				continue
+			var d: float = familiar_pos.distance_to(e.pos)
+			if d < best_dist:
+				best_dist = d
+				best_idx = ei
+		if best_idx >= 0:
+			var e: Dictionary = enemies[best_idx]
+			e.hp -= 2
+			enemies[best_idx] = e
+			if e.hp <= 0:
+				_on_enemy_killed(best_idx)
+
+# =========================================================
+# MODIFIER APPLICATION
+# =========================================================
+func _apply_modifier(mod_id: String) -> void:
+	match mod_id:
+		"tough":
+			player_max_hp += 3
+			player_hp = player_max_hp
+		"speed":
+			player_speed += 25.0
+		"reload":
+			var mods: Dictionary = weapon_mods.get(main_weapon.id, {})
+			mods["reload_mult"] = mods.get("reload_mult", 1.0) * 0.7
+			weapon_mods[main_weapon.id] = mods
+		"magplus":
+			main_weapon.mag_size += 4
+			main_weapon.mag_ammo = mini(main_weapon.mag_ammo + 4, main_weapon.mag_size)
+		"dodge":
+			var mods_d: Dictionary = weapon_mods.get("_player", {})
+			mods_d["dodge_chance"] = mods_d.get("dodge_chance", 0.0) + 0.1
+			weapon_mods["_player"] = mods_d
+		"vamp":
+			var mods_v: Dictionary = weapon_mods.get("_player", {})
+			mods_v["vamp_chance"] = mods_v.get("vamp_chance", 0.0) + 0.2
+			weapon_mods["_player"] = mods_v
+		"elite_dmg":
+			var mods_e: Dictionary = weapon_mods.get("_player", {})
+			mods_e["elite_dmg_bonus"] = mods_e.get("elite_dmg_bonus", 1.0) + 0.3
+			weapon_mods["_player"] = mods_e
+		"corruption_resist":
+			var mods_cr: Dictionary = weapon_mods.get("_player", {})
+			mods_cr["corruption_resist"] = mods_cr.get("corruption_resist", 0.0) + 0.25
+			weapon_mods["_player"] = mods_cr
+		# Other modifiers (adrenaline, void_hunger, stalker, momentum, scavenger,
+		# last_stand, pack_hunter, biome_bond, precision, void_drain) are
+		# checked inline where they apply — no setup needed here.
+
+# =========================================================
+# MUTATION APPLICATION
+# =========================================================
+func _apply_mutation(wid: String, mtype: String) -> void:
+	var mods: Dictionary = weapon_mods.get(wid, {})
+	match wid:
+		"sidearm":
+			if mtype == "clean":
+				mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) + 0.175
+				mods["damage_bonus"] = mods.get("damage_bonus", 0) + WEAPON_DEFS["sidearm"].damage * 2
+				mods["range_mult"] = 1.5
+				mods["instant_after_reload"] = true
+			elif mtype == "void":
+				mods["fragment_on_hit"] = true
+		"scatter":
+			if mtype == "clean":
+				mods["tight_cone"] = true
+				mods["piercing"] = true
+				mods["pierce_count"] = 2
+			elif mtype == "void":
+				mods["chaos_spray"] = true
+				mods["self_chip"] = true
+		"lance":
+			if mtype == "clean":
+				mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.6
+				mods["slow_field_on_land"] = true
+			elif mtype == "void":
+				mods["singularity_on_hit"] = true
+		"baton":
+			if mtype == "clean":
+				mods["arc_fields"] = true
+			elif mtype == "void":
+				mods["consuming_vortex"] = true
+		"dart":
+			if mtype == "clean":
+				mods["smart_missile"] = true
+			elif mtype == "void":
+				mods["parasite"] = true
+	weapon_mods[wid] = mods

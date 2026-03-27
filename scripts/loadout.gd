@@ -12,6 +12,23 @@ const STOCK_NAMES: Dictionary = {
 	"trap": "Trap",
 }
 
+const KIT_NAMES: Dictionary = {
+	"stim_pack": "Stim",
+	"flash_trap": "Trap",
+	"blink_kit": "Blink",
+	"chain_kit": "Chain",
+	"charge_kit": "Charge",
+	"mirage_kit": "Mirage",
+	"turret_kit": "Turret",
+	"smoke_kit": "Smoke",
+	"anchor_kit": "Anchor",
+	"drone_kit": "Drone",
+	"familiar_kit": "Familiar",
+	"pack_kit": "Pack",
+	"void_surge": "Surge",
+	"rupture_kit": "Rupture",
+}
+
 func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract
 	total_slots = 4 + SaveManager.data.ship_upgrades.get("loadout_slots", 0)
@@ -76,6 +93,29 @@ func _ready() -> void:
 
 	var sep2 := HSeparator.new()
 	vbox.add_child(sep2)
+
+	# Equipped Kits section
+	var kit_title := Label.new()
+	kit_title.text = "Equipped Kits:"
+	vbox.add_child(kit_title)
+
+	var kit_row := HBoxContainer.new()
+	kit_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	kit_row.add_theme_constant_override("separation", 20)
+	vbox.add_child(kit_row)
+
+	var eq_kits: Array[String] = SaveManager.data.equipped_kits
+	if eq_kits.is_empty():
+		eq_kits = ["stim_pack", "flash_trap"]
+	for ki in range(mini(2, eq_kits.size())):
+		var kit_id: String = eq_kits[ki]
+		var kit_lbl := Label.new()
+		kit_lbl.text = "Slot %d: %s" % [ki + 1, KIT_NAMES.get(kit_id, kit_id.capitalize())]
+		kit_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		kit_row.add_child(kit_lbl)
+
+	var sep2b := HSeparator.new()
+	vbox.add_child(sep2b)
 
 	# Consumables section
 	var consumable_title := Label.new()
@@ -193,6 +233,8 @@ func _on_back() -> void:
 
 func _on_go_hunt() -> void:
 	GameData.starting_weapon = selected_weapon
+	GameData.equipped_kits = SaveManager.data.equipped_kits.duplicate()
+	GameData.kit_tiers = SaveManager.data.kit_tiers.duplicate()
 
 	# Build loadout array and consume stock
 	var loadout_arr: Array[Dictionary] = []

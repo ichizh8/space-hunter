@@ -6,6 +6,8 @@ const CONTRACT_NAMES_PREFIX := ["Exterminate", "Purge", "Eliminate", "Hunt Down"
 var current_contract: Dictionary = {}
 var hunt_result: Dictionary = {}
 var starting_weapon: String = "sidearm"
+var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
+var kit_tiers: Dictionary = {}
 
 func generate_contracts(count: int = 3) -> Array[Dictionary]:
 	var contracts: Array[Dictionary] = []
