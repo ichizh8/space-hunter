@@ -1,7 +1,7 @@
 extends Control
 
-const CORRUPTION_NAMES: Array[String] = ["CLEAN", "VALLEY", "CORRUPT", "VOID"]
-const CORRUPTION_COLORS: Array[Color] = [
+const CORRUPTION_NAMES: Array = ["CLEAN", "VALLEY", "CORRUPT", "VOID"]
+const CORRUPTION_COLORS: Array = [
 	Color(0.3, 0.9, 0.3),
 	Color(0.9, 0.8, 0.2),
 	Color(0.9, 0.3, 0.2),
@@ -185,7 +185,7 @@ func _draw() -> void:
 	draw_rect(_draw_button_rect[1], Color(0.15, 0.25, 0.5, 0.9))
 	_dt(_draw_button_rect[1].position + Vector2(12.0, 12.0), "New Contract", Color.WHITE, 15)
 
-var _draw_button_rect: Array[Rect2] = []
+var _draw_button_rect: Array = []
 
 func _input(event: InputEvent) -> void:
 	var pos := Vector2.ZERO

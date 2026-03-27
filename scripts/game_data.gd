@@ -21,25 +21,22 @@ const CONTRACT_TYPE_INFO: Dictionary = {
 var current_contract: Dictionary = {}
 var hunt_result: Dictionary = {}
 var starting_weapon: String = "sidearm"
-var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
+var equipped_kits: Array = ["stim_pack", "flash_trap"]
 var kit_tiers: Dictionary = {}
 var kit_t3_choices: Dictionary = {}
 var kit_t2_paths: Dictionary = {}
 
 func generate_contracts(count: int = 3) -> Array:
 	var contracts: Array = []
-	# Shuffle contract types, always include 1 hunt + 2 random others
-	var available_types: Array[String] = CONTRACT_TYPES.duplicate()
+	var available_types: Array = ["hunt", "payload_escort", "void_breach", "boss_hunt", "extraction_run"]
 	available_types.shuffle()
-	# Ensure variety: always include hunt as one option
+	# Always include hunt
 	if not available_types.slice(0, count).has("hunt"):
 		available_types[0] = "hunt"
 		available_types.shuffle()
-
 	for i in count:
 		var ctype: String = available_types[i % available_types.size()]
-		var contract: Dictionary = _generate_contract_of_type(ctype)
-		contracts.append(contract)
+		contracts.append(_generate_contract_of_type(ctype))
 	return contracts
 
 func _generate_contract_of_type(ctype: String) -> Dictionary:
@@ -129,7 +126,7 @@ func _generate_contract_of_type(ctype: String) -> Dictionary:
 func set_current_contract(contract: Dictionary) -> void:
 	current_contract = contract
 
-func set_hunt_result(credits: int, corruption: int, items: int, ingredients: Array[Dictionary] = []) -> void:
+func set_hunt_result(credits: int, corruption: int, items: int, ingredients: Array = []) -> void:
 	hunt_result = {
 		"credits": credits,
 		"corruption": corruption,

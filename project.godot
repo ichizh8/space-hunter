@@ -23,8 +23,7 @@ boot_splash/bg_color=Color(0.0852449, 0.0852449, 0.0852449, 1)
 
 GameData="*res://scripts/game_data.gd"
 SaveManager="*res://scripts/save_manager.gd"
-Constants="*res://src/constants.gd"
-SaveData="*res://scripts/save_data.gd"
+
 
 [debug]
 

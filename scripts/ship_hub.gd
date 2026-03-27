@@ -1,5 +1,6 @@
 extends Control
 
+
 # Tab containers built in _ready
 var ship_tab_content: VBoxContainer
 var upgrades_tab_content: VBoxContainer
@@ -55,7 +56,7 @@ const TRACK_COLORS: Dictionary = {
 	"scrapper": Color(0.9, 0.5, 0.2),
 }
 
-const TRACK_ORDER: Array[String] = ["contractor", "void_walker", "tactician", "scrapper"]
+const TRACK_ORDER: Array = ["contractor", "void_walker", "tactician", "scrapper"]
 
 # Tab buttons
 var ship_tab_btn: Button
@@ -63,17 +64,17 @@ var upgrades_tab_btn: Button
 var kits_tab_btn: Button
 
 # Upgrade shop buttons (for refresh)
-var upgrade_buttons: Array[Button] = []
-var upgrade_labels: Array[Label] = []
+var upgrade_buttons: Array = []
+var upgrade_labels: Array = []
 
-const UPGRADE_DEFS: Array[Dictionary] = [
+const UPGRADE_DEFS: Array = [
 	{id="max_hp", name="Reinforced Hull", desc="Max HP +2", cost=80, max_level=3},
 	{id="mag_size", name="Extended Magazine", desc="Mag Size +3", cost=60, max_level=3},
 	{id="xp_rate", name="Void Attunement", desc="XP Rate +10%", cost=50, max_level=3},
 	{id="loadout_slots", name="Extra Loadout Slot", desc="+1 slot", cost=100, max_level=2},
 ]
 
-const WEAPON_UNLOCK_DEFS: Array[Dictionary] = [
+const WEAPON_UNLOCK_DEFS: Array = [
 	{id="scatter", name="Unlock Scatter Pistol", desc="Starting weapon", cost=120},
 	{id="lance", name="Unlock Void Lance", desc="Starting weapon", cost=150},
 	{id="baton", name="Unlock Shock Baton", desc="Starting weapon", cost=130},
@@ -132,7 +133,7 @@ const KIT_TIER_COSTS: Dictionary = {
 	"pack_kit": [180,150,280], "void_surge": [220,180,320], "rupture_kit": [250,200,380],
 }
 
-const ALL_KIT_IDS: Array[String] = [
+const ALL_KIT_IDS: Array = [
 	"stim_pack", "flash_trap", "blink_kit", "chain_kit", "charge_kit",
 	"mirage_kit", "turret_kit", "smoke_kit", "anchor_kit", "drone_kit",
 	"familiar_kit", "pack_kit", "void_surge", "rupture_kit",
@@ -375,7 +376,7 @@ func _build_kits_list() -> void:
 		child.queue_free()
 
 	kits_credits_label.text = "Credits: %d" % SaveManager.data.total_credits
-	var eq: Array[String] = SaveManager.data.equipped_kits
+	var eq: Array = SaveManager.data.equipped_kits
 	if eq.is_empty():
 		eq = ["stim_pack", "flash_trap"]
 	var slot1_name: String = KIT_NAMES.get(eq[0], eq[0]) if eq.size() > 0 else "None"
@@ -493,7 +494,7 @@ func _on_kit_t3_choice(kit_id: String, choice: String, cost: int) -> void:
 	_update_stats()
 
 func _on_kit_assign(kit_id: String, slot: int) -> void:
-	var eq: Array[String] = SaveManager.data.equipped_kits
+	var eq: Array = SaveManager.data.equipped_kits
 	if eq.is_empty():
 		eq = ["stim_pack", "flash_trap"]
 	while eq.size() < 2:

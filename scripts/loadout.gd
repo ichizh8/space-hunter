@@ -1,13 +1,14 @@
 extends Control
 
+
 var selected_weapon: String = "sidearm"
 var chosen_consumables: Dictionary = {}  # item_id -> count chosen
-var weapon_buttons: Array[Button] = []
-var all_weapon_ids: Array[String] = []  # all 9 weapon IDs in display order
+var weapon_buttons: Array = []
+var all_weapon_ids: Array = []  # all 9 weapon IDs in display order
 var consumable_labels: Dictionary = {}  # item_id -> Label
 var slots_label: Label
 var total_slots: int = 4
-var kit_slot_labels: Array[Label] = []
+var kit_slot_labels: Array = []
 var kit_picker_visible: int = -1  # -1 = hidden, 0/1 = slot being changed
 var kit_picker_container: VBoxContainer = null
 var main_vbox: VBoxContainer = null
@@ -48,7 +49,7 @@ const WEAPON_DISPLAY_NAMES: Dictionary = {
 }
 
 # All weapons in display order
-const ALL_WEAPONS: Array[String] = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
+const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
 
 func _is_weapon_available(wid: String) -> bool:
 	if Constants.DEBUG_UNLOCK_ALL_WEAPONS:
@@ -151,7 +152,7 @@ func _ready() -> void:
 	kit_title.text = "Equipped Kits:"
 	main_vbox.add_child(kit_title)
 
-	var eq_kits: Array[String] = SaveManager.data.equipped_kits
+	var eq_kits: Array = SaveManager.data.equipped_kits
 	if eq_kits.is_empty():
 		eq_kits = ["stim_pack", "flash_trap"]
 
@@ -273,7 +274,7 @@ func _rebuild_kit_picker() -> void:
 	picker_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	kit_picker_container.add_child(picker_lbl)
 
-	var unlocked_kits: Array[String] = SaveManager.data.unlocked_kits
+	var unlocked_kits: Array = SaveManager.data.unlocked_kits
 	for kid in unlocked_kits:
 		var tier: int = SaveManager.data.kit_tiers.get(kid, 1)
 		var t3c: String = SaveManager.data.kit_t3_choices.get(kid, "")
@@ -298,7 +299,7 @@ func _rebuild_kit_picker() -> void:
 	kit_picker_container.visible = true
 
 func _on_kit_picked(kit_id: String, slot: int) -> void:
-	var eq: Array[String] = SaveManager.data.equipped_kits
+	var eq: Array = SaveManager.data.equipped_kits
 	if eq.is_empty():
 		eq = ["stim_pack", "flash_trap"]
 	while eq.size() < 2:
@@ -381,7 +382,7 @@ func _on_go_hunt() -> void:
 	GameData.kit_t2_paths = SaveManager.data.kit_t2_paths.duplicate()
 
 	# Build loadout array and consume stock
-	var loadout_arr: Array[Dictionary] = []
+	var loadout_arr: Array = []
 	for item_id in chosen_consumables:
 		var count: int = chosen_consumables[item_id]
 		for _i in count:

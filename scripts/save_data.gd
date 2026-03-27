@@ -18,21 +18,21 @@ var ship_upgrades: Dictionary = {
 	"xp_rate": 0,       # levels 0-3, each +10% essence gain
 	"loadout_slots": 0, # levels 0-2, each +1 slot (start 4, max 6)
 }
-var unlocked_weapons: Array[String] = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
-var loadout: Array[Dictionary] = []
+var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
+var loadout: Array = []
 var stock: Dictionary = {
 	"field_stim": 3,
 	"trap": 2,
 }
-var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
+var equipped_kits: Array = ["stim_pack", "flash_trap"]
 var kit_tiers: Dictionary = {"stim_pack": 1, "flash_trap": 1}
-var unlocked_kits: Array[String] = ["stim_pack", "flash_trap"]
+var unlocked_kits: Array = ["stim_pack", "flash_trap"]
 var kit_t3_choices: Dictionary = {}  # kit_id -> "clean" or "void"
 var kit_t2_paths: Dictionary = {}  # kit_id -> "attack"|"shield"|"harvest"
 var active_bonuses: Dictionary = {}  # bonus_id -> true/int, consumed at hunt start
 
 # Phase A: recipe unlocks — Tier 1 unlocked from start
-var unlocked_recipes: Array[String] = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
+var unlocked_recipes: Array = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
 
 # Phase A: reputation tracks
 var reputation: Dictionary = {
@@ -44,7 +44,7 @@ var reputation: Dictionary = {
 
 var version: int = 1
 
-const REP_THRESHOLDS: Array[int] = [0, 50, 150, 350, 700, 1200]
+const REP_THRESHOLDS: Array = [0, 50, 150, 350, 700, 1200]
 
 static func get_rep_level(track: String, rep_data: Dictionary) -> int:
 	var pts: int = rep_data.get(track, 0)

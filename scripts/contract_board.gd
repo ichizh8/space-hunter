@@ -1,7 +1,7 @@
 extends Control
 
 var contracts: Array = []
-var button_rects: Array[Rect2] = []
+var button_rects: Array = []
 var refresh_rect: Rect2 = Rect2()
 var back_rect: Rect2 = Rect2()
 
