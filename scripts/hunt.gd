@@ -12,8 +12,10 @@ const WEAPON_DEFS: Dictionary = {
 	"lance": {name="Void Lance", desc="Slow piercing shot. Hits all in line.", fire_rate=1.2, damage=6, bullet_speed=280.0, bullet_radius=7.0, color=Color(0.5,0.1,1.0), range=500.0, pattern="piercing"},
 	"baton": {name="Shock Baton", desc="Melee AOE pulse. Damages all within 100px.", fire_rate=0.8, damage=4, bullet_speed=0.0, bullet_radius=100.0, color=Color(0.1,0.8,1.0), range=100.0, pattern="melee_aoe"},
 	"dart": {name="Homing Dart", desc="Slow seeking projectile.", fire_rate=0.9, damage=3, bullet_speed=200.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"},
-	"pulse_cannon": {name="Pulse Cannon", desc="Charge to release knockback blast.", fire_rate=1.4, damage=5, bullet_speed=0.0, bullet_radius=120.0, color=Color(0.3,0.8,1.0), range=120.0, pattern="pulse"},
-	"chain_rifle": {name="Chain Rifle", desc="Bullet arcs between nearby enemies.", fire_rate=0.6, damage=3, bullet_speed=380.0, bullet_radius=6.0, color=Color(0.2,1.0,0.4), range=380.0, pattern="chain_shot"},
+	"entropy_cannon": {name="Entropy Cannon", desc="Corruption-scaling damage. Monster at VOID.", fire_rate=1.5, damage=8, bullet_speed=280.0, bullet_radius=8.0, color=Color(0.6,0.1,0.9), range=320.0, pattern="entropy"},
+	"pulse_cannon": {name="Pulse Cannon", desc="Chain bounce projectile. Great in caves.", fire_rate=0.8, damage=6, bullet_speed=350.0, bullet_radius=6.0, color=Color(0.1,0.9,1.0), range=350.0, pattern="pulse_bounce"},
+	"sniper_carbine": {name="Sniper Carbine", desc="High damage precision. Pierces enemies.", fire_rate=2.5, damage=20, bullet_speed=800.0, bullet_radius=3.0, color=Color(1.0,1.0,1.0), range=600.0, pattern="sniper"},
+	"chain_rifle": {name="Chain Rifle", desc="Rapid-fire suppression. Overheats.", fire_rate=0.125, damage=3, bullet_speed=400.0, bullet_radius=3.0, color=Color(1.0,0.7,0.2), range=250.0, pattern="chain_rapid"},
 }
 
 # Per-weapon level-up perks: each level 2-5 has a named perk with icon + description
@@ -49,17 +51,29 @@ const WEAPON_LEVEL_PERKS: Dictionary = {
 		4: {icon="🐍", name="Swarm", desc="Fires 2 darts simultaneously", effect="dual", value=true},
 		5: {icon="💀", name="Voidseeker", desc="On kill: splits into 2 new darts", effect="split_on_kill", value=true},
 	},
+	"entropy_cannon": {
+		2: {icon="V", name="Void Appetite", desc="+10 base damage", effect="damage", value=10},
+		3: {icon="D", name="Resonant Decay", desc="Each kill adds +2 corruption", effect="resonant_decay", value=true},
+		4: {icon="X", name="Unstable Core", desc="Explodes on impact (60% AOE)", effect="entropy_explode", value=true},
+		5: {icon="S", name="Entropic Pull", desc="Enemies hit slowed 30% for 2s", effect="entropy_slow", value=true},
+	},
 	"pulse_cannon": {
-		2: {icon="W", name="Wide Pulse", desc="Blast radius +40px", effect="radius", value=40.0},
-		3: {icon="D", name="Damage Core", desc="+3 damage", effect="damage", value=3},
-		4: {icon="S", name="Stun Pulse", desc="Enemies hit are stunned 1s", effect="stun_pulse", value=true},
-		5: {icon="C", name="Charge Ready", desc="Charge time -30%", effect="fire_rate", value=-0.42},
+		2: {icon="R", name="Resonant Frequency", desc="+1 max bounce (5 total)", effect="pulse_bounces", value=1},
+		3: {icon="A", name="Amplified Signal", desc="Bounce decay 90% instead of 80%", effect="pulse_decay", value=true},
+		4: {icon="O", name="Overcharge", desc="Every 5th shot: 2x dmg, bounces to all", effect="pulse_overcharge", value=true},
+		5: {icon="I", name="Interference Pattern", desc="2+ bounces in chain: stun 1s", effect="pulse_stun", value=true},
+	},
+	"sniper_carbine": {
+		2: {icon="H", name="Hollow Point", desc="+20% damage, no pierce", effect="hollow_point", value=true},
+		3: {icon="S", name="Spotter", desc="Elite hit zones visible as rings", effect="spotter", value=true},
+		4: {icon="B", name="Breath Control", desc="Still 1s: next shot +50% damage", effect="breath_control", value=true},
+		5: {icon="X", name="Surgical Strike", desc="Headshots remove 1 elite affix", effect="surgical_strike", value=true},
 	},
 	"chain_rifle": {
-		2: {icon="B", name="Extra Arc", desc="+1 bounce", effect="chain_bounces", value=1},
-		3: {icon="D", name="Charged Arcs", desc="+2 damage", effect="damage", value=2},
-		4: {icon="A", name="Arc Damage", desc="+30% damage per bounce", effect="arc_damage_ramp", value=true},
-		5: {icon="F", name="Full Chain", desc="+1 bounce, fire rate +20%", effect="chain_final", value=0.0},
+		2: {icon="M", name="Extended Magazine", desc="Overheat time 4s (was 3s)", effect="extended_heat", value=true},
+		3: {icon="F", name="Incendiary Rounds", desc="15% chance to ignite (+5 dmg/s 3s)", effect="incendiary", value=true},
+		4: {icon="S", name="Suppressing Fire", desc="Suppression 30%/stack (max 90%)", effect="suppress_boost", value=true},
+		5: {icon="A", name="Adrenaline Feed", desc="Kill while overheated: reset heat", effect="adrenaline_feed", value=true},
 	},
 }
 
@@ -110,13 +124,21 @@ const WEAPON_MUTATIONS: Dictionary = {
 		"clean": {icon="G", name="Smart Missile",  desc="Single large slow missile. Massive damage, perfect tracking."},
 		"void":  {icon="V", name="Parasite Swarm", desc="Darts latch on, drain HP 4s. Spreads to 1 nearby enemy on death."},
 	},
+	"entropy_cannon": {
+		"clean": {icon="P", name="Purge Cannon",   desc="No corruption scaling. Fires 3x faster. Pure damage dealer."},
+		"void":  {icon="S", name="Singularity",    desc="AOE radius doubled. Pulls nearby enemies into impact point."},
+	},
 	"pulse_cannon": {
-		"clean": {icon="R", name="Repulsor Field", desc="Release creates a 400px force wall lasting 2s. Nothing passes it."},
-		"void":  {icon="I", name="Collapse Shot",  desc="Implosion: sucks enemies 200px inward 1.5s, then burst."},
+		"clean": {icon="A", name="Arc Repeater",   desc="Fires 2 projectiles per shot, each bouncing independently."},
+		"void":  {icon="C", name="Chaos Wave",     desc="Bounces add +3 corruption but gain +50% damage."},
+	},
+	"sniper_carbine": {
+		"clean": {icon="E", name="Executioner",    desc="Headshots instantly kill enemies below 20% HP."},
+		"void":  {icon="V", name="Entropy Round",  desc="+8 corruption per shot. Penetrates armor affix, full damage."},
 	},
 	"chain_rifle": {
-		"clean": {icon="C", name="Arc Conductor",  desc="Each bounce increases damage 30%. Max 5 bounces."},
-		"void":  {icon="P", name="Plague Round",   desc="Bullet spreads corruption debuff each bounce. Enemies take +20% dmg and emit void aura."},
+		"clean": {icon="B", name="Precision Burst", desc="3-round burst mode. No overheat. Higher per-shot damage."},
+		"void":  {icon="F", name="Frenzy Mode",    desc="Overheat removed. +1 corruption/s while firing."},
 	},
 }
 
@@ -211,32 +233,60 @@ const WEAPON_MASTERY: Dictionary = {
 			{id="void_latch", icon="V", name="Void Latch", desc="Parasitized enemies deal 20% less damage."},
 		],
 	},
-	"pulse_cannon": {
+	"entropy_cannon": {
 		"clean": [
-			{id="wall_persist", icon="W", name="Wall Persist", desc="Repulsor wall lasts 4s (was 2s)."},
-			{id="wall_damage", icon="D", name="Wall Damage", desc="Enemies touching wall take 1 dmg/s."},
-			{id="bounce_back", icon="B", name="Bounce Back", desc="Wall reflects enemy bullets."},
-			{id="double_wall", icon="X", name="Double Wall", desc="Fire creates 2 perpendicular walls."},
+			{id="purge_rapid", icon="R", name="Purge Rapid", desc="+20% fire rate for Purge Cannon."},
+			{id="purge_damage", icon="D", name="Purge Damage", desc="+4 base damage."},
+			{id="purge_pierce", icon="P", name="Purge Pierce", desc="Shots pierce 1 enemy."},
+			{id="purge_healing", icon="H", name="Purge Healing", desc="Kills restore 1 HP."},
 		],
 		"void": [
-			{id="deep_collapse", icon="D", name="Deep Collapse", desc="Implosion range +80px."},
-			{id="burst_chain", icon="C", name="Burst Chain", desc="Burst after implosion chains to 3 enemies."},
-			{id="void_vortex", icon="V", name="Void Vortex", desc="Implosion creates a gravity well."},
-			{id="collapse_amp", icon="A", name="Collapse Amp", desc="+2 damage per enemy pulled in."},
+			{id="singularity_range", icon="R", name="Singularity Range", desc="Pull range +50%."},
+			{id="singularity_damage", icon="D", name="Singularity Damage", desc="Pulled enemies take +30% damage."},
+			{id="void_feast", icon="V", name="Void Feast", desc="Each kill adds +3 corruption (feeds scaling)."},
+			{id="entropy_chain", icon="C", name="Entropy Chain", desc="Explosion chains to 1 nearby enemy."},
+		],
+	},
+	"pulse_cannon": {
+		"clean": [
+			{id="arc_speed", icon="S", name="Arc Speed", desc="Bounce projectiles travel 30% faster."},
+			{id="arc_extra", icon="E", name="Arc Extra", desc="+1 bounce per projectile."},
+			{id="arc_no_decay", icon="N", name="No Decay", desc="No damage decay on bounces."},
+			{id="arc_final_stun", icon="T", name="Final Stun", desc="Last bounce stuns 0.8s."},
+		],
+		"void": [
+			{id="chaos_corruption", icon="C", name="Deep Chaos", desc="+5 corruption per chain (was +3)."},
+			{id="chaos_extra_damage", icon="D", name="Chaos Damage", desc="+80% damage instead of +50%."},
+			{id="chaos_split", icon="S", name="Chaos Split", desc="Final bounce splits into 2 projectiles."},
+			{id="chaos_slow", icon="W", name="Chaos Slow", desc="Hit enemies slowed 40% for 2s."},
+		],
+	},
+	"sniper_carbine": {
+		"clean": [
+			{id="execute_threshold", icon="E", name="Mercy Threshold", desc="Execute below 30% HP (was 20%)."},
+			{id="sniper_crit", icon="C", name="Lethal Precision", desc="Headshots deal 4x (was 3x)."},
+			{id="sniper_instant_reload", icon="R", name="Quick Scope", desc="Headshot kill: instant reload."},
+			{id="scope_range", icon="X", name="Extended Scope", desc="+30% range."},
+		],
+		"void": [
+			{id="entropy_pierce_all", icon="P", name="Void Pierce", desc="Shots pierce all enemies regardless."},
+			{id="entropy_dmg_boost", icon="D", name="Entropy Damage", desc="+30% base damage."},
+			{id="entropy_shield_break", icon="S", name="Shield Break", desc="Shots also destroy shields instantly."},
+			{id="entropy_slow", icon="W", name="Void Chill", desc="Hit enemies slowed 50% for 2s."},
 		],
 	},
 	"chain_rifle": {
 		"clean": [
-			{id="arc_persist", icon="P", name="Arc Persist", desc="+2 max bounces."},
-			{id="arc_stun", icon="S", name="Arc Stun", desc="Final bounce stuns 0.8s."},
-			{id="conductor", icon="C", name="Conductor", desc="+50% damage on last bounce."},
-			{id="chain_reload", icon="R", name="Chain Reload", desc="5-bounce kill: instant reload."},
+			{id="burst_accuracy", icon="A", name="Tight Burst", desc="Burst has no spread."},
+			{id="burst_damage", icon="D", name="Heavy Burst", desc="+50% per-burst damage."},
+			{id="burst_fire_rate", icon="R", name="Rapid Burst", desc="Burst interval -30%."},
+			{id="burst_stun", icon="S", name="Impact Burst", desc="3rd bullet in burst stuns 0.3s."},
 		],
 		"void": [
-			{id="plague_persist", icon="P", name="Plague Persist", desc="Corruption debuff lasts 6s (was 3s)."},
-			{id="plague_spread", icon="S", name="Plague Spread", desc="Debuffed enemies spread to 1 nearby."},
-			{id="plague_burst", icon="B", name="Plague Burst", desc="Debuffed enemy death: small void AOE."},
-			{id="void_charge", icon="V", name="Void Charge", desc="+15% corruption gain from plague rounds."},
+			{id="frenzy_speed", icon="S", name="Frenzy Speed", desc="+20% move speed while firing."},
+			{id="frenzy_damage", icon="D", name="Frenzy Damage", desc="+30% damage above 30 corruption."},
+			{id="frenzy_lifesteal", icon="L", name="Frenzy Drain", desc="1 in 10 hits restores 1 HP."},
+			{id="frenzy_suppress", icon="X", name="Total Suppress", desc="Suppression max 100%."},
 		],
 	},
 }
@@ -466,6 +516,23 @@ var damage_dealt_total: float = 0.0
 var damage_taken_total: float = 0.0
 var hunt_status: String = "COMPLETED"  # COMPLETED / FAILED / ABANDONED
 var pause_menu_open: bool = false
+
+# === Phase D: New weapon state ===
+# Entropy Cannon: void trails
+var void_trails: Array[Dictionary] = []  # {pos, timer}
+
+# Chain Rifle: overheat
+var chain_heat: float = 0.0  # 0.0 to 1.0
+var chain_heat_cooldown: float = 0.0  # >0 means overheated, counting down
+var chain_overheat_time: float = 3.0  # seconds of continuous fire before overheat
+var chain_firing: bool = false  # whether chain rifle is actively firing
+
+# Pulse Cannon: shot counter for overcharge perk
+var pulse_shot_counter: int = 0
+
+# Sniper Carbine: breath control
+var sniper_still_timer: float = 0.0  # time player has been standing still
+var sniper_last_pos: Vector2 = Vector2.ZERO
 var extract_confirm_open: bool = false
 
 # === Contract-specific state (Phase C) ===
@@ -600,8 +667,13 @@ func _ready() -> void:
 	# Starting weapon from loadout
 	var wid: String = GameData.starting_weapon
 	if wid.is_empty() or not WEAPON_DEFS.has(wid): wid = "sidearm"
-	var is_melee_type: bool = wid == "baton" or wid == "pulse_cannon"
-	var base_mag: int = 999 if is_melee_type else 12
+	var base_mag: int
+	match wid:
+		"baton": base_mag = 999
+		"chain_rifle": base_mag = 999  # uses overheat instead of ammo
+		"sniper_carbine": base_mag = 4
+		"entropy_cannon": base_mag = 6
+		_: base_mag = 12
 	main_weapon = {id=wid, level=1, cooldown_timer=0.0, mag_ammo=base_mag+mag_bonus, mag_size=base_mag+mag_bonus, reload_timer=0.0, mutated=false, mutation_type=""}
 
 	# XP curve
@@ -1352,6 +1424,9 @@ func _process(delta: float) -> void:
 	_update_cave_state()
 	_update_void_pool_corruption(delta)
 	_update_weapons(delta)
+	_update_chain_heat(delta)
+	_update_sniper_still(delta)
+	_update_void_trails(delta)
 	_update_enemies(delta)
 	_update_bullets(delta)
 	_check_pickups()
@@ -1423,6 +1498,9 @@ func _move_player(delta: float) -> void:
 	var effective_speed: float = player_speed * stats.move_speed_mult
 	if speed_boost_timer > 0.0 and weapon_mods.get("_player", {}).get("kill_streak_speed", false):
 		effective_speed *= 1.5
+	# Chain Rifle Frenzy Speed mastery: +20% while firing
+	if weapon_mods.get("_player", {}).get("frenzy_speed", false) and chain_firing:
+		effective_speed *= 1.2
 	# River water: slow to 50% + 1.5 corruption/s
 	var in_water: bool = _player_in_river()
 	if in_water:
@@ -1751,60 +1829,183 @@ func _update_weapons(delta: float) -> void:
 								enemies[ei] = e_sc
 								if e_sc.hp <= 0:
 									_on_enemy_killed(ei)
-			"pulse":
-				# Pulse cannon: AOE blast with knockback
-				var pulse_range: float = def.range + mods_w.get("radius_bonus", 0.0)
-				for ei in range(enemies.size()):
-					var e: Dictionary = enemies[ei]
-					if e.hp <= 0:
-						continue
-					if player_pos.distance_to(e.pos) < pulse_range:
-						e.hp -= fire_damage
-						var push_dir: Vector2 = (e.pos - player_pos).normalized()
-						e.pos += push_dir * 120.0
-						# Stun pulse perk
-						if mods_w.get("stun_pulse", false):
-							e.stunned_timer = 1.0
-						enemies[ei] = e
-						if e.hp <= 0:
-							_on_enemy_killed(ei)
-				aoe_flashes.append({pos=player_pos, radius=pulse_range, timer=0.3, color=Color(0.3,0.8,1.0,0.6)})
-				w.mag_ammo = 999  # pulse cannon does not use ammo
-				# Pulse cannon clean mutation: repulsor wall
-				if mods_w.get("repulsor_field", false):
-					var wall_dir: Vector2 = dir
-					var wall_perp: Vector2 = Vector2(-wall_dir.y, wall_dir.x)
-					var wall_dur: float = 2.0
-					if mods_w.get("wall_persist", false):
-						wall_dur = 4.0
-					walls.append({pos=player_pos + dir * pulse_range, dir_perp=wall_perp, length=400.0, timer=wall_dur})
-					if mods_w.get("double_wall", false):
-						walls.append({pos=player_pos + dir * pulse_range, dir_perp=wall_dir, length=400.0, timer=wall_dur})
-				# Pulse cannon void mutation: collapse shot
-				if mods_w.get("collapse_shot", false):
-					var collapse_radius: float = 200.0 + mods_w.get("collapse_range_bonus", 0.0)
-					gravity_wells.append({pos=nearest_pos, radius=collapse_radius, timer=1.5, implode=true})
-			"chain_shot":
+			"entropy":
+				# Entropy Cannon: slow large projectile, corruption-scaling damage
 				w.mag_ammo -= 1
-				var chain_bounces: int = 2 + mods_w.get("chain_bounces_bonus", 0)
-				var chain_b: Dictionary = {
+				var entropy_corr_mult: float = 1.0 + corruption / 30.0
+				# Purge Cannon mutation: no corruption scaling, fires 3x faster (handled via fire_rate mod)
+				if mods_w.get("purge_mode", false):
+					entropy_corr_mult = 1.0
+				var entropy_dmg: int = int(float(fire_damage) * entropy_corr_mult)
+				var entropy_b: Dictionary = {
 					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
 					vel = dir * w_bullet_speed,
 					radius = def.bullet_radius,
 					color = def.color,
-					damage = fire_damage,
+					damage = entropy_dmg,
 					lifetime = w_range / maxf(1.0, w_bullet_speed),
 					from_player = true,
 					weapon_id = w.id,
-					chain_shot = true,
-					bounces_left = chain_bounces,
-					hit_ids = [],
+					entropy = true,
 				}
-				if mods_w.get("arc_damage_ramp", false):
-					chain_b["arc_ramp"] = true
-				if mods_w.get("plague", false):
-					chain_b["plague"] = true
-				bullets.append(chain_b)
+				if mods_w.get("entropy_explode", false):
+					entropy_b["entropy_explode"] = true
+					entropy_b["entropy_explode_pct"] = 0.6
+				if mods_w.get("entropy_slow", false):
+					entropy_b["entropy_slow"] = true
+				# Singularity mutation: pull enemies on impact
+				if mods_w.get("singularity_pull", false):
+					entropy_b["singularity_pull"] = true
+					entropy_b["pull_radius"] = mods_w.get("pull_radius", 120.0)
+				bullets.append(entropy_b)
+				# Arc Repeater mutation: fire second projectile
+				if mods_w.get("arc_repeater_entropy", false):
+					var e2: Dictionary = entropy_b.duplicate()
+					var offset_dir: Vector2 = Vector2(-dir.y, dir.x) * 15.0
+					e2.pos = player_pos + dir * (PLAYER_RADIUS + 6.0) + offset_dir
+					bullets.append(e2)
+			"pulse_bounce":
+				# Pulse Cannon: bouncing chain projectile
+				w.mag_ammo -= 1
+				pulse_shot_counter += 1
+				var max_bounces: int = 4 + mods_w.get("pulse_bounces_bonus", 0)
+				var bounce_decay: float = 0.8
+				if mods_w.get("pulse_high_decay", false):
+					bounce_decay = 0.9
+				var pulse_dmg: int = fire_damage
+				var pulse_is_overcharge: bool = false
+				if mods_w.get("pulse_overcharge", false) and pulse_shot_counter >= 5:
+					pulse_shot_counter = 0
+					pulse_dmg = fire_damage * 2
+					pulse_is_overcharge = true
+				var pulse_speed: float = w_bullet_speed * mods_w.get("pulse_speed_mult", 1.0)
+				var pulse_count: int = 2 if mods_w.get("arc_repeater", false) else 1
+				for _pi in range(pulse_count):
+					var p_offset := Vector2.ZERO
+					if pulse_count > 1 and _pi == 1:
+						p_offset = Vector2(-dir.y, dir.x) * 12.0
+					var pulse_b: Dictionary = {
+						pos = player_pos + dir * (PLAYER_RADIUS + 6.0) + p_offset,
+						vel = dir * pulse_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = pulse_dmg,
+						lifetime = w_range / maxf(1.0, pulse_speed),
+						from_player = true,
+						weapon_id = w.id,
+						pulse_bounce = true,
+						bounces_left = max_bounces,
+						bounce_decay = bounce_decay,
+						hit_ids = [],
+						overcharge = pulse_is_overcharge,
+					}
+					if mods_w.get("pulse_stun", false):
+						pulse_b["pulse_stun"] = true
+					if mods_w.get("chaos_wave", false):
+						pulse_b["chaos_wave"] = true
+						pulse_b["chaos_dmg_mult"] = mods_w.get("chaos_dmg_mult", 1.5)
+						pulse_b["chaos_corruption"] = mods_w.get("chaos_corruption_per_hit", 3)
+					if mods_w.get("chaos_slow", false):
+						pulse_b["chaos_slow"] = true
+					if mods_w.get("no_decay", false):
+						pulse_b["bounce_decay"] = 1.0
+					if mods_w.get("final_stun", false):
+						pulse_b["final_stun"] = true
+					if mods_w.get("chaos_split", false):
+						pulse_b["chaos_split"] = true
+					bullets.append(pulse_b)
+			"sniper":
+				# Sniper Carbine: fast piercing shot
+				w.mag_ammo -= 1
+				var sniper_dmg: int = fire_damage
+				# Breath Control perk: standing still 1s = +50%
+				if mods_w.get("breath_control", false) and sniper_still_timer >= 1.0:
+					sniper_dmg = int(float(sniper_dmg) * 1.5)
+					sniper_still_timer = 0.0
+				# Entropy Round mutation: add corruption
+				if mods_w.get("entropy_round", false):
+					corruption += 8.0
+				var sniper_pierce: bool = not mods_w.get("hollow_point", false)
+				if mods_w.get("entropy_pierce_all", false):
+					sniper_pierce = true
+				var sniper_b: Dictionary = {
+					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
+					vel = dir * w_bullet_speed,
+					radius = def.bullet_radius,
+					color = def.color,
+					damage = sniper_dmg,
+					lifetime = w_range / maxf(1.0, w_bullet_speed),
+					from_player = true,
+					piercing = sniper_pierce,
+					hit_ids = [] if sniper_pierce else [],
+					weapon_id = w.id,
+					sniper = true,
+				}
+				if mods_w.get("hollow_point", false):
+					sniper_b["damage"] = int(float(sniper_dmg) * 1.2)
+				if mods_w.get("entropy_round", false):
+					sniper_b["ignore_armor"] = true
+					sniper_b["entropy_shield_break"] = mods_w.get("entropy_shield_break", false)
+				if mods_w.get("spotter", false):
+					sniper_b["spotter"] = true
+				if mods_w.get("surgical_strike", false):
+					sniper_b["surgical_strike"] = true
+				if mods_w.get("executioner", false):
+					sniper_b["executioner"] = true
+					sniper_b["execute_threshold"] = mods_w.get("execute_threshold", 0.2)
+				if mods_w.get("entropy_slow_on_hit", false):
+					sniper_b["slow_on_hit"] = true
+				bullets.append(sniper_b)
+			"chain_rapid":
+				# Chain Rifle: rapid fire with spread and overheat
+				# Check overheat
+				if chain_heat_cooldown > 0.0:
+					pass  # overheated, skip firing
+				else:
+					w.mag_ammo = 999  # infinite ammo
+					chain_firing = true
+					var spread_deg: float = 8.0
+					if mods_w.get("burst_no_spread", false):
+						spread_deg = 0.0
+					var base_angle: float = dir.angle()
+					var bullet_angle: float = base_angle + deg_to_rad(randf_range(-spread_deg, spread_deg))
+					var bullet_dir := Vector2(cos(bullet_angle), sin(bullet_angle))
+					var chain_dmg: int = fire_damage
+					# Frenzy damage: +30% above 30 corruption
+					if mods_w.get("frenzy_damage", false) and corruption > 30.0:
+						chain_dmg = int(float(chain_dmg) * 1.3)
+					# Burst mode: higher damage
+					if mods_w.get("burst_mode", false):
+						chain_dmg = int(float(chain_dmg) * 2.0)
+					var chain_b: Dictionary = {
+						pos = player_pos + bullet_dir * (PLAYER_RADIUS + 6.0),
+						vel = bullet_dir * w_bullet_speed,
+						radius = def.bullet_radius,
+						color = def.color,
+						damage = chain_dmg,
+						lifetime = w_range / maxf(1.0, w_bullet_speed),
+						from_player = true,
+						weapon_id = w.id,
+						chain_rapid = true,
+					}
+					if mods_w.get("incendiary", false):
+						chain_b["incendiary"] = true
+					if mods_w.get("suppress_pct", 0.2) > 0.0:
+						chain_b["suppress_pct"] = mods_w.get("suppress_pct", 0.2)
+						chain_b["suppress_max"] = mods_w.get("suppress_max", 0.6)
+					bullets.append(chain_b)
+					# Burst mode: fire 2 more bullets in same frame
+					if mods_w.get("burst_mode", false):
+						for _bi in range(2):
+							bullet_angle = base_angle + deg_to_rad(randf_range(-spread_deg, spread_deg))
+							bullet_dir = Vector2(cos(bullet_angle), sin(bullet_angle))
+							var burst_b: Dictionary = chain_b.duplicate()
+							burst_b.pos = player_pos + bullet_dir * (PLAYER_RADIUS + 6.0)
+							burst_b.vel = bullet_dir * w_bullet_speed
+							bullets.append(burst_b)
+					# Frenzy Mode void: +1 corruption/s while firing (applied per shot: 0.125s interval)
+					if mods_w.get("frenzy_corruption", false):
+						corruption += 0.125
 
 		# Resonance: sympathetic_fire — drone fires when player fires
 		if weapon_mods.get("_resonance", {}).get("sympathetic_fire", false) and drone_active:
@@ -1871,6 +2072,15 @@ func _update_enemies(delta: float) -> void:
 		# Plagued timer tick (chain rifle void mutation)
 		if e.get("plagued_timer", 0.0) > 0.0:
 			e["plagued_timer"] = e.plagued_timer - delta
+
+		# Ignite tick (Chain Rifle incendiary)
+		if e.get("ignite_timer", 0.0) > 0.0:
+			e["ignite_timer"] = e.ignite_timer - delta
+			e.hp -= int(e.get("ignite_dmg", 5.0) * delta + 0.5)
+			if e.hp <= 0:
+				enemies[i] = e
+				_on_enemy_killed(i)
+				continue
 
 		# Stunned check
 		if e.get("stunned_timer", 0.0) > 0.0:
@@ -2269,6 +2479,12 @@ func _update_enemies(delta: float) -> void:
 						if sz.get("slowing", false) and e.pos.distance_to(sz.pos) < sz.radius:
 							spd *= 0.5
 							break
+					# Chain Rifle suppression
+					if e.get("suppressed", 0.0) > 0.0:
+						spd *= (1.0 - e.get("suppressed", 0.0))
+						e["suppress_timer"] = e.get("suppress_timer", 0.0) - delta
+						if e.get("suppress_timer", 0.0) <= 0.0:
+							e["suppressed"] = 0.0
 				# Berserker affix: below 30% HP — speed boost
 				if "berserker" in e.get("affixes", []) and float(e.hp) / float(e.max_hp) < 0.3:
 					spd *= 1.3
@@ -2400,6 +2616,9 @@ func _update_bullets(delta: float) -> void:
 
 		b.pos += b.vel * delta
 		b.lifetime -= delta
+		# Entropy cannon: leave void trail as it flies
+		if b.get("entropy", false) and b.from_player:
+			void_trails.append({pos=b.pos, timer=1.0})
 
 		if b.lifetime <= 0.0:
 			# Slow field on land (lance clean mutation)
@@ -2568,16 +2787,37 @@ func _update_bullets(delta: float) -> void:
 							e["plagued_timer"] = plague_dur
 							e["plagued"] = true
 						enemies[ei] = e
-						# Chain shot bounce (chain rifle)
-						if b.get("chain_shot", false) and b.get("bounces_left", 0) > 0:
+						# Pulse Cannon bounce
+						if b.get("pulse_bounce", false) and b.get("bounces_left", 0) > 0:
 							var hit_ids: Array = b.get("hit_ids", [])
 							hit_ids.append(ei)
 							b["hit_ids"] = hit_ids
 							b["bounces_left"] = b.bounces_left - 1
-							# Arc damage ramp
-							if b.get("arc_ramp", false):
-								b.damage = int(float(b.damage) * 1.3)
-							# Find nearest OTHER enemy
+							# Damage decay per bounce
+							var decay: float = b.get("bounce_decay", 0.8)
+							b.damage = maxi(1, int(float(b.damage) * decay))
+							# Chaos Wave: add corruption per bounce
+							if b.get("chaos_wave", false):
+								corruption += float(b.get("chaos_corruption", 3))
+								b.damage = maxi(1, int(float(b.damage) * b.get("chaos_dmg_mult", 1.5)))
+							# Chaos slow
+							if b.get("chaos_slow", false):
+								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 2.0
+							# Interference Pattern: 2+ bounces = stun
+							if b.get("pulse_stun", false) and hit_ids.size() >= 2:
+								e.stunned_timer = 1.0
+							# Overcharge: bounce to ALL nearby enemies
+							if b.get("overcharge", false):
+								for oei in range(enemies.size()):
+									if oei == ei or hit_ids.has(oei) or enemies[oei].hp <= 0:
+										continue
+									if b.pos.distance_to(enemies[oei].pos) < 200.0:
+										var oe: Dictionary = enemies[oei]
+										oe.hp -= b.damage
+										enemies[oei] = oe
+										if oe.hp <= 0:
+											_on_enemy_killed(oei, b.get("weapon_id", ""))
+							# Find nearest OTHER enemy within 200px
 							var next_dist: float = 200.0
 							var next_idx: int = -1
 							for nei in range(enemies.size()):
@@ -2593,10 +2833,98 @@ func _update_bullets(delta: float) -> void:
 								b.lifetime = 1.0
 								bullets[i] = b
 							else:
+								# Chaos split on final bounce
+								if b.get("chaos_split", false) and b.bounces_left == 0:
+									for _cs in range(2):
+										var cs_dir: Vector2 = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
+										new_bullets.append({pos=b.pos, vel=cs_dir * b.vel.length(), radius=b.radius, color=b.color, damage=maxi(1, b.damage / 2), lifetime=0.5, from_player=true, weapon_id=b.get("weapon_id", "")})
+								# Final stun
+								if b.get("final_stun", false) and b.bounces_left == 0:
+									e.stunned_timer = 0.8
 								to_remove.append(i)
 							if e.hp <= 0:
 								_on_enemy_killed(ei, b.get("weapon_id", ""))
 							break
+						# Entropy Cannon on-hit effects
+						if b.get("entropy", false):
+							# Void trail
+							void_trails.append({pos=b.pos, timer=1.0})
+							# Entropy explode (AOE)
+							if b.get("entropy_explode", false):
+								var aoe_dmg: int = maxi(1, int(float(hit_dmg) * b.get("entropy_explode_pct", 0.6)))
+								var aoe_r: float = 80.0
+								if b.get("singularity_pull", false):
+									aoe_r = 160.0
+								for oei2 in range(enemies.size()):
+									if oei2 == ei or enemies[oei2].hp <= 0:
+										continue
+									if b.pos.distance_to(enemies[oei2].pos) < aoe_r:
+										var oe2: Dictionary = enemies[oei2]
+										oe2.hp -= aoe_dmg
+										enemies[oei2] = oe2
+										if oe2.hp <= 0:
+											_on_enemy_killed(oei2, b.get("weapon_id", ""))
+								aoe_flashes.append({pos=b.pos, radius=aoe_r, timer=0.3, color=Color(0.6,0.1,0.9,0.6)})
+							# Entropy slow
+							if b.get("entropy_slow", false):
+								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 2.0
+							# Singularity pull
+							if b.get("singularity_pull", false):
+								var pull_r: float = b.get("pull_radius", 120.0)
+								for oei3 in range(enemies.size()):
+									if enemies[oei3].hp <= 0:
+										continue
+									if b.pos.distance_to(enemies[oei3].pos) < pull_r:
+										var oe3: Dictionary = enemies[oei3]
+										var pull_dir: Vector2 = (b.pos - oe3.pos).normalized()
+										oe3.pos += pull_dir * 60.0
+										enemies[oei3] = oe3
+						# Sniper Carbine headshot mechanics
+						if b.get("sniper", false) and e.get("is_elite", false):
+							var elite_center: Vector2 = e.pos
+							var headshot_radius: float = 20.0
+							if b.pos.distance_to(elite_center) < headshot_radius:
+								# Headshot! 3x damage (4x with mastery)
+								var hs_mult: float = weapon_mods.get("sniper_carbine", {}).get("headshot_mult", 3.0)
+								e.hp -= hit_dmg * int(hs_mult - 1.0)  # extra damage on top
+								_show_message("HEADSHOT!")
+								# Surgical Strike: remove 1 affix
+								if b.get("surgical_strike", false):
+									var affixes: Array = e.get("affixes", [])
+									if affixes.size() > 0:
+										affixes.remove_at(randi() % affixes.size())
+										e["affixes"] = affixes
+										_show_message("Affix removed!")
+								# Executioner: kill below threshold
+								if b.get("executioner", false):
+									var threshold: float = b.get("execute_threshold", 0.2)
+									if float(e.hp) / float(e.get("max_hp", 1)) < threshold:
+										e.hp = 0
+								# Sniper instant reload on headshot kill
+								if e.hp <= 0 and weapon_mods.get("sniper_carbine", {}).get("sniper_instant_reload", false):
+									main_weapon.mag_ammo = main_weapon.mag_size
+						# Sniper ignore armor
+						if b.get("ignore_armor", false) and "armored" in e.get("affixes", []):
+							# Undo the armor reduction that was already applied
+							e.hp -= int(float(hit_dmg) * 0.6)  # add back the 60% that was reduced
+						# Sniper shield break
+						if b.get("entropy_shield_break", false) and e.get("shield_hp", 0) > 0:
+							e.shield_hp = 0
+						# Chain Rifle suppression
+						if b.get("chain_rapid", false):
+							var sup_pct: float = b.get("suppress_pct", 0.2)
+							var sup_max: float = b.get("suppress_max", 0.6)
+							var cur_sup: float = e.get("suppressed", 0.0)
+							e["suppressed"] = minf(cur_sup + sup_pct, sup_max)
+							e["suppress_timer"] = 2.0
+							# Incendiary rounds
+							if b.get("incendiary", false) and randf() < 0.15:
+								e["ignite_timer"] = 3.0
+								e["ignite_dmg"] = 5.0
+							# Frenzy lifesteal
+							if weapon_mods.get("chain_rifle", {}).get("frenzy_lifesteal", false):
+								if randf() < 0.1:
+									player_hp = mini(player_hp + 1, player_max_hp)
 						# Fragment on hit (sidearm void mutation)
 						if b.get("fragment_on_hit", false) and not b.get("is_fragment", false):
 							var frag_dmg: int = maxi(1, int(hit_dmg * 0.5))
@@ -2715,6 +3043,22 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	# Mastery: killcam — next shot fires instantly
 	if weapon_mods.get(main_weapon.get("id", ""), {}).get("killcam", false):
 		main_weapon.cooldown_timer = 0.0
+
+	# Entropy Cannon: Resonant Decay — each kill adds +2 corruption
+	if weapon_mods.get("entropy_cannon", {}).get("resonant_decay", false) and main_weapon.get("id", "") == "entropy_cannon":
+		corruption += 2.0
+	# Entropy Cannon void mastery: Void Feast — each kill +3 corruption
+	if weapon_mods.get("entropy_cannon", {}).get("void_feast", false) and main_weapon.get("id", "") == "entropy_cannon":
+		corruption += 3.0
+	# Entropy Cannon clean mastery: Purge Healing — kills restore 1 HP
+	if weapon_mods.get("entropy_cannon", {}).get("purge_healing", false) and main_weapon.get("id", "") == "entropy_cannon":
+		player_hp = mini(player_hp + 1, player_max_hp)
+	# Chain Rifle: Adrenaline Feed — kill while overheated resets heat
+	if weapon_mods.get("chain_rifle", {}).get("adrenaline_feed", false) and main_weapon.get("id", "") == "chain_rifle":
+		if chain_heat_cooldown > 0.0:
+			chain_heat_cooldown = 0.0
+			chain_heat = 0.0
+			_show_message("Heat reset!")
 
 	# Mastery: missile_burst — on elite kill fire 2 missiles
 	if e.get("is_elite", false) and weapon_mods.get(main_weapon.get("id", ""), {}).get("missile_burst", false):
@@ -3336,6 +3680,41 @@ func _apply_weapon_perk(wid: String, perk: Dictionary) -> void:
 		"chain_final":
 			mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 1
 			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.12
+		# Entropy Cannon perks
+		"resonant_decay":
+			mods["resonant_decay"] = true
+		"entropy_explode":
+			mods["entropy_explode"] = true
+		"entropy_slow":
+			mods["entropy_slow"] = true
+		# Pulse Cannon perks
+		"pulse_bounces":
+			mods["pulse_bounces_bonus"] = mods.get("pulse_bounces_bonus", 0) + int(perk.value)
+		"pulse_decay":
+			mods["pulse_high_decay"] = true
+		"pulse_overcharge":
+			mods["pulse_overcharge"] = true
+		"pulse_stun":
+			mods["pulse_stun"] = true
+		# Sniper Carbine perks
+		"hollow_point":
+			mods["hollow_point"] = true
+		"spotter":
+			mods["spotter"] = true
+		"breath_control":
+			mods["breath_control"] = true
+		"surgical_strike":
+			mods["surgical_strike"] = true
+		# Chain Rifle perks
+		"extended_heat":
+			mods["extended_heat"] = true
+		"incendiary":
+			mods["incendiary"] = true
+		"suppress_boost":
+			mods["suppress_pct"] = 0.3
+			mods["suppress_max"] = 0.9
+		"adrenaline_feed":
+			mods["adrenaline_feed"] = true
 	weapon_mods[wid] = mods
 
 # =========================================================
@@ -3402,18 +3781,18 @@ func _init_contract_mode(contract: Dictionary) -> void:
 			pod_max_hp = contract.get("pod_hp", 200)
 			pod_hp = pod_max_hp
 			pod_speed = contract.get("pod_speed", 40.0)
-			# Spawn pod at left side, target at right side
 			pod_pos = Vector2(200.0, WORLD_H * 0.5)
 			pod_target = Vector2(WORLD_W - 200.0, WORLD_H * 0.5)
 			pod_active = true
 		"void_breach":
 			rift_hold_time = contract.get("hold_time", 180.0)
-			# Place rift at a random location away from player
 			var rng := RandomNumberGenerator.new()
 			rng.randomize()
 			rift_pos = Vector2(rng.randf_range(800.0, WORLD_W - 800.0), rng.randf_range(800.0, WORLD_H - 800.0))
-			while rift_pos.distance_to(player_pos) < 600.0:
+			var _rift_attempts: int = 0
+			while rift_pos.distance_to(player_pos) < 600.0 and _rift_attempts < 50:
 				rift_pos = Vector2(rng.randf_range(800.0, WORLD_W - 800.0), rng.randf_range(800.0, WORLD_H - 800.0))
+				_rift_attempts += 1
 			rift_active = true
 			rift_time_held = 0.0
 			rift_time_outside = 0.0
@@ -3426,6 +3805,8 @@ func _init_contract_mode(contract: Dictionary) -> void:
 			cache_total = contract.get("cache_count", 3)
 			caches_collected = 0
 			_spawn_caches()
+		_:
+			pass
 
 func _spawn_caches() -> void:
 	caches.clear()
@@ -3900,6 +4281,9 @@ func _draw() -> void:
 			draw_rect(Rect2(shield_bar_pos, Vector2(bar_w, bar_h)), Color(0.2, 0.2, 0.4))
 			var shield_frac: float = float(e.get("shield_hp", 0)) / float(e.shield_max)
 			draw_rect(Rect2(shield_bar_pos, Vector2(bar_w * shield_frac, bar_h)), Color(0.3, 0.5, 1.0))
+		# Sniper Carbine: elite hit zone (headshot circle)
+		if is_elite and weapon_mods.get("sniper_carbine", {}).get("spotter", false) and main_weapon.get("id", "") == "sniper_carbine":
+			draw_arc(sp, 20.0, 0.0, TAU, 16, Color(1.0, 0.3, 0.3, 0.7), 1.5)
 		# Label — elite gets full name in gold, regular gets short name
 		if is_elite:
 			_draw_text(Vector2(sp.x - e.radius - 10.0, sp.y - e.radius - 22.0), "★ " + e.type, Color(1.0, 0.9, 0.3), 11)
@@ -3957,10 +4341,33 @@ func _draw() -> void:
 		var fsp: Vector2 = _w2s(familiar_pos)
 		draw_circle(fsp, 6.0, Color(0.6, 0.1, 0.8))
 
+	# Void trails (Entropy Cannon)
+	for vt in void_trails:
+		var vtsp: Vector2 = _w2s(vt.pos)
+		var vt_alpha: float = clampf(vt.timer, 0.0, 1.0) * 0.4
+		draw_circle(vtsp, 3.0, Color(0.5, 0.1, 0.8, vt_alpha))
+
 	# Bullets
 	for b in bullets:
 		var sp: Vector2 = _w2s(b.pos)
-		draw_circle(sp, b.radius, b.color)
+		if b.get("entropy", false):
+			# Pulsing purple orb
+			var pulse_r: float = b.radius + 3.0 * sin(hunt_elapsed * 6.0)
+			draw_circle(sp, pulse_r, Color(0.6, 0.1, 0.9, 0.8))
+			draw_arc(sp, pulse_r + 2.0, 0.0, TAU, 16, Color(0.8, 0.3, 1.0, 0.4), 2.0)
+		elif b.get("pulse_bounce", false):
+			# Bright cyan orb with glow
+			draw_circle(sp, b.radius + 1.0, Color(0.1, 0.9, 1.0, 0.3))
+			draw_circle(sp, b.radius, b.color)
+		elif b.get("sniper", false):
+			# Thin bright white line/beam
+			var trail_end: Vector2 = sp - b.vel.normalized() * 20.0
+			draw_line(trail_end, sp, Color(1.0, 1.0, 1.0, 0.8), 2.0)
+			draw_circle(sp, b.radius, b.color)
+		elif b.get("chain_rapid", false):
+			draw_circle(sp, b.radius, b.color)
+		else:
+			draw_circle(sp, b.radius, b.color)
 
 	# AOE flashes
 	for f in aoe_flashes:
@@ -3997,13 +4404,35 @@ func _draw() -> void:
 		var pw_reloading: bool = pw.reload_timer > 0.0
 		var ammo_color: Color = Color(1.0, 0.8, 0.2) if not pw_reloading else Color(1.0, 0.4, 0.2)
 		var ammo_text: String
-		if pw.mag_size >= 999:
+		if pw.id == "chain_rifle":
+			if chain_heat_cooldown > 0.0:
+				ammo_text = "OVERHEATED"
+				ammo_color = Color(1.0, 0.2, 0.1)
+			else:
+				ammo_text = WEAPON_DEFS[pw.id].name
+		elif pw.mag_size >= 999:
 			ammo_text = WEAPON_DEFS[pw.id].name
 		elif pw_reloading:
 			ammo_text = "RELOADING..."
 		else:
 			ammo_text = "%d / %d" % [pw.mag_ammo, pw.mag_size]
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
+
+		# Chain Rifle heat bar
+		if pw.id == "chain_rifle":
+			var heat_y: float = hp_bar_y + hp_bar_h + 22.0
+			var heat_w: float = 80.0
+			var heat_h: float = 6.0
+			draw_rect(Rect2(hp_bar_x, heat_y, heat_w, heat_h), Color(0.2, 0.1, 0.1))
+			var heat_frac: float = chain_heat if chain_heat_cooldown <= 0.0 else 1.0
+			var heat_color: Color = Color(1.0, 0.6, 0.1) if chain_heat_cooldown <= 0.0 else Color(1.0, 0.2, 0.1)
+			draw_rect(Rect2(hp_bar_x, heat_y, heat_w * heat_frac, heat_h), heat_color)
+			_draw_text(Vector2(hp_bar_x + heat_w + 4.0, heat_y - 2.0), "HEAT", Color(0.8, 0.5, 0.2), 9)
+
+		# Sniper Carbine: breath control indicator
+		if pw.id == "sniper_carbine" and weapon_mods.get("sniper_carbine", {}).get("breath_control", false):
+			if sniper_still_timer >= 1.0:
+				_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 22.0), "STEADY", Color(0.2, 1.0, 0.5), 10)
 
 	# Target counter (top center) — varies by contract mode
 	var target_text: String
@@ -5149,6 +5578,57 @@ func _update_hollow_pools(delta: float) -> void:
 		if player_pos.distance_to(hp.pos) < hp.radius:
 			corruption += 2.0 * delta
 
+func _update_chain_heat(delta: float) -> void:
+	if not main_weapon.get("id", "") == "chain_rifle":
+		return
+	var mods_cr: Dictionary = weapon_mods.get("chain_rifle", {})
+	if chain_heat_cooldown > 0.0:
+		chain_heat_cooldown -= delta
+		chain_firing = false
+		if chain_heat_cooldown <= 0.0:
+			chain_heat = 0.0
+			chain_heat_cooldown = 0.0
+		return
+	# Frenzy mode: no overheat
+	if mods_cr.get("frenzy_no_overheat", false):
+		chain_heat = 0.0
+		return
+	# Burst mode: no overheat
+	if mods_cr.get("burst_mode", false):
+		chain_heat = 0.0
+		return
+	if chain_firing:
+		var max_heat_time: float = chain_overheat_time
+		if mods_cr.get("extended_heat", false):
+			max_heat_time = 4.0
+		chain_heat += delta / max_heat_time
+		if chain_heat >= 1.0:
+			chain_heat = 1.0
+			chain_heat_cooldown = 2.0
+			chain_firing = false
+			_show_message("OVERHEATED!")
+	else:
+		# Cool down gradually when not firing
+		chain_heat = maxf(0.0, chain_heat - delta * 0.5)
+	chain_firing = false  # Reset each frame; set to true by firing code
+
+func _update_sniper_still(delta: float) -> void:
+	if not main_weapon.get("id", "") == "sniper_carbine":
+		return
+	if player_pos.distance_to(sniper_last_pos) < 2.0:
+		sniper_still_timer += delta
+	else:
+		sniper_still_timer = 0.0
+	sniper_last_pos = player_pos
+
+func _update_void_trails(delta: float) -> void:
+	var i := void_trails.size() - 1
+	while i >= 0:
+		void_trails[i].timer -= delta
+		if void_trails[i].timer <= 0.0:
+			void_trails.remove_at(i)
+		i -= 1
+
 # =========================================================
 # MODIFIER APPLICATION
 # =========================================================
@@ -5224,17 +5704,43 @@ func _apply_mutation(wid: String, mtype: String) -> void:
 				mods["smart_missile"] = true
 			elif mtype == "void":
 				mods["parasite"] = true
+		"entropy_cannon":
+			if mtype == "clean":
+				# Purge Cannon: no corruption scaling, fires 3x faster
+				mods["purge_mode"] = true
+				mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 1.0  # 1.5 - 1.0 = 0.5s fire rate (3x faster)
+			elif mtype == "void":
+				# Singularity: AOE doubled, pulls enemies
+				mods["entropy_explode"] = true
+				mods["entropy_explode_pct"] = 0.6
+				mods["singularity_pull"] = true
+				mods["pull_radius"] = 160.0  # doubled AOE radius
 		"pulse_cannon":
 			if mtype == "clean":
-				mods["repulsor_field"] = true
+				# Arc Repeater: fires 2 projectiles per shot
+				mods["arc_repeater"] = true
 			elif mtype == "void":
-				mods["collapse_shot"] = true
+				# Chaos Wave: bounces add corruption but +50% damage
+				mods["chaos_wave"] = true
+				mods["chaos_dmg_mult"] = 1.5
+				mods["chaos_corruption_per_hit"] = 3
+		"sniper_carbine":
+			if mtype == "clean":
+				# Executioner: headshots kill below 20% HP
+				mods["executioner"] = true
+				mods["execute_threshold"] = 0.2
+			elif mtype == "void":
+				# Entropy Round: +8 corruption per shot, ignores armor
+				mods["entropy_round"] = true
 		"chain_rifle":
 			if mtype == "clean":
-				mods["arc_damage_ramp"] = true
-				mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 3  # max 5 bounces
+				# Precision Burst: 3-round burst, no overheat, higher damage
+				mods["burst_mode"] = true
+				mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) + 0.275  # slower: 0.125 + 0.275 = 0.4s between bursts
 			elif mtype == "void":
-				mods["plague"] = true
+				# Frenzy Mode: no overheat, +1 corruption/s while firing
+				mods["frenzy_no_overheat"] = true
+				mods["frenzy_corruption"] = true
 	weapon_mods[wid] = mods
 
 func _apply_mastery_perk(perk_id: String) -> void:
@@ -5302,25 +5808,52 @@ func _apply_mastery_perk(perk_id: String) -> void:
 		"toxic_cloud": mods["toxic_cloud"] = true
 		"deep_parasite": mods["parasite_duration"] = 6.0
 		"void_latch": mods["void_latch"] = true
+		# Entropy cannon clean
+		"purge_rapid": mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.1
+		"purge_damage": mods["damage_bonus"] = mods.get("damage_bonus", 0) + 4
+		"purge_pierce": mods["piercing"] = true
+		"purge_healing": mods["purge_healing"] = true
+		# Entropy cannon void
+		"singularity_range": mods["pull_radius"] = mods.get("pull_radius", 120.0) * 1.5
+		"singularity_damage":
+			var pm_sd: Dictionary = weapon_mods.get("_player", {})
+			pm_sd["singularity_dmg_bonus"] = 1.3
+			weapon_mods["_player"] = pm_sd
+		"void_feast": mods["void_feast"] = true
+		"entropy_chain": mods["entropy_chain"] = true
 		# Pulse cannon clean
-		"wall_persist": mods["wall_persist"] = true
-		"wall_damage": mods["wall_damage"] = true
-		"bounce_back": mods["bounce_back"] = true
-		"double_wall": mods["double_wall"] = true
+		"arc_speed": mods["pulse_speed_mult"] = mods.get("pulse_speed_mult", 1.0) * 1.3
+		"arc_extra": mods["pulse_bounces_bonus"] = mods.get("pulse_bounces_bonus", 0) + 1
+		"arc_no_decay": mods["no_decay"] = true
+		"arc_final_stun": mods["final_stun"] = true
 		# Pulse cannon void
-		"deep_collapse": mods["collapse_range_bonus"] = mods.get("collapse_range_bonus", 0.0) + 80.0
-		"burst_chain": mods["burst_chain"] = true
-		"void_vortex": mods["void_vortex"] = true
-		"collapse_amp": mods["collapse_amp"] = true
+		"chaos_corruption": mods["chaos_corruption_per_hit"] = 5
+		"chaos_extra_damage": mods["chaos_dmg_mult"] = 1.8
+		"chaos_split": mods["chaos_split"] = true
+		"chaos_slow": mods["chaos_slow"] = true
+		# Sniper carbine clean
+		"execute_threshold": mods["execute_threshold"] = 0.3
+		"sniper_crit": mods["headshot_mult"] = 4.0
+		"sniper_instant_reload": mods["sniper_instant_reload"] = true
+		"scope_range": mods["range_mult"] = mods.get("range_mult", 1.0) * 1.3
+		# Sniper carbine void
+		"entropy_pierce_all": mods["entropy_pierce_all"] = true
+		"entropy_dmg_boost": mods["damage_bonus"] = mods.get("damage_bonus", 0) + int(float(WEAPON_DEFS["sniper_carbine"].damage) * 0.3)
+		"entropy_shield_break": mods["entropy_shield_break"] = true
+		"entropy_slow": mods["entropy_slow_on_hit"] = true
 		# Chain rifle clean
-		"arc_persist": mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 2
-		"arc_stun": mods["arc_stun"] = true
-		"conductor": mods["conductor"] = true
-		"chain_reload": mods["chain_reload"] = true
+		"burst_accuracy": mods["burst_no_spread"] = true
+		"burst_damage": mods["damage_bonus"] = mods.get("damage_bonus", 0) + 1
+		"burst_fire_rate": mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.12
+		"burst_stun": mods["burst_stun"] = true
 		# Chain rifle void
-		"plague_persist": mods["plague_duration"] = 6.0
-		"plague_spread": mods["plague_spread"] = true
-		"plague_burst": mods["plague_burst"] = true
-		"void_charge": mods["void_charge"] = true
+		"frenzy_speed":
+			var pm_fs: Dictionary = weapon_mods.get("_player", {})
+			pm_fs["frenzy_speed"] = true
+			weapon_mods["_player"] = pm_fs
+		"frenzy_damage": mods["frenzy_damage"] = true
+		"frenzy_lifesteal": mods["frenzy_lifesteal"] = true
+		"frenzy_suppress":
+			mods["suppress_max"] = 1.0
 	weapon_mods[wid] = mods
 	_show_message("Mastery: " + perk_id.replace("_", " ").capitalize())

@@ -3,6 +3,7 @@ extends Control
 var selected_weapon: String = "sidearm"
 var chosen_consumables: Dictionary = {}  # item_id -> count chosen
 var weapon_buttons: Array[Button] = []
+var all_weapon_ids: Array[String] = []  # all 9 weapon IDs in display order
 var consumable_labels: Dictionary = {}  # item_id -> Label
 var slots_label: Label
 var total_slots: int = 4
@@ -10,6 +11,7 @@ var kit_slot_labels: Array[Label] = []
 var kit_picker_visible: int = -1  # -1 = hidden, 0/1 = slot being changed
 var kit_picker_container: VBoxContainer = null
 var main_vbox: VBoxContainer = null
+var _pending_kit_rebuild: int = -1  # deferred kit picker rebuild slot
 
 const STOCK_NAMES: Dictionary = {
 	"field_stim": "Field Stim",
@@ -33,6 +35,37 @@ const KIT_NAMES: Dictionary = {
 	"rupture_kit": "Rupture",
 }
 
+const WEAPON_DISPLAY_NAMES: Dictionary = {
+	"sidearm": "Pistol",
+	"scatter": "Scatter",
+	"lance": "Lance",
+	"baton": "Baton",
+	"dart": "Dart",
+	"entropy_cannon": "Entropy",
+	"pulse_cannon": "Pulse",
+	"sniper_carbine": "Sniper",
+	"chain_rifle": "Chain",
+}
+
+# All weapons in display order
+const ALL_WEAPONS: Array[String] = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
+
+func _is_weapon_available(wid: String) -> bool:
+	if Constants.DEBUG_UNLOCK_ALL_WEAPONS:
+		return true
+	if not Constants.WEAPON_UNLOCK_REQS.has(wid):
+		return true  # starter weapons
+	var req: Dictionary = Constants.WEAPON_UNLOCK_REQS[wid]
+	var level: int = SaveData.get_rep_level(req.track, SaveManager.data.reputation)
+	return level >= req.level
+
+func _get_lock_text(wid: String) -> String:
+	if not Constants.WEAPON_UNLOCK_REQS.has(wid):
+		return ""
+	var req: Dictionary = Constants.WEAPON_UNLOCK_REQS[wid]
+	var track_name: String = Constants.REP_TRACK_NAMES.get(req.track, req.track)
+	return "%s %d" % [track_name, req.level]
+
 func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract
 	total_slots = 4 + SaveManager.data.ship_upgrades.get("loadout_slots", 0)
@@ -53,7 +86,7 @@ func _ready() -> void:
 
 	main_vbox = VBoxContainer.new()
 	main_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main_vbox.add_theme_constant_override("separation", 12)
+	main_vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(main_vbox)
 
 	# Title
@@ -76,20 +109,35 @@ func _ready() -> void:
 	weapon_title.text = "Starting Weapon:"
 	main_vbox.add_child(weapon_title)
 
-	var weapon_row := HBoxContainer.new()
-	weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	main_vbox.add_child(weapon_row)
+	# Show all 9 weapons in a grid (3 rows of 3)
+	all_weapon_ids = ALL_WEAPONS.duplicate()
+	selected_weapon = "sidearm"
+	# Default to first available weapon
+	for wid in all_weapon_ids:
+		if _is_weapon_available(wid):
+			selected_weapon = wid
+			break
 
-	var unlocked: Array[String] = SaveManager.data.unlocked_weapons
-	if unlocked.is_empty():
-		unlocked = ["sidearm"]
-	selected_weapon = unlocked[0]
-
-	for wid in unlocked:
+	var row_idx: int = 0
+	var weapon_row: HBoxContainer = null
+	for wi in range(all_weapon_ids.size()):
+		if wi % 3 == 0:
+			weapon_row = HBoxContainer.new()
+			weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
+			weapon_row.add_theme_constant_override("separation", 4)
+			main_vbox.add_child(weapon_row)
+		var wid: String = all_weapon_ids[wi]
+		var available: bool = _is_weapon_available(wid)
 		var btn := Button.new()
-		btn.text = wid.capitalize()
-		btn.custom_minimum_size = Vector2(100, 40)
-		btn.pressed.connect(_on_weapon_selected.bind(wid))
+		btn.custom_minimum_size = Vector2(90, 36)
+		if available:
+			btn.text = WEAPON_DISPLAY_NAMES.get(wid, wid.capitalize())
+			btn.pressed.connect(_on_weapon_selected.bind(wid))
+		else:
+			var lock_text: String = _get_lock_text(wid)
+			btn.text = "%s [%s]" % [WEAPON_DISPLAY_NAMES.get(wid, wid.capitalize()), lock_text]
+			btn.disabled = true
+			btn.modulate = Color(0.4, 0.4, 0.4)
 		weapon_row.add_child(btn)
 		weapon_buttons.append(btn)
 
@@ -206,9 +254,17 @@ func _ready() -> void:
 	go_btn.pressed.connect(_on_go_hunt)
 	btn_row.add_child(go_btn)
 
+# WASM-safe: use call_deferred for kit picker rebuild
 func _on_kit_change(slot: int) -> void:
+	_pending_kit_rebuild = slot
+	call_deferred("_rebuild_kit_picker")
+
+func _rebuild_kit_picker() -> void:
+	var slot: int = _pending_kit_rebuild
+	if slot < 0:
+		return
 	kit_picker_visible = slot
-	# Clear and rebuild picker
+	# Clear old children
 	for child in kit_picker_container.get_children():
 		child.queue_free()
 
@@ -305,17 +361,14 @@ func _on_weapon_selected(weapon_id: String) -> void:
 	_update_weapon_highlight()
 
 func _update_weapon_highlight() -> void:
-	var unlocked: Array[String] = SaveManager.data.unlocked_weapons
-	if unlocked.is_empty():
-		unlocked = ["sidearm"]
 	for i in weapon_buttons.size():
-		var wid: String = unlocked[i]
+		var wid: String = all_weapon_ids[i]
+		if not _is_weapon_available(wid):
+			continue  # locked buttons stay as-is
 		if wid == selected_weapon:
-			weapon_buttons[i].text = "> %s <" % wid.capitalize()
-			weapon_buttons[i].disabled = false  # never disable — just highlight with text
+			weapon_buttons[i].text = "> %s <" % WEAPON_DISPLAY_NAMES.get(wid, wid.capitalize())
 		else:
-			weapon_buttons[i].text = wid.capitalize()
-			weapon_buttons[i].disabled = false
+			weapon_buttons[i].text = WEAPON_DISPLAY_NAMES.get(wid, wid.capitalize())
 
 func _on_back() -> void:
 	get_tree().change_scene_to_file("res://scenes/ContractBoard.tscn")

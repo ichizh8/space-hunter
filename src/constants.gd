@@ -18,3 +18,30 @@ const TRAP_MAX_ACTIVE: int = 3
 const TRAP_DECAY_TIME: float = 60.0
 const TRAP_DAMAGE: int = 25
 const TRAP_SLOW_DURATION: float = 2.0
+
+# Debug: when true, all weapons are available regardless of rep requirements
+const DEBUG_UNLOCK_ALL_WEAPONS: bool = true
+
+# Weapon unlock requirements: {weapon_id: {track: String, level: int}}
+const WEAPON_UNLOCK_REQS: Dictionary = {
+	"entropy_cannon": {"track": "void_walker", "level": 2},
+	"pulse_cannon": {"track": "tactician", "level": 2},
+	"sniper_carbine": {"track": "contractor", "level": 3},
+	"chain_rifle": {"track": "scrapper", "level": 2},
+}
+
+# Rep track display names
+const REP_TRACK_NAMES: Dictionary = {
+	"contractor": "Contractor",
+	"void_walker": "Void Walker",
+	"tactician": "Tactician",
+	"scrapper": "Scrapper",
+}
+
+# Rep level names per track
+const REP_LEVEL_NAMES: Dictionary = {
+	"contractor": ["—", "Rookie", "Veteran", "Specialist", "Elite", "Legend"],
+	"void_walker": ["—", "Touched", "Marked", "Chosen", "Vessel", "Herald"],
+	"tactician": ["—", "Recruit", "Operative", "Strategist", "Commander", "Architect"],
+	"scrapper": ["—", "Roughneck", "Brawler", "Veteran", "Ironclad", "Unbreakable"],
+}
