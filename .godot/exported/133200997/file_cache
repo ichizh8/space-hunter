@@ -27,9 +27,9 @@ res://assets/ui/cancel_icon.tres::0c2db5216e50d0208baec9515498d1e1::1774481889::
 res://assets/ui/close_icon.tres::0cb9ee83184106793cd4e5e20123d0ba::1774481889::res://.godot/exported/133200997/export-9690d58a3d79bb5fa7964e8531b7c96b-close_icon.res
 res://assets/ui/main.tres::8dcd5471f0483de472fc875893ccef67::1774481889::res://.godot/exported/133200997/export-b937e67757eca64e316d8e57d7e701d9-main.res
 res://scenes/contract_board/contract_board.tscn::8b06b3b20e03a0cd20b588e6742d8539::1774481889::res://.godot/exported/133200997/export-4b6a63a7a105ac7e55bba6a906e888cb-contract_board.scn
-res://scenes/ContractBoard.tscn::63259d9589612428c3b2b818afc548f4::1774481889::res://.godot/exported/133200997/export-15af21f861ac589801c163f5f0003e28-ContractBoard.scn
+res://scenes/ContractBoard.tscn::bb7452f9bb117a63f6e81a7a8f6b9ce4::1774647290::res://.godot/exported/133200997/export-15af21f861ac589801c163f5f0003e28-ContractBoard.scn
 res://scenes/Hunt.tscn::0b0c7b6414cea4041de8829cb4bd4411::1774490250::res://.godot/exported/133200997/export-5e8e4a0f56931ccb6d9719802b5dae84-Hunt.scn
-res://scenes/Results.tscn::25fe26a10dc141a47f98eb8f53641ca9::1774481889::res://.godot/exported/133200997/export-a9038502dd5305208a7981ddc9bde85d-Results.scn
+res://scenes/Results.tscn::76a8fe80f9e101cf4dd2ebc545f0e68c::1774647221::res://.godot/exported/133200997/export-a9038502dd5305208a7981ddc9bde85d-Results.scn
 res://scenes/ShipHub.tscn::727635187e17a8ad698d9e889964fd1f::1774492825::res://.godot/exported/133200997/export-b4af20c1e89853617c7360a9ca6d02e2-ShipHub.scn
 res://scenes/Hunt_turnbased_backup.tscn::cf7327ef6e3e76f3a59d50b01ec68e3f::1774490121::res://.godot/exported/133200997/export-9aef8988d0646b846c9e883d720ae89b-Hunt_turnbased_backup.scn
 res://scenes/Loadout.tscn::3e4b4b90b5c597a33f5ac0ce70b80009::1774492844::res://.godot/exported/133200997/export-c508a50cb216f129e8811519a0ae8572-Loadout.scn

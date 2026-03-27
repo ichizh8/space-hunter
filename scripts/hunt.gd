@@ -457,6 +457,49 @@ var kill_streak_count: int = 0
 var speed_boost_timer: float = 0.0
 var leech_accumulator: float = 0.0
 
+# === Hunt stats (Phase C) ===
+var total_kills: int = 0
+var elite_kill_count: int = 0
+var apex_kill_count: int = 0
+var peak_corruption_state: int = 0  # 0=CLEAN, 1=VALLEY, 2=CORRUPT, 3=VOID
+var damage_dealt_total: float = 0.0
+var damage_taken_total: float = 0.0
+var hunt_status: String = "COMPLETED"  # COMPLETED / FAILED / ABANDONED
+var pause_menu_open: bool = false
+var extract_confirm_open: bool = false
+
+# === Contract-specific state (Phase C) ===
+var contract_mode: String = "hunt"  # hunt, payload_escort, void_breach, boss_hunt, extraction_run
+
+# Payload Escort
+var pod_pos: Vector2 = Vector2.ZERO
+var pod_target: Vector2 = Vector2.ZERO
+var pod_hp: int = 200
+var pod_max_hp: int = 200
+var pod_speed: float = 40.0
+var pod_active: bool = false
+
+# Void Breach
+var rift_pos: Vector2 = Vector2.ZERO
+var rift_hold_time: float = 180.0
+var rift_time_held: float = 0.0
+var rift_time_outside: float = 0.0
+var rift_active: bool = false
+var rift_radius: float = 400.0
+
+# Boss Hunt
+var boss_name: String = ""
+var boss_spawned: bool = false
+var boss_killed: bool = false
+var boss_timer: float = 480.0  # 8 minutes
+
+# Extraction Run
+var caches: Array[Dictionary] = []  # {pos, biome, collected, channel_timer, channeling}
+var caches_collected: int = 0
+var cache_total: int = 3
+var cache_channel_time: float = 2.0
+var cache_burst_timer: float = 0.0
+
 # === HUD message ===
 var hud_message := ""
 var hud_message_timer := 0.0
@@ -538,7 +581,12 @@ func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract
 	contract_type = contract.get("creature_type", "Void Leech")
 	var depth: int = contract.get("depth", 1)
-	target_total = 3 + depth
+	var ctype: String = contract.get("type", "hunt")
+	# Hunt mode: elite kill targets. Other modes: no target_total needed
+	if ctype == "hunt" or ctype == "":
+		target_total = 3 + depth
+	else:
+		target_total = 9999  # Disable exit spawn for non-hunt contracts
 
 	# Apply ship upgrades
 	var hp_bonus: int = SaveManager.data.ship_upgrades.get("max_hp", 0) * 2
@@ -584,6 +632,10 @@ func _ready() -> void:
 	_spawn_wave(depth)
 
 	player_start_biome = _get_biome_at(player_pos)
+
+	# Initialize contract mode
+	contract_mode = contract.get("type", "hunt")
+	_init_contract_mode(contract)
 
 	# Activate passive kits
 	for kid in equipped_kits:
@@ -845,6 +897,12 @@ func _spawn_wave(depth: int) -> void:
 	var effective_wave: int = min(wave_current, 10)
 	var base_fillers: int = 14 + depth * 4
 	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
+	# Void Breach: 2x wave intensity
+	if contract_mode == "void_breach":
+		filler_count *= 2
+	# Extraction Run cache burst: extra enemies during burst
+	if contract_mode == "extraction_run" and cache_burst_timer > 0.0:
+		filler_count = int(filler_count * 1.5)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
 		# Determine spawn position first, then pick biome-appropriate type
@@ -1208,6 +1266,30 @@ func _input(event: InputEvent) -> void:
 	if dead or hunt_complete:
 		return
 
+	# Pause menu / extract confirm input handling
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if extract_confirm_open:
+			extract_confirm_open = false
+			queue_redraw()
+			return
+		if pause_menu_open:
+			pause_menu_open = false
+			paused = false
+			queue_redraw()
+			return
+		if not paused:
+			pause_menu_open = true
+			paused = true
+			queue_redraw()
+			return
+
+	if pause_menu_open or extract_confirm_open:
+		if event is InputEventScreenTouch and event.pressed:
+			_handle_pause_touch(event.position)
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_handle_pause_touch(event.position)
+		return
+
 	# Upgrade panel clicks handled by buttons
 	if paused:
 		return
@@ -1288,6 +1370,7 @@ func _process(delta: float) -> void:
 	_update_familiar(delta)
 	_update_poison_trails(delta)
 	_update_hollow_pools(delta)
+	_update_contract_mode(delta)
 	if affix_message_timer > 0.0:
 		affix_message_timer -= delta
 	if apex_flash_timer > 0.0:
@@ -1490,6 +1573,7 @@ func _update_weapons(delta: float) -> void:
 				for e in enemies:
 					if e.hp > 0 and player_pos.distance_to(e.pos) < 40.0:
 						player_hp -= 1
+						damage_taken_total += 1.0
 						if player_hp <= 0:
 							_die()
 							return
@@ -2015,6 +2099,7 @@ func _update_enemies(delta: float) -> void:
 							e.charge_timer = 4.0
 							aoe_flashes.append({pos = e.pos, radius = 100.0, timer = 0.3, color = Color(1.0, 0.3, 0.0, 0.5)})
 							player_hp -= 2
+							damage_taken_total += 2.0
 							player_hit_flash = 0.2
 							_show_message("SLAM! -2 HP")
 							if player_hp <= 0:
@@ -2096,6 +2181,7 @@ func _update_enemies(delta: float) -> void:
 							aoe_flashes.append({pos = e.pos, radius = 200.0, timer = 0.6, color = Color(0.9, 0.5, 0.1, 0.4)})
 							if dist_to_player < 200.0:
 								player_hp -= 20
+								damage_taken_total += 20.0
 								player_hit_flash = 0.3
 								_show_message("SHOCKWAVE! -20 HP")
 								if player_hp <= 0:
@@ -2207,6 +2293,7 @@ func _update_enemies(delta: float) -> void:
 						if "berserker" in e.get("affixes", []) and float(e.hp) / float(e.max_hp) < 0.3:
 							hit_dmg = int(hit_dmg * 1.3)
 						player_hp -= hit_dmg
+						damage_taken_total += float(hit_dmg)
 						enemy_melee_cooldowns[cd_key] = 1.0
 						player_hit_flash = 0.2
 						_show_message("Hit! -%d HP" % hit_dmg)
@@ -2553,6 +2640,7 @@ func _update_bullets(delta: float) -> void:
 					if corruption >= 36.0:
 						recv_dmg = maxi(1, recv_dmg - 1)
 					player_hp -= recv_dmg
+					damage_taken_total += float(recv_dmg)
 					player_hit_flash = 0.2
 					adrenaline_stack = 0
 					to_remove.append(i)
@@ -2575,6 +2663,19 @@ func _update_bullets(delta: float) -> void:
 func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
+
+	# --- Phase C: stat tracking ---
+	total_kills += 1
+	damage_dealt_total += float(e.get("max_hp", 0))
+	if e.get("is_elite", false):
+		elite_kill_count += 1
+		if e.get("is_apex", false):
+			apex_kill_count += 1
+	# Boss Hunt: check if boss was killed
+	if contract_mode == "boss_hunt" and e.get("is_boss_target", false):
+		boss_killed = true
+		_show_message("TARGET ELIMINATED!")
+		call_deferred("_complete_hunt")
 
 	# --- Modifier procs on kill ---
 	# Vamp chance
@@ -3244,9 +3345,11 @@ func _die() -> void:
 	dead = true
 	dead_timer = 2.0
 	player_hp = 0
+	hunt_status = "FAILED"
 	_show_message("DEAD")
 
 func _complete_hunt() -> void:
+	hunt_status = "COMPLETED"
 	var contract: Dictionary = GameData.current_contract
 	var reward: int = contract.get("reward", 50)
 	var corr: int = int(corruption)
@@ -3254,16 +3357,262 @@ func _complete_hunt() -> void:
 	SaveManager.complete_contract(reward, corr)
 	GameData.set_hunt_result(reward, corr, run_ingredients.size(), run_ingredients)
 	GameData.hunt_result["pristine_count"] = pristine_count
+	_store_hunt_stats()
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 func _finish_hunt(credits: int) -> void:
+	if hunt_status == "":
+		hunt_status = "FAILED"
 	var corr: int = int(corruption)
 	var pristine_count: int = run_ingredients.filter(func(i): return i.get("is_pristine", false)).size()
-	if credits == 0:
+	if credits == 0 and hunt_status != "ABANDONED":
+		hunt_status = "FAILED"
 		SaveManager.complete_contract(0, corr)
 		GameData.set_hunt_result(0, corr, 0)
 		GameData.hunt_result["pristine_count"] = pristine_count
+	elif hunt_status == "ABANDONED":
+		# Abandon: keep ingredients, 50% score as credits
+		var base_score: int = total_kills * 10 + elite_kill_count * 150 + apex_kill_count * 500
+		var abandon_credits: int = int(base_score * 0.5)
+		SaveManager.complete_contract(abandon_credits, corr)
+		GameData.set_hunt_result(abandon_credits, corr, run_ingredients.size(), run_ingredients)
+		GameData.hunt_result["pristine_count"] = pristine_count
+	_store_hunt_stats()
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
+
+func _store_hunt_stats() -> void:
+	GameData.hunt_result["hunt_status"] = hunt_status
+	GameData.hunt_result["time_survived"] = hunt_elapsed
+	GameData.hunt_result["total_kills"] = total_kills
+	GameData.hunt_result["elite_kills"] = elite_kill_count
+	GameData.hunt_result["apex_kills"] = apex_kill_count
+	GameData.hunt_result["peak_corruption"] = peak_corruption_state
+	GameData.hunt_result["damage_dealt"] = int(damage_dealt_total)
+	GameData.hunt_result["damage_taken"] = int(damage_taken_total)
+	GameData.hunt_result["contract_name"] = GameData.current_contract.get("name", "Hunt")
+	GameData.hunt_result["contract_type"] = GameData.current_contract.get("type", "hunt")
+	GameData.hunt_result["par_time"] = GameData.current_contract.get("par_time", 300.0)
+
+# =========================================================
+# CONTRACT MODES (Phase C)
+# =========================================================
+func _init_contract_mode(contract: Dictionary) -> void:
+	match contract_mode:
+		"payload_escort":
+			pod_max_hp = contract.get("pod_hp", 200)
+			pod_hp = pod_max_hp
+			pod_speed = contract.get("pod_speed", 40.0)
+			# Spawn pod at left side, target at right side
+			pod_pos = Vector2(200.0, WORLD_H * 0.5)
+			pod_target = Vector2(WORLD_W - 200.0, WORLD_H * 0.5)
+			pod_active = true
+		"void_breach":
+			rift_hold_time = contract.get("hold_time", 180.0)
+			# Place rift at a random location away from player
+			var rng := RandomNumberGenerator.new()
+			rng.randomize()
+			rift_pos = Vector2(rng.randf_range(800.0, WORLD_W - 800.0), rng.randf_range(800.0, WORLD_H - 800.0))
+			while rift_pos.distance_to(player_pos) < 600.0:
+				rift_pos = Vector2(rng.randf_range(800.0, WORLD_W - 800.0), rng.randf_range(800.0, WORLD_H - 800.0))
+			rift_active = true
+			rift_time_held = 0.0
+			rift_time_outside = 0.0
+		"boss_hunt":
+			boss_name = contract.get("boss_name", "Rift Sovereign")
+			boss_timer = 480.0
+			boss_spawned = false
+			boss_killed = false
+		"extraction_run":
+			cache_total = contract.get("cache_count", 3)
+			caches_collected = 0
+			_spawn_caches()
+
+func _spawn_caches() -> void:
+	caches.clear()
+	var biome_targets: Array[String] = ["void_pool", "cave", "river_bank"]
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for i in range(cache_total):
+		var biome: String = biome_targets[i % biome_targets.size()]
+		var cache_pos := Vector2.ZERO
+		# Place near a biome feature
+		match biome:
+			"void_pool":
+				if void_pools.size() > 0:
+					var pool: Dictionary = void_pools[rng.randi() % void_pools.size()]
+					cache_pos = Vector2(pool.pos.x, pool.pos.y) + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
+				else:
+					cache_pos = Vector2(rng.randf_range(400, WORLD_W - 400), rng.randf_range(400, WORLD_H - 400))
+			"cave":
+				if caves.size() > 0:
+					var cave: Dictionary = caves[rng.randi() % caves.size()]
+					cache_pos = Vector2(cave.pos.x, cave.pos.y)
+				else:
+					cache_pos = Vector2(rng.randf_range(400, WORLD_W - 400), rng.randf_range(400, WORLD_H - 400))
+			"river_bank":
+				if rivers.size() > 0 and bridges.size() > 0:
+					cache_pos = Vector2(bridges[0].pos.x, bridges[0].pos.y) + Vector2(rng.randf_range(-100, 100), rng.randf_range(-100, 100))
+				else:
+					cache_pos = Vector2(rng.randf_range(400, WORLD_W - 400), rng.randf_range(400, WORLD_H - 400))
+		cache_pos.x = clampf(cache_pos.x, 100.0, WORLD_W - 100.0)
+		cache_pos.y = clampf(cache_pos.y, 100.0, WORLD_H - 100.0)
+		var biome_ingredient_map: Dictionary = {
+			"void_pool": "void_crystal",
+			"cave": "cave_moss",
+			"river_bank": "river_silt",
+		}
+		caches.append({
+			pos = cache_pos,
+			biome = biome,
+			collected = false,
+			channel_timer = 0.0,
+			channeling = false,
+			ingredient = biome_ingredient_map.get(biome, "rift_dust"),
+		})
+
+func _update_contract_mode(delta: float) -> void:
+	if dead or hunt_complete:
+		return
+	match contract_mode:
+		"payload_escort":
+			_update_payload_escort(delta)
+		"void_breach":
+			_update_void_breach(delta)
+		"boss_hunt":
+			_update_boss_hunt(delta)
+		"extraction_run":
+			_update_extraction_run(delta)
+
+func _update_payload_escort(delta: float) -> void:
+	if not pod_active:
+		return
+	# Pod moves toward target if player is within 400px
+	var player_near: bool = player_pos.distance_to(pod_pos) < 400.0
+	if player_near:
+		var dir: Vector2 = (pod_target - pod_pos).normalized()
+		pod_pos += dir * pod_speed * delta
+	# Check if pod reached target
+	if pod_pos.distance_to(pod_target) < 50.0:
+		pod_active = false
+		_complete_hunt()
+		return
+	# Enemies target pod — handled in enemy update via proximity
+	# Pod takes damage from nearby enemies
+	for e in enemies:
+		if e.hp <= 0:
+			continue
+		if e.pos.distance_to(pod_pos) < 40.0:
+			pod_hp -= 1
+			if pod_hp <= 0:
+				pod_active = false
+				hunt_status = "FAILED"
+				_finish_hunt(0)
+				return
+
+func _update_void_breach(delta: float) -> void:
+	if not rift_active:
+		return
+	var player_in_range: bool = player_pos.distance_to(rift_pos) < rift_radius
+	if player_in_range:
+		rift_time_held += delta
+		# Corruption drain from rift
+		var resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
+		corruption += 3.0 * delta * (1.0 - resist)
+		if rift_time_held >= rift_hold_time:
+			rift_active = false
+			_complete_hunt()
+			return
+	else:
+		rift_time_outside += delta
+		if rift_time_outside >= 10.0:
+			rift_active = false
+			hunt_status = "FAILED"
+			_finish_hunt(0)
+			return
+
+func _update_boss_hunt(delta: float) -> void:
+	boss_timer -= delta
+	if not boss_spawned:
+		# Spawn boss immediately
+		boss_spawned = true
+		_spawn_boss()
+	if boss_timer <= 0.0 and not boss_killed:
+		hunt_status = "FAILED"
+		_finish_hunt(0)
+
+func _spawn_boss() -> void:
+	# Find the apex def for the boss
+	var boss_biome: String = GameData.current_contract.get("boss_biome", "open")
+	var spawn_pos: Vector2 = Vector2(
+		player_pos.x + randf_range(-600, 600),
+		player_pos.y + randf_range(-600, 600)
+	)
+	spawn_pos.x = clampf(spawn_pos.x, 200.0, WORLD_W - 200.0)
+	spawn_pos.y = clampf(spawn_pos.y, 200.0, WORLD_H - 200.0)
+	while spawn_pos.distance_to(player_pos) < 300.0:
+		spawn_pos += Vector2(200.0, 0.0)
+		spawn_pos.x = clampf(spawn_pos.x, 200.0, WORLD_W - 200.0)
+
+	var boss_hp: int = 300 + GameData.current_contract.get("difficulty", 1) * 100
+	var boss_dict: Dictionary = _make_elite_dict(boss_name, spawn_pos, boss_hp, 80.0, 3)
+	boss_dict.is_apex = true
+	boss_dict.is_boss_target = true
+	boss_dict.color = Color(1.0, 0.3, 0.0)
+	# Always 2-3 affixes
+	var rng_boss := RandomNumberGenerator.new()
+	rng_boss.randomize()
+	boss_dict.affixes = _roll_affixes(boss_biome, true, rng_boss)
+	enemies.append(boss_dict)
+	_show_message("Target: %s" % boss_name)
+
+func _update_extraction_run(delta: float) -> void:
+	# Check cache channeling
+	if cache_burst_timer > 0.0:
+		cache_burst_timer -= delta
+	for i in range(caches.size()):
+		var cache: Dictionary = caches[i]
+		if cache.collected:
+			continue
+		var near: bool = player_pos.distance_to(cache.pos) < 30.0
+		if near and not cache.channeling:
+			cache.channeling = true
+			cache.channel_timer = 0.0
+		elif near and cache.channeling:
+			cache.channel_timer += delta
+			if cache.channel_timer >= cache_channel_time:
+				cache.collected = true
+				cache.channeling = false
+				caches_collected += 1
+				# Add ingredients
+				var biome_display: String = cache.ingredient.replace("_", " ").capitalize()
+				for _di in range(2):
+					run_ingredients.append({id = cache.ingredient, name = biome_display, ingredient = true})
+				_show_message("Cache collected! +%s x2" % cache.ingredient)
+				# Trigger enemy burst
+				cache_burst_timer = 15.0
+				_spawn_cache_burst(cache.pos)
+				# Check win
+				if caches_collected >= cache_total:
+					_complete_hunt()
+					return
+		elif not near and cache.channeling:
+			cache.channeling = false
+			cache.channel_timer = 0.0
+		caches[i] = cache
+
+func _spawn_cache_burst(pos: Vector2) -> void:
+	# Spawn 8-12 enemies near the cache position
+	var burst_count: int = randi_range(8, 12)
+	for _b in range(burst_count):
+		var spawn_pos: Vector2 = pos + Vector2(randf_range(-200, 200), randf_range(-200, 200))
+		spawn_pos.x = clampf(spawn_pos.x, 50.0, WORLD_W - 50.0)
+		spawn_pos.y = clampf(spawn_pos.y, 50.0, WORLD_H - 50.0)
+		var hp_val: int = randi_range(3, 6)
+		enemies.append({
+			pos = spawn_pos, hp = hp_val, max_hp = hp_val, speed = randf_range(80.0, 130.0),
+			radius = 12.0, color = Color(0.8, 0.2, 0.3), type = "Burst Crawler",
+			melee_dmg = 1, is_elite = false, void_type = false, dormant = false,
+		})
 
 # =========================================================
 # HUD MESSAGE
@@ -3444,6 +3793,9 @@ func _draw() -> void:
 		var pulse: float = 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003)
 		draw_circle(ep, 40.0, Color(0.2, 0.9, 0.2, pulse * 0.4))
 		draw_arc(ep, 40.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.2, pulse), 2.0)
+
+	# Contract-specific drawing
+	_draw_contract_elements()
 
 	# Pickups
 	var pulse_alpha: float = 0.3 + 0.3 * sin(Time.get_ticks_msec() * 0.004)
@@ -3653,8 +4005,27 @@ func _draw() -> void:
 			ammo_text = "%d / %d" % [pw.mag_ammo, pw.mag_size]
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
-	# Target counter (top center)
-	var target_text := "Ingredients: %d/%d" % [target_kills, target_total]
+	# Target counter (top center) — varies by contract mode
+	var target_text: String
+	match contract_mode:
+		"payload_escort":
+			var pod_dist: float = pod_pos.distance_to(pod_target)
+			var pod_pct: int = 100 - int(pod_dist / (WORLD_W - 400.0) * 100.0)
+			target_text = "Pod HP: %d/%d | Progress: %d%%" % [pod_hp, pod_max_hp, clampi(pod_pct, 0, 100)]
+		"void_breach":
+			var held_pct: int = int(rift_time_held / rift_hold_time * 100.0)
+			target_text = "Rift Hold: %d%% | Outside: %.1fs/10s" % [clampi(held_pct, 0, 100), rift_time_outside]
+		"boss_hunt":
+			var minutes_left: int = int(boss_timer) / 60
+			var seconds_left: int = int(boss_timer) % 60
+			if boss_killed:
+				target_text = "TARGET ELIMINATED"
+			else:
+				target_text = "Target: %s | %d:%02d" % [boss_name, minutes_left, seconds_left]
+		"extraction_run":
+			target_text = "Caches: %d/%d" % [caches_collected, cache_total]
+		_:
+			target_text = "Ingredients: %d/%d" % [target_kills, target_total]
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
 
 	# Corruption meter (top right)
@@ -3709,6 +4080,8 @@ func _draw() -> void:
 			2: transition_msg = "CORRUPTED — Melee awakens"
 			3: transition_msg = "VOID STATE — Mutations active"
 		corruption_prev_threshold = corr_threshold
+		if corr_threshold > peak_corruption_state:
+			peak_corruption_state = corr_threshold
 		if transition_msg != "":
 			_show_message(transition_msg)
 			hud_message_timer = 3.0
@@ -3854,6 +4227,131 @@ func _draw() -> void:
 	if dead:
 		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0, 0, 0, 0.6))
 		_draw_text(Vector2(vp_size.x * 0.5 - 40.0, vp_size.y * 0.5 - 20.0), "DEAD", Color(1, 0.2, 0.2), 32)
+
+	# Pause menu overlay
+	if pause_menu_open or extract_confirm_open:
+		_draw_pause_menu()
+
+func _draw_contract_elements() -> void:
+	match contract_mode:
+		"payload_escort":
+			if pod_active:
+				var sp: Vector2 = _w2s(pod_pos)
+				# Glowing box
+				var pod_pulse: float = 0.6 + 0.3 * sin(hunt_elapsed * 3.0)
+				draw_rect(Rect2(sp - Vector2(16, 16), Vector2(32, 32)), Color(0.2, 0.8, 1.0, pod_pulse * 0.5))
+				draw_rect(Rect2(sp - Vector2(16, 16), Vector2(32, 32)), Color(0.3, 0.9, 1.0, pod_pulse), false, 2.0)
+				# HP bar
+				var bar_w: float = 40.0
+				var bar_pos := Vector2(sp.x - bar_w * 0.5, sp.y - 24.0)
+				draw_rect(Rect2(bar_pos, Vector2(bar_w, 5.0)), Color(0.3, 0.1, 0.1))
+				var hp_frac: float = clampf(float(pod_hp) / float(pod_max_hp), 0.0, 1.0)
+				draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, 5.0)), Color(0.2, 0.8, 1.0))
+				_draw_text(sp + Vector2(-12, -30), "CARGO", Color(0.3, 0.9, 1.0), 9)
+				# Target marker
+				var tp: Vector2 = _w2s(pod_target)
+				draw_arc(tp, 30.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.2, 0.5), 2.0)
+				# Proximity circle (400px)
+				draw_arc(sp, 400.0, 0.0, TAU, 64, Color(0.2, 0.8, 1.0, 0.15), 1.0)
+		"void_breach":
+			if rift_active:
+				var sp: Vector2 = _w2s(rift_pos)
+				# Void rift visual
+				var rift_pulse: float = 0.5 + 0.4 * sin(hunt_elapsed * 4.0)
+				draw_circle(sp, 30.0, Color(0.4, 0.0, 0.7, rift_pulse * 0.6))
+				draw_arc(sp, 30.0, 0.0, TAU, 32, Color(0.6, 0.1, 0.9, rift_pulse), 3.0)
+				draw_arc(sp, 50.0, 0.0, TAU, 32, Color(0.4, 0.0, 0.6, rift_pulse * 0.3), 1.5)
+				_draw_text(sp + Vector2(-20, -45), "RIFT", Color(0.6, 0.1, 0.9), 11)
+				# Radius indicator
+				draw_arc(sp, rift_radius, 0.0, TAU, 64, Color(0.6, 0.1, 0.9, 0.12), 1.0)
+		"boss_hunt":
+			if not boss_killed:
+				# Boss name display at top
+				var vp_size := get_viewport_rect().size
+				_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 36.0), "Target: %s" % boss_name, Color(1.0, 0.5, 0.0), 12)
+		"extraction_run":
+			for cache in caches:
+				if cache.collected:
+					continue
+				var sp: Vector2 = _w2s(cache.pos)
+				# Cache visual — diamond shape
+				var cache_pulse: float = 0.5 + 0.3 * sin(hunt_elapsed * 3.5)
+				var diamond := PackedVector2Array([
+					sp + Vector2(0, -14), sp + Vector2(14, 0),
+					sp + Vector2(0, 14), sp + Vector2(-14, 0)
+				])
+				draw_colored_polygon(diamond, Color(0.2, 0.9, 0.4, cache_pulse * 0.6))
+				draw_polyline(PackedVector2Array([diamond[0], diamond[1], diamond[2], diamond[3], diamond[0]]), Color(0.3, 1.0, 0.5, cache_pulse), 2.0)
+				# Channel progress ring
+				if cache.channeling and cache.channel_timer > 0.0:
+					var progress: float = cache.channel_timer / cache_channel_time
+					draw_arc(sp, 20.0, -TAU * 0.25, -TAU * 0.25 + TAU * progress, 32, Color(0.3, 1.0, 0.5), 3.0)
+				_draw_text(sp + Vector2(-16, -22), "CACHE", Color(0.3, 1.0, 0.5, 0.8), 9)
+
+func _get_pause_button_rects() -> Dictionary:
+	var vp_size := get_viewport_rect().size
+	var cx: float = vp_size.x * 0.5
+	var cy: float = vp_size.y * 0.5
+	var bw: float = 200.0
+	var bh: float = 50.0
+	return {
+		"resume": Rect2(cx - bw * 0.5, cy - 40.0, bw, bh),
+		"extract": Rect2(cx - bw * 0.5, cy + 30.0, bw, bh),
+	}
+
+func _get_confirm_button_rects() -> Dictionary:
+	var vp_size := get_viewport_rect().size
+	var cx: float = vp_size.x * 0.5
+	var cy: float = vp_size.y * 0.5
+	var bw: float = 140.0
+	var bh: float = 50.0
+	return {
+		"yes": Rect2(cx - bw - 10.0, cy + 40.0, bw, bh),
+		"no": Rect2(cx + 10.0, cy + 40.0, bw, bh),
+	}
+
+func _handle_pause_touch(pos: Vector2) -> void:
+	if extract_confirm_open:
+		var rects := _get_confirm_button_rects()
+		if rects["yes"].has_point(pos):
+			extract_confirm_open = false
+			pause_menu_open = false
+			hunt_status = "ABANDONED"
+			_finish_hunt(0)
+		elif rects["no"].has_point(pos):
+			extract_confirm_open = false
+			queue_redraw()
+		return
+	if pause_menu_open:
+		var rects := _get_pause_button_rects()
+		if rects["resume"].has_point(pos):
+			pause_menu_open = false
+			paused = false
+			queue_redraw()
+		elif rects["extract"].has_point(pos):
+			extract_confirm_open = true
+			queue_redraw()
+
+func _draw_pause_menu() -> void:
+	var vp_size := get_viewport_rect().size
+	draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0, 0, 0, 0.7))
+
+	if extract_confirm_open:
+		_draw_text(Vector2(vp_size.x * 0.5 - 120.0, vp_size.y * 0.5 - 60.0), "Extract now?", Color.WHITE, 20)
+		_draw_text(Vector2(vp_size.x * 0.5 - 160.0, vp_size.y * 0.5 - 20.0), "You keep ingredients so far.", Color(0.8, 0.8, 0.8), 13)
+		_draw_text(Vector2(vp_size.x * 0.5 - 160.0, vp_size.y * 0.5 + 2.0), "Contract marked ABANDONED.", Color(0.8, 0.6, 0.3), 13)
+		var rects := _get_confirm_button_rects()
+		draw_rect(rects["yes"], Color(0.2, 0.6, 0.2, 0.9))
+		_draw_text(rects["yes"].position + Vector2(30.0, 12.0), "EXTRACT", Color.WHITE, 16)
+		draw_rect(rects["no"], Color(0.5, 0.2, 0.2, 0.9))
+		_draw_text(rects["no"].position + Vector2(35.0, 12.0), "CANCEL", Color.WHITE, 16)
+	else:
+		_draw_text(Vector2(vp_size.x * 0.5 - 50.0, vp_size.y * 0.5 - 90.0), "PAUSED", Color.WHITE, 24)
+		var rects := _get_pause_button_rects()
+		draw_rect(rects["resume"], Color(0.2, 0.5, 0.2, 0.9))
+		_draw_text(rects["resume"].position + Vector2(55.0, 12.0), "RESUME", Color.WHITE, 16)
+		draw_rect(rects["extract"], Color(0.6, 0.4, 0.1, 0.9))
+		_draw_text(rects["extract"].position + Vector2(25.0, 12.0), "EXTRACT EARLY", Color.WHITE, 16)
 
 func _w2s(world_pos: Vector2) -> Vector2:
 	return world_pos - camera_offset
