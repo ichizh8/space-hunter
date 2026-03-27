@@ -290,7 +290,7 @@ func _update_waves(delta: float) -> void:
 	# Elite timer — spawn one elite at interval, then reset
 	elite_timer -= delta
 	if elite_timer <= 0.0:
-		elite_timer = elite_interval * 0.7  # subsequent elites come faster
+		elite_timer = randf_range(45.0, 70.0)  # subsequent elites every 45-70s
 		var depth: int = GameData.current_contract.get("depth", 1)
 		_spawn_elite(depth)
 
@@ -1427,6 +1427,26 @@ func _generate_upgrades() -> Array:
 			perk = {},
 		})
 
+	# --- Guaranteed fallbacks so panel is never empty ---
+	if options.size() < 3:
+		var fallbacks: Array[Dictionary] = [
+			{type="fallback", id="hp_restore",   rarity="common", icon="❤", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
+			{type="fallback", id="dmg_boost",    rarity="common", icon="💥", label="Weapon Calibration", desc="+1 damage on all held weapons",       perk={}},
+			{type="fallback", id="speed_boost",  rarity="common", icon="💨", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
+			{type="fallback", id="corr_purge",   rarity="rare",   icon="🌑", label="Void Purge",         desc="Reduce corruption by 20",             perk={}},
+			{type="fallback", id="mag_all",      rarity="common", icon="📦", label="Ammo Cache",         desc="+3 ammo in all weapons",              perk={}},
+		]
+		# Only offer fallbacks not already in options
+		var existing_ids: Array = []
+		for o in options:
+			existing_ids.append(o.get("id", o.get("weapon_id", "")))
+		fallbacks.shuffle()
+		for fb in fallbacks:
+			if options.size() >= 3:
+				break
+			if not existing_ids.has(fb.id):
+				options.append(fb)
+
 	options.shuffle()
 	if options.size() > 3:
 		options = options.slice(0, 3)
@@ -1592,6 +1612,28 @@ func _on_upgrade_chosen(idx: int) -> void:
 					var mods_cr: Dictionary = weapon_mods.get("_player", {})
 					mods_cr["corruption_resist"] = mods_cr.get("corruption_resist", 0.0) + 0.25
 					weapon_mods["_player"] = mods_cr
+		"fallback":
+			match choice.id:
+				"hp_restore":
+					player_hp = mini(player_hp + 3, player_max_hp)
+					_show_message("+3 HP")
+				"dmg_boost":
+					for wi_fb in range(active_weapons.size()):
+						var w_fb: Dictionary = active_weapons[wi_fb]
+						var mods_fb: Dictionary = weapon_mods.get(w_fb.id, {})
+						mods_fb["damage_bonus"] = mods_fb.get("damage_bonus", 0) + 1
+						weapon_mods[w_fb.id] = mods_fb
+				"speed_boost":
+					player_speed += 20.0
+				"corr_purge":
+					corruption = maxf(0.0, corruption - 20.0)
+					_show_message("Corruption -20")
+				"mag_all":
+					for wi_fb2 in range(active_weapons.size()):
+						var w_fb2: Dictionary = active_weapons[wi_fb2]
+						w_fb2.mag_size += 3
+						w_fb2.mag_ammo = mini(w_fb2.mag_ammo + 3, w_fb2.mag_size)
+						active_weapons[wi_fb2] = w_fb2
 
 	paused = false
 	upgrade_choices = []
