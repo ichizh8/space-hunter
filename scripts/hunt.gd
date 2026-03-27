@@ -1,9 +1,9 @@
 extends Control
 
 # === World ===
-const WORLD_W := 1600
-const WORLD_H := 1600
-const GRID_STEP := 200
+const WORLD_W := 4800
+const WORLD_H := 4800
+const GRID_STEP := 300
 
 # === Weapon definitions ===
 const WEAPON_DEFS: Dictionary = {
@@ -69,7 +69,7 @@ var passives_taken: Array[String] = []  # ids of passives already picked this ru
 var weapon_mods: Dictionary = {}  # weapon_id -> {fire_rate_mult, damage_bonus, extra_pellets, piercing, slow, etc.}
 
 # === Player ===
-var player_pos := Vector2(800.0, 800.0)
+var player_pos := Vector2(2400.0, 2400.0)
 var player_hp := 10
 var player_max_hp := 10
 var player_speed := 180.0
@@ -254,13 +254,13 @@ func _ready() -> void:
 func _spawn_obstacles() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	for i in range(40):
-		var r: float = rng.randf_range(20.0, 50.0)
+	for i in range(120):
+		var r: float = rng.randf_range(25.0, 70.0)
 		var pos := Vector2.ZERO
 		for _try in range(20):
 			pos = Vector2(rng.randf_range(r, WORLD_W - r), rng.randf_range(r, WORLD_H - r))
-			# avoid center 400x400
-			if abs(pos.x - 800.0) > 200.0 or abs(pos.y - 800.0) > 200.0:
+			# avoid center spawn area 600x600
+			if abs(pos.x - 2400.0) > 300.0 or abs(pos.y - 2400.0) > 300.0:
 				break
 		obstacles.append({pos = pos, radius = r})
 
@@ -304,7 +304,7 @@ func _spawn_wave(depth: int) -> void:
 
 	# Filler only — no targets in waves. Ramps: +2 per wave, capped at wave 10.
 	var effective_wave: int = min(wave_current, 10)
-	var base_fillers: int = 6 + depth * 3
+	var base_fillers: int = 14 + depth * 4
 	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
@@ -1968,6 +1968,62 @@ func _draw() -> void:
 	if hud_message != "":
 		var msg_alpha: float = clampf(hud_message_timer, 0.0, 1.0)
 		_draw_text(Vector2(vp_size.x * 0.5 - 80.0, vp_size.y * 0.5 - 20.0), hud_message, Color(1, 1, 1, msg_alpha), 18)
+
+	# Elite compass — arrow pointing at nearest living elite (hidden when elite is on screen)
+	var nearest_elite_pos := Vector2.ZERO
+	var found_elite := false
+	var nearest_elite_dist := 999999.0
+	for e in enemies:
+		if e.hp > 0 and e.get("is_elite", false):
+			var d: float = player_pos.distance_to(e.pos)
+			if d < nearest_elite_dist:
+				nearest_elite_dist = d
+				nearest_elite_pos = e.pos
+				found_elite = true
+
+	if found_elite:
+		# Check if elite is currently visible on screen
+		var elite_screen_pos: Vector2 = _w2s(nearest_elite_pos)
+		var on_screen: bool = (elite_screen_pos.x >= 0.0 and elite_screen_pos.x <= vp_size.x and
+							   elite_screen_pos.y >= 0.0 and elite_screen_pos.y <= vp_size.y)
+		if not on_screen:
+			# Draw compass arrow on screen edge
+			var screen_center: Vector2 = vp_size * 0.5
+			var dir_to_elite: Vector2 = (nearest_elite_pos - player_pos).normalized()
+			# Find intersection with screen edge (margin 28px from edge)
+			var margin := 28.0
+			var arrow_pos: Vector2
+			var tx: float = 999999.0
+			var ty: float = 999999.0
+			if dir_to_elite.x > 0.001:
+				tx = (vp_size.x - margin - screen_center.x) / dir_to_elite.x
+			elif dir_to_elite.x < -0.001:
+				tx = (margin - screen_center.x) / dir_to_elite.x
+			if dir_to_elite.y > 0.001:
+				ty = (vp_size.y - margin - screen_center.y) / dir_to_elite.y
+			elif dir_to_elite.y < -0.001:
+				ty = (margin - screen_center.y) / dir_to_elite.y
+			var t: float = minf(tx, ty)
+			arrow_pos = screen_center + dir_to_elite * t
+
+			# Pulse based on distance — faster when closer
+			var pulse_speed: float = remap(nearest_elite_dist, 100.0, 1200.0, 8.0, 2.0)
+			var pulse: float = 0.5 + 0.5 * sin(hunt_elapsed * pulse_speed)
+			var arrow_color := Color(1.0, 0.85, 0.1, 0.6 + 0.4 * pulse)
+
+			# Draw triangle arrow
+			var arrow_size := 14.0
+			var forward: Vector2 = dir_to_elite * arrow_size
+			var perp: Vector2 = Vector2(-dir_to_elite.y, dir_to_elite.x) * (arrow_size * 0.5)
+			var tip: Vector2 = arrow_pos + forward
+			var left: Vector2 = arrow_pos - perp
+			var right: Vector2 = arrow_pos + perp
+			draw_colored_polygon(PackedVector2Array([tip, left, right]), arrow_color)
+			draw_polyline(PackedVector2Array([tip, left, right, tip]), Color(1.0, 1.0, 0.5, 0.9 * pulse), 1.5)
+
+			# Distance label below arrow
+			var dist_m: int = int(nearest_elite_dist / 50.0)  # rough "meters"
+			_draw_text(arrow_pos + Vector2(-12.0, 10.0), "%dm" % dist_m, Color(1.0, 0.9, 0.3, 0.8 * pulse), 10)
 
 	# Dead overlay
 	if dead:
