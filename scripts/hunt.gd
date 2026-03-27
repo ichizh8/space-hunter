@@ -314,7 +314,66 @@ const WAVE_INTERVAL_MIN   := 8.0
 var elite_timer := 0.0
 var elite_interval := 0.0   # set on ready: 180-300s
 var elite_spawned_count := 0
-const ELITE_TYPES: Array = ["Void Hulk", "Phase Hunter", "Brood Mother"]
+var elite_death_timeout_timers: Array[float] = []  # 90s per active elite for timeout
+
+const ELITE_POOLS: Dictionary = {
+	"open": ["Phase Hunter", "Rift Colossus"],
+	"void_pool": ["Void Hulk", "Null Wraith"],
+	"cave": ["Brood Mother", "Stone Sentinel"],
+	"river_bank": ["Tide Reaper", "Current Stalker"],
+}
+const ELITE_BIOME_WEIGHTS: Array[Dictionary] = [
+	{biome = "open", weight = 0.40},
+	{biome = "cave", weight = 0.25},
+	{biome = "void_pool", weight = 0.20},
+	{biome = "river_bank", weight = 0.15},
+]
+
+# === Apex elite system ===
+var apex_timer := 0.0
+var apex_spawned := false
+var apex_active := false
+var apex_death_time := 0.0
+var apex_flash_timer := 0.0
+var apex_river_widened := false  # for Abyssal Tide
+
+const APEX_DEFS: Dictionary = {
+	"open": {name = "Rift Sovereign", base = "Phase Hunter"},
+	"void_pool": {name = "The Hollow", base = "Void Hulk"},
+	"cave": {name = "Ancient Brood", base = "Brood Mother"},
+	"river_bank": {name = "Abyssal Tide", base = "Tide Reaper"},
+}
+
+# === Affix system ===
+const AFFIX_DEFS: Dictionary = {
+	"extra_fast": {name = "Extra Fast", desc = "+50% move speed"},
+	"vampiric": {name = "Vampiric", desc = "Heals 15% of damage dealt"},
+	"shielded": {name = "Shielded", desc = "30% HP shield bar"},
+	"teleporter": {name = "Teleporter", desc = "Teleports to player every 8s"},
+	"venomous": {name = "Venomous", desc = "Poison trail +2 corruption/s"},
+	"berserker": {name = "Berserker", desc = "Below 30% HP: atk×2, dmg×1.3"},
+	"spectral": {name = "Spectral", desc = "Immune to slow, passes through obstacles"},
+	"multiplier": {name = "Multiplier", desc = "On death: 2 copies at 30% HP"},
+	"magnetic": {name = "Magnetic", desc = "Pulls player every 5s"},
+	"voidbound": {name = "Voidbound", desc = "Teleports back to void pool"},
+	"armored": {name = "Armored", desc = "Ranged dmg -60%"},
+	"corrupting": {name = "Corrupting", desc = "Each hit +5 corruption"},
+}
+const AFFIX_BANNED_COMBOS: Array[Array] = [
+	["voidbound", "teleporter"],
+	["multiplier", "spectral"],
+	["multiplier", "voidbound"],
+]
+const AFFIX_BIOME_WEIGHTS: Dictionary = {
+	"void_pool": ["magnetic", "voidbound", "corrupting"],
+	"cave": ["spectral", "armored"],
+	"open": ["extra_fast", "venomous"],
+	"river_bank": ["teleporter", "corrupting"],
+}
+var affix_message_text := ""
+var affix_message_timer := 0.0
+var poison_trails: Array[Dictionary] = []  # {pos, timer}
+var hollow_pools: Array[Dictionary] = []  # persistent void pools from The Hollow
 
 # === Ingredients collected ===
 var run_ingredients: Array[Dictionary] = []
@@ -508,9 +567,11 @@ func _ready() -> void:
 	for kid in equipped_kits:
 		kit_states[kid] = _init_kit_state(kid)
 
-	# Elite interval: first elite at 3-5 min (shorter at higher depth)
+	# Elite interval: first elite at 90-150s (shorter at higher depth)
 	elite_interval = randf_range(90.0 - depth * 15.0, 150.0 - depth * 15.0)
 	elite_timer = elite_interval
+	# Apex: first at 10 minutes
+	apex_timer = 600.0
 	wave_timer = WAVE_INTERVAL_START
 
 	_spawn_obstacles()
@@ -736,12 +797,35 @@ func _update_waves(delta: float) -> void:
 		_spawn_wave(depth)
 		wave_timer = wave_interval
 
-	# Elite timer — spawn one elite at interval, then reset
-	elite_timer -= delta
-	if elite_timer <= 0.0:
-		elite_timer = randf_range(45.0, 70.0)  # subsequent elites every 45-70s
-		var depth: int = GameData.current_contract.get("depth", 1)
-		_spawn_elite(depth)
+	# Elite timer — biome pool system with max simultaneous limits
+	var max_elites: int = 1
+	if hunt_elapsed >= 900.0:
+		max_elites = 3
+	elif hunt_elapsed >= 480.0:
+		max_elites = 2
+	var living_elites: int = 0
+	for e in enemies:
+		if e.hp > 0 and e.get("is_elite", false) and not e.get("is_apex", false):
+			living_elites += 1
+	# Timeout timers: if an elite has been alive 90s, allow next spawn anyway
+	for ti in range(elite_death_timeout_timers.size() - 1, -1, -1):
+		elite_death_timeout_timers[ti] -= delta
+		if elite_death_timeout_timers[ti] <= 0.0:
+			elite_death_timeout_timers.remove_at(ti)
+	if living_elites < max_elites:
+		elite_timer -= delta
+		if elite_timer <= 0.0:
+			elite_timer = randf_range(45.0, 70.0)
+			var depth2: int = GameData.current_contract.get("depth", 1)
+			_spawn_elite(depth2)
+			elite_death_timeout_timers.append(90.0)
+
+	# Apex elite timer
+	if not apex_active:
+		apex_timer -= delta
+		if apex_timer <= 0.0 and hunt_elapsed >= 600.0:
+			var depth3: int = GameData.current_contract.get("depth", 1)
+			_spawn_apex_elite(depth3)
 
 func _spawn_wave(depth: int) -> void:
 	var living_count: int = 0
@@ -786,25 +870,71 @@ func _spawn_wave(depth: int) -> void:
 		enemies[i].is_aggroed = true
 		enemies[i].aggro_origin = enemies[i].pos
 
-func _spawn_elite(depth: int) -> void:
-	elite_spawned_count += 1
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+func _pick_biome_weighted(rng: RandomNumberGenerator) -> String:
+	var roll: float = rng.randf()
+	var cumulative := 0.0
+	for entry in ELITE_BIOME_WEIGHTS:
+		cumulative += entry.weight
+		if roll <= cumulative:
+			return entry.biome
+	return "open"
 
-	# Pick elite type — cycle through types, add some randomness
-	var elite_type: String = ELITE_TYPES[(elite_spawned_count - 1) % ELITE_TYPES.size()]
-	if rng.randf() < 0.3:
-		elite_type = ELITE_TYPES[rng.randi_range(0, ELITE_TYPES.size() - 1)]
+func _roll_affixes(biome: String, is_apex: bool, rng: RandomNumberGenerator) -> Array[String]:
+	var affix_count: int
+	if is_apex:
+		affix_count = rng.randi_range(2, 3)
+	elif hunt_elapsed >= 600.0:
+		affix_count = rng.randi_range(2, 3)
+	elif hunt_elapsed >= 300.0:
+		affix_count = rng.randi_range(1, 2)
+	else:
+		affix_count = 1
 
-	_show_message("⚠ ELITE: %s approaching!" % elite_type)
+	var all_ids: Array[String] = []
+	for k in AFFIX_DEFS:
+		if k == "voidbound" and biome != "void_pool":
+			continue
+		if is_apex and k == "multiplier":
+			continue
+		all_ids.append(k)
 
-	# Find a spawn point far from player — must not be walled off by rivers
+	# Build weighted pool
+	var biome_boosted: Array = AFFIX_BIOME_WEIGHTS.get(biome, [])
+	var weighted_pool: Array[String] = []
+	for aid in all_ids:
+		weighted_pool.append(aid)
+		if aid in biome_boosted:
+			weighted_pool.append(aid)  # 2x weight
+
+	var picked: Array[String] = []
+	for _i in range(affix_count):
+		if weighted_pool.is_empty():
+			break
+		for _try in range(20):
+			var candidate: String = weighted_pool[rng.randi_range(0, weighted_pool.size() - 1)]
+			if candidate in picked:
+				continue
+			# Check banned combos
+			var banned := false
+			for combo in AFFIX_BANNED_COMBOS:
+				if candidate in combo:
+					for existing in picked:
+						if existing in combo and existing != candidate:
+							banned = true
+							break
+				if banned:
+					break
+			if not banned:
+				picked.append(candidate)
+				break
+	return picked
+
+func _find_biome_spawn_pos(biome: String, rng: RandomNumberGenerator) -> Vector2:
 	var pos := Vector2.ZERO
 	for _try in range(60):
 		pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
 		if pos.distance_to(player_pos) < 350.0:
 			continue
-		# Check not blocked by obstacles
 		var blocked := false
 		for obs in obstacles:
 			if pos.distance_to(obs.pos) < obs.radius + 30.0:
@@ -812,22 +942,35 @@ func _spawn_elite(depth: int) -> void:
 				break
 		if blocked:
 			continue
-		# Rivers are no longer obstacles — skip river isolation check
-		break
+		var pos_biome: String = _get_biome_at(pos)
+		if pos_biome == biome:
+			return pos
+	# Fallback: any valid position
+	for _try in range(30):
+		pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
+		if pos.distance_to(player_pos) < 350.0:
+			continue
+		var blocked := false
+		for obs in obstacles:
+			if pos.distance_to(obs.pos) < obs.radius + 30.0:
+				blocked = true
+				break
+		if not blocked:
+			return pos
+	return pos
 
-	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
-
-	var elite: Dictionary = {
+func _make_elite_dict(elite_type: String, pos: Vector2, hp_val: int, spd: float, dmg: int) -> Dictionary:
+	return {
 		type = elite_type,
 		pos = pos,
-		hp = int(20.0 * hp_scale),
-		max_hp = int(20.0 * hp_scale),
-		speed = 55.0 + depth * 10.0,
+		hp = hp_val,
+		max_hp = hp_val,
+		speed = spd,
 		radius = 20.0,
-		color = Color(1.0, 0.85, 0.1),  # gold
+		color = Color(1.0, 0.85, 0.1),
 		detection = 600.0,
-		melee_dmg = 2 + depth,
-		leash = 9999.0,  # never leash — always hunt
+		melee_dmg = dmg,
+		leash = 9999.0,
 		aggro_origin = pos,
 		is_aggroed = true,
 		ranged = false,
@@ -837,19 +980,168 @@ func _spawn_elite(depth: int) -> void:
 		void_type = false,
 		is_target = true,
 		is_elite = true,
+		is_apex = false,
 		elite_type = elite_type,
 		patrol_target = pos,
 		behavior = "elite",
-		# behavior state
 		burst_timer = 0.0, burst_active = false, burst_cooldown = 2.0,
 		flank_side = 1.0, flank_timer = 1.5,
 		strafe_dir = 1.0, strafe_timer = 1.0,
-		# elite-specific state
-		phase_timer = 0.0,    # Phase Hunter teleport
-		brood_triggered = false,  # Brood Mother add spawn
-		charge_timer = 0.0,   # Void Hulk slam cooldown
+		phase_timer = 0.0,
+		brood_triggered = false,
+		charge_timer = 0.0,
+		shockwave_timer = 8.0,
+		sentinel_aggroed = false,
+		knockback_timer = 10.0,
+		split_done = false,
+		affixes = [] as Array[String],
+		affix_teleport_timer = 8.0,
+		affix_magnetic_timer = 5.0,
+		affix_venom_timer = 0.0,
+		shield_hp = 0,
+		shield_max = 0,
+		apex_ability_timer = 0.0,
+		hollow_pool_count = 0,
 	}
+
+func _apply_elite_type_overrides(elite: Dictionary, elite_type: String, hp_scale: float, depth: int) -> void:
+	match elite_type:
+		"Rift Colossus":
+			elite.hp = int(50.0 * hp_scale)
+			elite.max_hp = elite.hp
+			elite.speed *= 0.6
+			elite.radius = 28.0
+			elite.melee_dmg = 3 + depth
+		"Null Wraith":
+			elite.color = Color(0.4, 0.1, 0.6, 0.15)
+			elite.melee_dmg = 2 + depth
+		"Stone Sentinel":
+			elite.hp = int(40.0 * hp_scale)
+			elite.max_hp = elite.hp
+			elite.speed = 0.0
+			elite.radius = 24.0
+			elite.sentinel_aggroed = false
+			elite.is_aggroed = false
+			elite.color = Color(0.5, 0.45, 0.4)
+			elite.melee_dmg = 3 + depth
+		"Tide Reaper":
+			elite.melee_dmg = 0
+			elite.ranged = true
+			elite.ranged_dmg = 2
+		"Current Stalker":
+			elite.melee_dmg = 2 + depth
+
+func _spawn_elite(depth: int) -> void:
+	elite_spawned_count += 1
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	# Pick biome weighted, then pick random elite from that pool
+	var biome: String = _pick_biome_weighted(rng)
+	var pool: Array = ELITE_POOLS.get(biome, ["Phase Hunter"])
+	var elite_type: String = pool[rng.randi_range(0, pool.size() - 1)]
+
+	var pos: Vector2 = _find_biome_spawn_pos(biome, rng)
+	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
+	var base_hp: int = int(20.0 * hp_scale)
+	var base_speed: float = 55.0 + depth * 10.0
+	var base_dmg: int = 2 + depth
+
+	var elite: Dictionary = _make_elite_dict(elite_type, pos, base_hp, base_speed, base_dmg)
+	_apply_elite_type_overrides(elite, elite_type, hp_scale, depth)
+
+	# Roll affixes
+	var affixes: Array[String] = _roll_affixes(biome, false, rng)
+	elite.affixes = affixes
+	_apply_affixes(elite)
+
 	enemies.append(elite)
+
+	# Show spawn message with affixes
+	var affix_names: String = ""
+	for a in affixes:
+		if not affix_names.is_empty():
+			affix_names += " / "
+		affix_names += AFFIX_DEFS[a].name
+	if affix_names.is_empty():
+		_show_message("⚠ ELITE: %s approaching!" % elite_type)
+	else:
+		affix_message_text = "%s — %s" % [elite_type, affix_names]
+		affix_message_timer = 3.0
+		_show_message("⚠ ELITE: %s approaching!" % elite_type)
+
+func _apply_affixes(elite: Dictionary) -> void:
+	var affixes: Array = elite.get("affixes", [])
+	for a in affixes:
+		match a:
+			"extra_fast":
+				elite.speed *= 1.5
+			"shielded":
+				elite.shield_max = int(float(elite.max_hp) * 0.3)
+				elite.shield_hp = elite.shield_max
+			"spectral":
+				pass  # handled in movement
+			_:
+				pass  # other affixes handled in update/combat
+
+func _spawn_apex_elite(depth: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var biome: String = _pick_biome_weighted(rng)
+	var apex_def: Dictionary = APEX_DEFS.get(biome, APEX_DEFS["open"])
+	var apex_name: String = apex_def.name
+	var base_type: String = apex_def.base
+
+	var pos: Vector2 = _find_biome_spawn_pos(biome, rng)
+	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
+	var base_hp: int = int(20.0 * hp_scale * 3.0)
+	var base_speed: float = (55.0 + depth * 10.0) * 1.3
+	var base_dmg: int = int((2 + depth) * 1.5)
+
+	var elite: Dictionary = _make_elite_dict(apex_name, pos, base_hp, base_speed, base_dmg)
+	elite.is_apex = true
+	elite.elite_type = base_type
+	elite.type = apex_name
+	elite.color = Color(1.0, 0.6, 0.0)
+	elite.radius = 24.0
+	_apply_elite_type_overrides(elite, base_type, hp_scale * 3.0, depth)
+	# Apex overrides speed back up
+	elite.speed = base_speed
+
+	# Roll affixes (apex always 2-3, never multiplier)
+	var affixes: Array[String] = _roll_affixes(biome, true, rng)
+	elite.affixes = affixes
+	_apply_affixes(elite)
+	elite.apex_ability_timer = 15.0
+
+	# Abyssal Tide: widen rivers
+	if apex_name == "Abyssal Tide":
+		_widen_rivers(1.5)
+		apex_river_widened = true
+
+	enemies.append(elite)
+	apex_active = true
+	apex_spawned = true
+	apex_flash_timer = 0.5
+
+	var affix_names: String = ""
+	for a in affixes:
+		if not affix_names.is_empty():
+			affix_names += " / "
+		affix_names += AFFIX_DEFS[a].name
+	affix_message_text = "%s — %s" % [apex_name, affix_names]
+	affix_message_timer = 3.0
+	_show_message("⚠ APEX ELITE: %s!" % apex_name)
+
+func _widen_rivers(factor: float) -> void:
+	for river in rivers:
+		for seg in river.segments:
+			seg.radius = seg.radius * factor
+
+func _restore_rivers() -> void:
+	for river in rivers:
+		for seg in river.segments:
+			seg.radius = 25.0  # original radius
 
 func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator) -> void:
 	var def: Dictionary = CREATURE_DEFS[type_name]
@@ -994,6 +1286,12 @@ func _process(delta: float) -> void:
 	_update_gravity_wells(delta)
 	_update_drone(delta)
 	_update_familiar(delta)
+	_update_poison_trails(delta)
+	_update_hollow_pools(delta)
+	if affix_message_timer > 0.0:
+		affix_message_timer -= delta
+	if apex_flash_timer > 0.0:
+		apex_flash_timer -= delta
 
 	queue_redraw()
 
@@ -1673,8 +1971,44 @@ func _update_enemies(delta: float) -> void:
 
 				"elite":
 					var etype: String = e.get("elite_type", "Void Hulk")
+					var is_apex_e: bool = e.get("is_apex", false)
+					# --- Affix: teleporter ---
+					if "teleporter" in e.get("affixes", []):
+						e.affix_teleport_timer -= delta
+						if e.affix_teleport_timer <= 0.0 and dist_to_player > 300.0:
+							e.affix_teleport_timer = 8.0
+							var tp_dir: Vector2 = (player_pos - e.pos).normalized()
+							e.pos = player_pos - tp_dir * 80.0
+							aoe_flashes.append({pos = e.pos, radius = 30.0, timer = 0.2, color = Color(0.8, 0.4, 1.0, 0.6)})
+					# --- Affix: magnetic ---
+					if "magnetic" in e.get("affixes", []):
+						e.affix_magnetic_timer -= delta
+						if e.affix_magnetic_timer <= 0.0:
+							e.affix_magnetic_timer = 5.0
+							var pull_dir: Vector2 = (e.pos - player_pos).normalized()
+							player_pos += pull_dir * 150.0
+							player_pos = player_pos.clamp(Vector2(30, 30), Vector2(WORLD_W - 30, WORLD_H - 30))
+					# --- Affix: venomous trail ---
+					if "venomous" in e.get("affixes", []):
+						e.affix_venom_timer -= delta
+						if e.affix_venom_timer <= 0.0:
+							e.affix_venom_timer = 0.5
+							poison_trails.append({pos = e.pos, timer = 8.0})
+					# --- Affix: voidbound ---
+					if "voidbound" in e.get("affixes", []):
+						var nearest_vp_dist: float = 999999.0
+						var nearest_vp_pos := Vector2.ZERO
+						for vp in void_pools:
+							var vd: float = e.pos.distance_to(Vector2(vp.pos.x, vp.pos.y))
+							if vd < nearest_vp_dist:
+								nearest_vp_dist = vd
+								nearest_vp_pos = Vector2(vp.pos.x, vp.pos.y)
+						if nearest_vp_dist > 400.0 and nearest_vp_pos != Vector2.ZERO:
+							e.pos = nearest_vp_pos
+							aoe_flashes.append({pos = e.pos, radius = 30.0, timer = 0.2, color = Color(0.5, 0.0, 0.8, 0.6)})
+
+					# --- Base elite behavior by type ---
 					if etype == "Void Hulk":
-						# Slow relentless charge + ground slam
 						e.charge_timer -= delta
 						move_dir = (player_pos - e.pos).normalized()
 						if e.charge_timer <= 0.0 and dist_to_player < 120.0:
@@ -1685,8 +2019,16 @@ func _update_enemies(delta: float) -> void:
 							_show_message("SLAM! -2 HP")
 							if player_hp <= 0:
 								_die()
+						# Apex: The Hollow — doubled corruption aura + persistent void pools
+						if is_apex_e:
+							if dist_to_player < 200.0:
+								corruption += 2.0 * delta
+							e.apex_ability_timer -= delta
+							if e.apex_ability_timer <= 0.0 and e.hollow_pool_count < 5:
+								e.apex_ability_timer = 20.0
+								e.hollow_pool_count += 1
+								hollow_pools.append({pos = e.pos, radius = 60.0})
 					elif etype == "Phase Hunter":
-						# Ranged + teleports every 4s
 						e.phase_timer -= delta
 						e.ranged_cooldown_timer -= delta
 						if e.phase_timer <= 0.0:
@@ -1706,9 +2048,19 @@ func _update_enemies(delta: float) -> void:
 								bullets.append({pos = e.pos + sd * 25.0, vel = sd * 300.0, radius = 6.0,
 									color = Color(0.8, 0.2, 1.0), damage = 2, lifetime = 1.5, from_player = false})
 						var to_p2: Vector2 = (player_pos - e.pos).normalized()
-						move_dir = Vector2(-to_p2.y, to_p2.x)  # orbit
+						move_dir = Vector2(-to_p2.y, to_p2.x)
+						# Apex: Rift Sovereign — spawns 2 standard enemies every 15s
+						if is_apex_e:
+							e.apex_ability_timer -= delta
+							if e.apex_ability_timer <= 0.0:
+								e.apex_ability_timer = 15.0
+								var rng4 := RandomNumberGenerator.new()
+								rng4.randomize()
+								for _sa in range(2):
+									_spawn_single_enemy("Void Leech", false, rng4)
+									enemies[-1].is_aggroed = true
+									enemies[-1].pos = e.pos + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 					elif etype == "Brood Mother":
-						# Ranged + spawns adds at 50% HP
 						e.ranged_cooldown_timer -= delta
 						if e.ranged_cooldown_timer <= 0.0:
 							e.ranged_cooldown_timer = 1.8
@@ -1720,35 +2072,124 @@ func _update_enemies(delta: float) -> void:
 							_show_message("Brood Mother calls her spawn!")
 							var rng3 := RandomNumberGenerator.new()
 							rng3.randomize()
-							for _add in range(4):
+							var add_count: int = 4
+							for _add in range(add_count):
 								_spawn_single_enemy("Rift Parasite", false, rng3)
 								enemies[-1].is_aggroed = true
+								# Apex: Ancient Brood — adds have 2x HP, 1.5x damage
+								if is_apex_e:
+									enemies[-1].hp *= 2
+									enemies[-1].max_hp *= 2
+									enemies[-1].melee_dmg = int(enemies[-1].melee_dmg * 1.5)
 						var to_p3: Vector2 = (player_pos - e.pos).normalized()
 						var side3: Vector2 = Vector2(-to_p3.y, to_p3.x)
 						if dist_to_player < 200.0:
 							move_dir = -to_p3 + side3 * 0.5
 						else:
 							move_dir = side3
+					elif etype == "Rift Colossus":
+						# Slow charge + shockwave every 8s
+						move_dir = (player_pos - e.pos).normalized()
+						e.shockwave_timer -= delta
+						if e.shockwave_timer <= 0.0:
+							e.shockwave_timer = 8.0
+							aoe_flashes.append({pos = e.pos, radius = 200.0, timer = 0.6, color = Color(0.9, 0.5, 0.1, 0.4)})
+							if dist_to_player < 200.0:
+								player_hp -= 20
+								player_hit_flash = 0.3
+								_show_message("SHOCKWAVE! -20 HP")
+								if player_hp <= 0:
+									_die()
+					elif etype == "Null Wraith":
+						# Stalker — invisible until 200px, slow approach
+						move_dir = (player_pos - e.pos).normalized()
+						e.speed = 40.0
+					elif etype == "Stone Sentinel":
+						# Immobile until aggroed (300px or damaged)
+						if not e.get("sentinel_aggroed", false):
+							if dist_to_player < 300.0:
+								e.sentinel_aggroed = true
+								e.is_aggroed = true
+								e.speed = 180.0
+								e.color = Color(0.7, 0.5, 0.3)
+								_show_message("Stone Sentinel awakens!")
+							move_dir = Vector2.ZERO
+						else:
+							# Charge behavior — fast straight-line rush
+							move_dir = (player_pos - e.pos).normalized()
+					elif etype == "Tide Reaper":
+						# Patrol river, knockback wave every 10s, faster in river
+						e.knockback_timer -= delta
+						e.ranged_cooldown_timer -= delta
+						# Find nearest river segment
+						var best_river_pos := Vector2.ZERO
+						var best_river_dist: float = 999999.0
+						for river in rivers:
+							for seg in river.segments:
+								var rd: float = e.pos.distance_to(Vector2(seg.pos.x, seg.pos.y))
+								if rd < best_river_dist:
+									best_river_dist = rd
+									best_river_pos = Vector2(seg.pos.x, seg.pos.y)
+						# Stay within 150px of river
+						if best_river_dist > 150.0 and best_river_pos != Vector2.ZERO:
+							move_dir = (best_river_pos - e.pos).normalized()
+						else:
+							var to_player: Vector2 = (player_pos - e.pos).normalized()
+							move_dir = Vector2(-to_player.y, to_player.x)
+						# +50% speed in river
+						if best_river_dist < 50.0:
+							e.speed = (55.0 + GameData.current_contract.get("depth", 1) * 10.0) * 1.5
+						else:
+							e.speed = 55.0 + GameData.current_contract.get("depth", 1) * 10.0
+						# Ranged attack
+						if e.ranged_cooldown_timer <= 0.0 and dist_to_player < 400.0:
+							e.ranged_cooldown_timer = 1.6
+							var sd3: Vector2 = (player_pos - e.pos).normalized()
+							bullets.append({pos = e.pos + sd3 * 25.0, vel = sd3 * 260.0, radius = 6.0,
+								color = Color(0.2, 0.6, 1.0), damage = 2, lifetime = 1.5, from_player = false})
+						# Knockback wave every 10s
+						if e.knockback_timer <= 0.0 and dist_to_player < 400.0:
+							e.knockback_timer = 10.0
+							aoe_flashes.append({pos = e.pos, radius = 400.0, timer = 0.3, color = Color(0.2, 0.5, 1.0, 0.3)})
+							# Push player 200px toward nearest river
+							if best_river_pos != Vector2.ZERO:
+								var push_dir: Vector2 = (best_river_pos - player_pos).normalized()
+								player_pos += push_dir * 200.0
+								player_pos = player_pos.clamp(Vector2(30, 30), Vector2(WORLD_W - 30, WORLD_H - 30))
+								_show_message("Knockback!")
+					elif etype == "Current Stalker":
+						# Charge behavior, splits on death (handled in _on_enemy_killed)
+						move_dir = (player_pos - e.pos).normalized()
+
 
 			# Apply movement (non-pack behaviors)
 			if move_dir != Vector2.ZERO:
 				var spd: float = e.speed
 				if e.behavior == "burst" and e.burst_active:
 					spd *= 2.5
-				# Slow debuff (#1)
-				var now_sec: float = Time.get_ticks_msec() * 0.001
-				if e.get("slow_until", 0.0) > now_sec:
-					spd *= 0.6
-				# Trap slow
-				if e.get("slow_timer", 0.0) > 0.0:
-					spd *= e.get("slow_factor", 0.4)
-				# Smoke/slow field speed reduction
-				for sz in smoke_zones:
-					if sz.get("slowing", false) and e.pos.distance_to(sz.pos) < sz.radius:
-						spd *= 0.5
-						break
+				var has_spectral: bool = "spectral" in e.get("affixes", [])
+				# Stone Sentinel immune to slow while charging
+				var sentinel_charging: bool = e.get("elite_type", "") == "Stone Sentinel" and e.get("sentinel_aggroed", false)
+				if not has_spectral and not sentinel_charging:
+					# Slow debuff (#1)
+					var now_sec: float = Time.get_ticks_msec() * 0.001
+					if e.get("slow_until", 0.0) > now_sec:
+						spd *= 0.6
+					# Trap slow
+					if e.get("slow_timer", 0.0) > 0.0:
+						spd *= e.get("slow_factor", 0.4)
+					# Smoke/slow field speed reduction
+					for sz in smoke_zones:
+						if sz.get("slowing", false) and e.pos.distance_to(sz.pos) < sz.radius:
+							spd *= 0.5
+							break
+				# Berserker affix: below 30% HP — speed boost
+				if "berserker" in e.get("affixes", []) and float(e.hp) / float(e.max_hp) < 0.3:
+					spd *= 1.3
 				var new_pos: Vector2 = e.pos + move_dir.normalized() * spd * delta
-				new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
+				# Spectral: skip obstacle avoidance
+				if not has_spectral:
+					new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 				e.pos = new_pos
 
 			# Melee
@@ -1761,10 +2202,20 @@ func _update_enemies(delta: float) -> void:
 					if dodge_ch > 0.0 and randf() < dodge_ch:
 						_show_message("Dodged!")
 					else:
-						player_hp -= e.melee_dmg
+						var hit_dmg: int = e.melee_dmg
+						# Berserker affix: below 30% HP — damage x1.3
+						if "berserker" in e.get("affixes", []) and float(e.hp) / float(e.max_hp) < 0.3:
+							hit_dmg = int(hit_dmg * 1.3)
+						player_hp -= hit_dmg
 						enemy_melee_cooldowns[cd_key] = 1.0
 						player_hit_flash = 0.2
-						_show_message("Hit! -%d HP" % e.melee_dmg)
+						_show_message("Hit! -%d HP" % hit_dmg)
+						# Vampiric affix: heal 15% of damage dealt
+						if "vampiric" in e.get("affixes", []):
+							e.hp = mini(e.hp + int(hit_dmg * 0.15), e.max_hp)
+						# Corrupting affix: +5 corruption per hit
+						if "corrupting" in e.get("affixes", []):
+							corruption += 5.0
 						# Adrenaline reset on hit
 						adrenaline_stack = 0
 						# Corrupted path melee heal (#17)
@@ -1962,6 +2413,24 @@ func _update_bullets(delta: float) -> void:
 					# Biome bond: +20% in starting biome
 					if "biome_bond" in modifiers_taken and _get_biome_at(player_pos) == player_start_biome:
 						hit_dmg = int(float(hit_dmg) * 1.2)
+					# Affix: armored — ranged damage reduced 60%
+					if "armored" in e.get("affixes", []):
+						hit_dmg = maxi(1, int(float(hit_dmg) * 0.4))
+					# Affix: shielded — absorb damage with shield first
+					if e.get("shield_hp", 0) > 0:
+						if hit_dmg <= e.shield_hp:
+							e.shield_hp -= hit_dmg
+							hit_dmg = 0
+						else:
+							hit_dmg -= e.shield_hp
+							e.shield_hp = 0
+					# Stone Sentinel: aggro on damage
+					if e.get("elite_type", "") == "Stone Sentinel" and not e.get("sentinel_aggroed", false):
+						e.sentinel_aggroed = true
+						e.is_aggroed = true
+						e.speed = 180.0
+						e.color = Color(0.7, 0.5, 0.3)
+						_show_message("Stone Sentinel awakens!")
 					# Singularity on hit (lance void mutation)
 					if b.get("singularity_on_hit", false):
 						gravity_wells.append({pos=b.pos, radius=200.0, timer=2.0})
@@ -2219,8 +2688,10 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 
 	# Elites: drop biome ingredient + elite_core + big essence burst
 	if e.get("is_elite", false):
+		var is_apex_kill: bool = e.get("is_apex", false)
+		var drop_mult: int = 2 if is_apex_kill else 1
 		# Big essence burst
-		for _b in range(5):
+		for _b in range(5 * drop_mult):
 			pickups.append({pos = death_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20)), type = "essence"})
 		# Determine biome ingredient based on where elite was killed
 		var elite_biome: String = _get_biome_at(death_pos)
@@ -2231,14 +2702,58 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			"river_bank": "river_silt",
 		}
 		var biome_ing: String = biome_ingredient_map.get(elite_biome, "rift_dust")
-		# Always drop 1 elite_core
-		run_ingredients.append({id = "elite_core", name = "Elite Core", ingredient = true})
-		_spawn_float_text(death_pos + Vector2(0, -20), "+elite_core", Color(1.0, 0.85, 0.0))
-		# Drop 1 biome ingredient
+		# Drop elite_core(s)
+		for _dc in range(drop_mult):
+			run_ingredients.append({id = "elite_core", name = "Elite Core", ingredient = true})
+		_spawn_float_text(death_pos + Vector2(0, -20), "+elite_core x%d" % drop_mult, Color(1.0, 0.85, 0.0))
+		# Drop biome ingredient(s)
 		var biome_display: String = biome_ing.replace("_", " ").capitalize()
-		run_ingredients.append({id = biome_ing, name = biome_display, ingredient = true})
-		_spawn_float_text(death_pos + Vector2(0, -40), "+" + biome_ing, Color(0.4, 1.0, 0.6))
-		_show_message("Elite down! +%s +elite_core" % biome_ing)
+		for _di in range(drop_mult):
+			run_ingredients.append({id = biome_ing, name = biome_display, ingredient = true})
+		_spawn_float_text(death_pos + Vector2(0, -40), "+%s x%d" % [biome_ing, drop_mult], Color(0.4, 1.0, 0.6))
+
+		# --- Null Wraith: corruption burst on death ---
+		if e.get("elite_type", "") == "Null Wraith":
+			corruption += 20.0
+			_show_message("Corruption burst! +20")
+
+		# --- Current Stalker: split into 2 copies ---
+		if e.get("elite_type", "") == "Current Stalker" and not e.get("split_done", false):
+			var rng_split := RandomNumberGenerator.new()
+			rng_split.randomize()
+			for _sc in range(2):
+				var copy: Dictionary = _make_elite_dict("Current Stalker", death_pos + Vector2(rng_split.randf_range(-30, 30), rng_split.randf_range(-30, 30)), int(e.max_hp * 0.4), e.speed, e.melee_dmg)
+				copy.split_done = true
+				copy.affixes = []  # no affixes on copies
+				copy.color = Color(0.8, 0.7, 0.2)  # different tint
+				copy.is_target = false  # copies don't count for contract
+				enemies.append(copy)
+
+		# --- Multiplier affix: spawn 2 copies at 30% HP ---
+		if "multiplier" in e.get("affixes", []) and not e.get("is_multiplier_copy", false):
+			var rng_mult := RandomNumberGenerator.new()
+			rng_mult.randomize()
+			for _mc in range(2):
+				var copy: Dictionary = _make_elite_dict(e.get("elite_type", "Void Hulk"), death_pos + Vector2(rng_mult.randf_range(-30, 30), rng_mult.randf_range(-30, 30)), int(e.max_hp * 0.3), e.speed, e.melee_dmg)
+				copy.affixes = []
+				copy.is_multiplier_copy = true
+				copy.is_target = false
+				copy.color = Color(0.9, 0.75, 0.1)
+				enemies.append(copy)
+
+		# --- Apex death handling ---
+		if is_apex_kill:
+			apex_active = false
+			apex_death_time = hunt_elapsed
+			apex_timer = 480.0  # 8 minutes until next apex
+			# Abyssal Tide: restore rivers
+			if e.type == "Abyssal Tide" and apex_river_widened:
+				_restore_rivers()
+				apex_river_widened = false
+			_show_message("APEX ELITE DEFEATED! +%s x%d +elite_core x%d" % [biome_ing, drop_mult, drop_mult])
+		else:
+			_show_message("Elite down! +%s +elite_core" % biome_ing)
+
 		# Track contract progress
 		target_kills += 1
 		if target_kills >= target_total and not exit_spawned:
@@ -2966,6 +3481,19 @@ func _draw() -> void:
 				var sparkle_pos: Vector2 = sp + Vector2(cos(angle), sin(angle)) * 14.0
 				draw_circle(sparkle_pos, 2.0, Color(1.0, 1.0, 0.6, 0.8))
 
+	# Poison trails
+	for pt in poison_trails:
+		var pt_sp: Vector2 = _w2s(pt.pos)
+		var pt_alpha: float = clampf(pt.timer / 8.0, 0.05, 0.25)
+		draw_circle(pt_sp, 18.0, Color(0.2, 0.8, 0.1, pt_alpha))
+
+	# Hollow pools (The Hollow apex)
+	for hp in hollow_pools:
+		var hp_sp: Vector2 = _w2s(hp.pos)
+		var hp_pulse: float = 0.3 + 0.1 * sin(hunt_elapsed * 3.0)
+		draw_circle(hp_sp, hp.radius, Color(0.15, 0.0, 0.25, hp_pulse))
+		draw_arc(hp_sp, hp.radius, 0.0, TAU, 32, Color(0.4, 0.0, 0.6, 0.5), 1.5)
+
 	# Enemies
 	for e in enemies:
 		if e.hp <= 0:
@@ -2976,16 +3504,34 @@ func _draw() -> void:
 			continue
 		var sp: Vector2 = _w2s(e.pos)
 		var is_elite: bool = e.get("is_elite", false)
+		var is_apex_draw: bool = e.get("is_apex", false)
 		var draw_color: Color = e.color
+		# Null Wraith: translucent until 200px
+		if e.get("elite_type", "") == "Null Wraith":
+			var nw_dist: float = player_pos.distance_to(e.pos)
+			if nw_dist > 200.0:
+				draw_color = Color(draw_color.r, draw_color.g, draw_color.b, 0.15)
+			else:
+				draw_color = Color(0.5, 0.1, 0.8, 1.0)
+		# Stone Sentinel: rock shape when not aggroed
+		if e.get("elite_type", "") == "Stone Sentinel" and not e.get("sentinel_aggroed", false):
+			draw_color = Color(0.5, 0.45, 0.4, 0.9)
 		# Dormant lurkers draw at 50% alpha
 		if e.get("dormant", false):
 			draw_color = Color(draw_color.r, draw_color.g, draw_color.b, 0.5)
 		draw_circle(sp, e.radius, draw_color)
 		if is_elite:
-			# Pulsing gold double ring for elites
-			var pulse: float = 0.6 + sin(hunt_elapsed * 4.0) * 0.3
-			draw_arc(sp, e.radius + 5.0, 0.0, TAU, 32, Color(1.0, 0.85, 0.1, pulse), 2.5)
-			draw_arc(sp, e.radius + 10.0, 0.0, TAU, 32, Color(1.0, 0.5, 0.0, pulse * 0.5), 1.5)
+			if is_apex_draw:
+				# Apex: triple ring in orange/gold
+				var pulse: float = 0.6 + sin(hunt_elapsed * 5.0) * 0.3
+				draw_arc(sp, e.radius + 5.0, 0.0, TAU, 32, Color(1.0, 0.5, 0.0, pulse), 3.0)
+				draw_arc(sp, e.radius + 10.0, 0.0, TAU, 32, Color(1.0, 0.3, 0.0, pulse * 0.7), 2.0)
+				draw_arc(sp, e.radius + 15.0, 0.0, TAU, 32, Color(1.0, 0.2, 0.0, pulse * 0.4), 1.5)
+			else:
+				# Pulsing gold double ring for elites
+				var pulse: float = 0.6 + sin(hunt_elapsed * 4.0) * 0.3
+				draw_arc(sp, e.radius + 5.0, 0.0, TAU, 32, Color(1.0, 0.85, 0.1, pulse), 2.5)
+				draw_arc(sp, e.radius + 10.0, 0.0, TAU, 32, Color(1.0, 0.5, 0.0, pulse * 0.5), 1.5)
 		# HP bar — bigger for elites
 		var bar_w: float = e.radius * (3.0 if is_elite else 2.0)
 		var bar_h: float = 5.0 if is_elite else 3.0
@@ -2993,7 +3539,15 @@ func _draw() -> void:
 		draw_rect(Rect2(bar_pos, Vector2(bar_w, bar_h)), Color(0.3, 0.3, 0.3))
 		var hp_frac: float = float(e.hp) / float(e.max_hp)
 		var hp_color: Color = Color(1.0, 0.7, 0.0) if is_elite else Color(0.9, 0.2, 0.2)
+		if is_apex_draw:
+			hp_color = Color(1.0, 0.4, 0.0)
 		draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, bar_h)), hp_color)
+		# Shield bar above HP bar (shielded affix)
+		if e.get("shield_max", 0) > 0:
+			var shield_bar_pos := Vector2(bar_pos.x, bar_pos.y - bar_h - 2.0)
+			draw_rect(Rect2(shield_bar_pos, Vector2(bar_w, bar_h)), Color(0.2, 0.2, 0.4))
+			var shield_frac: float = float(e.get("shield_hp", 0)) / float(e.shield_max)
+			draw_rect(Rect2(shield_bar_pos, Vector2(bar_w * shield_frac, bar_h)), Color(0.3, 0.5, 1.0))
 		# Label — elite gets full name in gold, regular gets short name
 		if is_elite:
 			_draw_text(Vector2(sp.x - e.radius - 10.0, sp.y - e.radius - 22.0), "★ " + e.type, Color(1.0, 0.9, 0.3), 11)
@@ -3220,28 +3774,38 @@ func _draw() -> void:
 		var ft_alpha: float = clampf(ft.timer, 0.0, 1.0)
 		_draw_text(ft_sp, ft.text, Color(ft.color.r, ft.color.g, ft.color.b, ft_alpha), 12)
 
-	# Elite compass — arrow pointing at nearest living elite (hidden when elite is on screen)
-	var nearest_elite_pos := Vector2.ZERO
-	var found_elite := false
-	var nearest_elite_dist := 999999.0
+	# Elite compass arrows — standard (gold) and apex (orange)
+	var nearest_std_pos := Vector2.ZERO
+	var nearest_std_dist := 999999.0
+	var found_std := false
+	var nearest_apex_pos := Vector2.ZERO
+	var nearest_apex_dist := 999999.0
+	var found_apex := false
 	for e in enemies:
 		if e.hp > 0 and e.get("is_elite", false):
 			var d: float = player_pos.distance_to(e.pos)
-			if d < nearest_elite_dist:
-				nearest_elite_dist = d
-				nearest_elite_pos = e.pos
-				found_elite = true
+			if e.get("is_apex", false):
+				if d < nearest_apex_dist:
+					nearest_apex_dist = d
+					nearest_apex_pos = e.pos
+					found_apex = true
+			else:
+				if d < nearest_std_dist:
+					nearest_std_dist = d
+					nearest_std_pos = e.pos
+					found_std = true
 
-	if found_elite:
-		# Check if elite is currently visible on screen
-		var elite_screen_pos: Vector2 = _w2s(nearest_elite_pos)
+	# Draw compass arrows for each type
+	for arrow_data in [{pos = nearest_std_pos, dist = nearest_std_dist, found = found_std, color1 = Color(1.0, 0.85, 0.1), color2 = Color(1.0, 1.0, 0.5), is_apex_arrow = false},
+					   {pos = nearest_apex_pos, dist = nearest_apex_dist, found = found_apex, color1 = Color(1.0, 0.5, 0.0), color2 = Color(1.0, 0.8, 0.3), is_apex_arrow = true}]:
+		if not arrow_data.found:
+			continue
+		var elite_screen_pos: Vector2 = _w2s(arrow_data.pos)
 		var on_screen: bool = (elite_screen_pos.x >= 0.0 and elite_screen_pos.x <= vp_size.x and
 							   elite_screen_pos.y >= 0.0 and elite_screen_pos.y <= vp_size.y)
 		if not on_screen:
-			# Draw compass arrow on screen edge
 			var screen_center: Vector2 = vp_size * 0.5
-			var dir_to_elite: Vector2 = (nearest_elite_pos - player_pos).normalized()
-			# Find intersection with screen edge (margin 28px from edge)
+			var dir_to_elite: Vector2 = (arrow_data.pos - player_pos).normalized()
 			var margin := 28.0
 			var arrow_pos: Vector2
 			var tx: float = 999999.0
@@ -3256,25 +3820,35 @@ func _draw() -> void:
 				ty = (margin - screen_center.y) / dir_to_elite.y
 			var t: float = minf(tx, ty)
 			arrow_pos = screen_center + dir_to_elite * t
+			# Offset apex arrow slightly so they don't overlap
+			if arrow_data.is_apex_arrow:
+				arrow_pos += Vector2(0, -20)
 
-			# Pulse based on distance — faster when closer
-			var pulse_speed: float = remap(nearest_elite_dist, 100.0, 1200.0, 8.0, 2.0)
+			var pulse_speed: float = remap(arrow_data.dist, 100.0, 1200.0, 8.0, 2.0)
 			var pulse: float = 0.5 + 0.5 * sin(hunt_elapsed * pulse_speed)
-			var arrow_color := Color(1.0, 0.85, 0.1, 0.6 + 0.4 * pulse)
+			var arrow_color := Color(arrow_data.color1.r, arrow_data.color1.g, arrow_data.color1.b, 0.6 + 0.4 * pulse)
 
-			# Draw triangle arrow
-			var arrow_size := 14.0
+			var arrow_size := 14.0 if not arrow_data.is_apex_arrow else 18.0
 			var forward: Vector2 = dir_to_elite * arrow_size
 			var perp: Vector2 = Vector2(-dir_to_elite.y, dir_to_elite.x) * (arrow_size * 0.5)
 			var tip: Vector2 = arrow_pos + forward
-			var left: Vector2 = arrow_pos - perp
-			var right: Vector2 = arrow_pos + perp
-			draw_colored_polygon(PackedVector2Array([tip, left, right]), arrow_color)
-			draw_polyline(PackedVector2Array([tip, left, right, tip]), Color(1.0, 1.0, 0.5, 0.9 * pulse), 1.5)
+			var left_pt: Vector2 = arrow_pos - perp
+			var right_pt: Vector2 = arrow_pos + perp
+			draw_colored_polygon(PackedVector2Array([tip, left_pt, right_pt]), arrow_color)
+			draw_polyline(PackedVector2Array([tip, left_pt, right_pt, tip]), Color(arrow_data.color2.r, arrow_data.color2.g, arrow_data.color2.b, 0.9 * pulse), 1.5)
 
-			# Distance label below arrow
-			var dist_m: int = int(nearest_elite_dist / 50.0)  # rough "meters"
-			_draw_text(arrow_pos + Vector2(-12.0, 10.0), "%dm" % dist_m, Color(1.0, 0.9, 0.3, 0.8 * pulse), 10)
+			var dist_m: int = int(arrow_data.dist / 50.0)
+			_draw_text(arrow_pos + Vector2(-12.0, 10.0), "%dm" % dist_m, Color(arrow_data.color2.r, arrow_data.color2.g, arrow_data.color2.b, 0.8 * pulse), 10)
+
+	# Affix name display (3s on elite spawn)
+	if affix_message_timer > 0.0:
+		var affix_alpha: float = clampf(affix_message_timer, 0.0, 1.0)
+		_draw_text(Vector2(vp_size.x * 0.5 - 100.0, vp_size.y * 0.3), affix_message_text, Color(1.0, 0.9, 0.3, affix_alpha), 14)
+
+	# Apex flash
+	if apex_flash_timer > 0.0:
+		var flash_alpha: float = clampf(apex_flash_timer, 0.0, 0.3)
+		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(1.0, 0.6, 0.0, flash_alpha))
 
 	# Dead overlay
 	if dead:
@@ -4058,6 +4632,24 @@ func _update_familiar(delta: float) -> void:
 				enemies[best_idx] = e
 				if e.hp <= 0:
 					_on_enemy_killed(best_idx)
+
+func _update_poison_trails(delta: float) -> void:
+	var i := poison_trails.size() - 1
+	while i >= 0:
+		poison_trails[i].timer -= delta
+		if poison_trails[i].timer <= 0.0:
+			poison_trails.remove_at(i)
+		else:
+			# Player standing in poison: +2 corruption/s
+			if player_pos.distance_to(poison_trails[i].pos) < 20.0:
+				corruption += 2.0 * delta
+		i -= 1
+
+func _update_hollow_pools(delta: float) -> void:
+	# Persistent void pools from The Hollow apex — +2 corruption/s
+	for hp in hollow_pools:
+		if player_pos.distance_to(hp.pos) < hp.radius:
+			corruption += 2.0 * delta
 
 # =========================================================
 # MODIFIER APPLICATION

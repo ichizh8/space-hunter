@@ -29,6 +29,7 @@ var kit_tiers: Dictionary = {"stim_pack": 1, "flash_trap": 1}
 var unlocked_kits: Array[String] = ["stim_pack", "flash_trap"]
 var kit_t3_choices: Dictionary = {}  # kit_id -> "clean" or "void"
 var kit_t2_paths: Dictionary = {}  # kit_id -> "attack"|"shield"|"harvest"
+var active_bonuses: Dictionary = {}  # bonus_id -> true/int, consumed at hunt start
 
 # Phase A: recipe unlocks — Tier 1 unlocked from start
 var unlocked_recipes: Array[String] = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
@@ -74,6 +75,7 @@ func to_dict() -> Dictionary:
 		"kit_t2_paths": kit_t2_paths.duplicate(),
 		"unlocked_recipes": unlocked_recipes.duplicate(),
 		"reputation": reputation.duplicate(),
+		"active_bonuses": active_bonuses.duplicate(),
 	}
 
 func from_dict(data: Dictionary) -> void:
@@ -149,6 +151,10 @@ func from_dict(data: Dictionary) -> void:
 		for r in raw_recipes: unlocked_recipes.append(str(r))
 	if unlocked_recipes.is_empty():
 		unlocked_recipes = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
+
+	var raw_bonuses: Variant = data.get("active_bonuses", {})
+	if raw_bonuses is Dictionary:
+		active_bonuses = (raw_bonuses as Dictionary).duplicate()
 
 	var raw_rep: Variant = data.get("reputation", {})
 	if raw_rep is Dictionary:

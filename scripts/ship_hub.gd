@@ -11,6 +11,51 @@ var credits_label: Label
 var kits_credits_label: Label
 var kits_equipped_label: Label
 var kits_scroll_vbox: VBoxContainer
+var kitchen_scroll_vbox: VBoxContainer
+var rep_label: Label
+
+const RECIPES: Dictionary = {
+	"field_ration":     {tier = 1, track = "contractor",  cost = {"rift_dust": 1},                   rep = 10, bonus = ""},
+	"void_brew":        {tier = 1, track = "void_walker",  cost = {"void_crystal": 1},                rep = 10, bonus = ""},
+	"cave_jerky":       {tier = 1, track = "tactician",    cost = {"cave_moss": 1},                   rep = 10, bonus = ""},
+	"silt_stew":        {tier = 1, track = "scrapper",     cost = {"river_silt": 1},                  rep = 10, bonus = ""},
+	"silt_cured_meat":  {tier = 2, track = "contractor",  cost = {"river_silt": 2},                  rep = 25, bonus = "credits_boost"},
+	"void_infusion":    {tier = 2, track = "void_walker",  cost = {"void_crystal": 2},                rep = 25, bonus = "start_corrupted"},
+	"cave_broth":       {tier = 2, track = "tactician",    cost = {"cave_moss": 2},                   rep = 25, bonus = "trap_charge"},
+	"gland_tonic":      {tier = 2, track = "scrapper",     cost = {"rift_dust": 2},                   rep = 25, bonus = "stim_boost"},
+	"purified_extract": {tier = 3, track = "contractor",  cost = {"elite_core": 1, "river_silt": 1}, rep = 60, bonus = "reveal_elites"},
+	"void_communion":   {tier = 3, track = "void_walker",  cost = {"elite_core": 1, "void_crystal": 1}, rep = 60, bonus = "early_mutation"},
+	"tactical_compound":{tier = 3, track = "tactician",    cost = {"elite_core": 1, "cave_moss": 1},  rep = 60, bonus = "kit_charge_all"},
+	"ironblood_draught":{tier = 3, track = "scrapper",     cost = {"elite_core": 1, "rift_dust": 1},  rep = 60, bonus = "temp_hp"},
+}
+
+const RECIPE_DISPLAY_NAMES: Dictionary = {
+	"field_ration": "Field Ration", "void_brew": "Void Brew", "cave_jerky": "Cave Jerky",
+	"silt_stew": "Silt Stew", "silt_cured_meat": "Silt-Cured Meat", "void_infusion": "Void Infusion",
+	"cave_broth": "Cave Broth", "gland_tonic": "Gland Tonic", "purified_extract": "Purified Extract",
+	"void_communion": "Void Communion", "tactical_compound": "Tactical Compound",
+	"ironblood_draught": "Ironblood Draught",
+}
+
+const BONUS_DESCS: Dictionary = {
+	"credits_boost": "+20% credits next hunt",
+	"start_corrupted": "Start at corruption 10",
+	"trap_charge": "+1 trap charge next hunt",
+	"stim_boost": "Stim cooldown -20% next hunt",
+	"reveal_elites": "Reveal elite spawns on map",
+	"early_mutation": "Void mutation from Lv4",
+	"kit_charge_all": "All kits +1 charge",
+	"temp_hp": "Start with 30 temp HP",
+}
+
+const TRACK_COLORS: Dictionary = {
+	"contractor": Color(0.3, 0.8, 0.3),
+	"void_walker": Color(0.6, 0.2, 0.9),
+	"tactician": Color(0.3, 0.5, 0.9),
+	"scrapper": Color(0.9, 0.5, 0.2),
+}
+
+const TRACK_ORDER: Array[String] = ["contractor", "void_walker", "tactician", "scrapper"]
 
 # Tab buttons
 var ship_tab_btn: Button
@@ -143,34 +188,49 @@ func _ready() -> void:
 	ship_tab_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(ship_tab_content)
 
+	var contract_button := Button.new()
+	contract_button.text = "Contract Board"
+	contract_button.custom_minimum_size = Vector2(0, 50)
+	contract_button.pressed.connect(_on_contract_board)
+	ship_tab_content.add_child(contract_button)
+
+	# --- Pantry section ---
 	var pantry_title := Label.new()
-	pantry_title.text = "Pantry"
+	pantry_title.text = "PANTRY"
 	pantry_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ship_tab_content.add_child(pantry_title)
 
 	pantry_label = Label.new()
-	pantry_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pantry_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	ship_tab_content.add_child(pantry_label)
+
+	# --- Rep tracks ---
+	rep_label = Label.new()
+	rep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	ship_tab_content.add_child(rep_label)
 
 	var sep2 := HSeparator.new()
 	ship_tab_content.add_child(sep2)
 
-	var contract_button := Button.new()
-	contract_button.text = "Contract Board"
-	contract_button.custom_minimum_size = Vector2(0, 60)
-	contract_button.pressed.connect(_on_contract_board)
-	ship_tab_content.add_child(contract_button)
-
-	var cook_button := Button.new()
-	cook_button.text = "Cook"
-	cook_button.custom_minimum_size = Vector2(0, 60)
-	cook_button.pressed.connect(_on_cook)
-	ship_tab_content.add_child(cook_button)
+	# --- Kitchen section ---
+	var kitchen_title := Label.new()
+	kitchen_title.text = "KITCHEN"
+	kitchen_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ship_tab_content.add_child(kitchen_title)
 
 	cook_status_label = Label.new()
 	cook_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cook_status_label.text = ""
 	ship_tab_content.add_child(cook_status_label)
+
+	var kitchen_scroll := ScrollContainer.new()
+	kitchen_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	kitchen_scroll.custom_minimum_size = Vector2(0, 250)
+	ship_tab_content.add_child(kitchen_scroll)
+
+	kitchen_scroll_vbox = VBoxContainer.new()
+	kitchen_scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	kitchen_scroll.add_child(kitchen_scroll_vbox)
 
 	# === UPGRADES TAB CONTENT ===
 	upgrades_tab_content = VBoxContainer.new()
@@ -225,9 +285,14 @@ func _ready() -> void:
 	kits_scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	kits_scroll.add_child(kits_scroll_vbox)
 
+	# Auto-unlock Tier 2 recipes at rep level 1
+	_check_tier2_unlocks()
+
 	# Start on ship tab
 	_update_stats()
 	_update_pantry()
+	_update_rep_display()
+	_build_kitchen()
 	_show_ship_tab()
 
 func _make_upgrade_row(def: Dictionary) -> HBoxContainer:
@@ -463,6 +528,9 @@ func _show_ship_tab() -> void:
 	ship_tab_btn.disabled = true
 	upgrades_tab_btn.disabled = false
 	kits_tab_btn.disabled = false
+	_update_pantry()
+	_update_rep_display()
+	_build_kitchen()
 
 func _show_upgrades_tab() -> void:
 	ship_tab_content.visible = false
@@ -510,11 +578,157 @@ func _update_pantry() -> void:
 		for ing_id in pantry:
 			var count: int = pantry.get(ing_id, 0)
 			var display_name: String = ing_id.replace("_", " ").capitalize()
-			text += "  %s: %d\n" % [display_name, count]
+			var count_str: String = "%d" % count if count > 0 else "0"
+			text += "  %s: %s\n" % [display_name, count_str]
 	pantry_label.text = text.strip_edges()
+
+func _update_rep_display() -> void:
+	var rep: Dictionary = SaveManager.data.reputation
+	var text := ""
+	for track in TRACK_ORDER:
+		var pts: int = rep.get(track, 0)
+		var level: int = SaveData.get_rep_level(track, rep)
+		var display_name: String = track.replace("_", " ").capitalize()
+		var next_threshold: int = 0
+		if level < SaveData.REP_THRESHOLDS.size() - 1:
+			next_threshold = SaveData.REP_THRESHOLDS[level + 1]
+		var progress_str: String = ""
+		if next_threshold > 0:
+			progress_str = " (%d/%d)" % [pts, next_threshold]
+		else:
+			progress_str = " (MAX)"
+		text += "  %s: Lv%d%s\n" % [display_name, level, progress_str]
+	rep_label.text = text.strip_edges()
+
+func _check_tier2_unlocks() -> void:
+	var rep: Dictionary = SaveManager.data.reputation
+	var changed := false
+	for recipe_id in RECIPES:
+		var recipe: Dictionary = RECIPES[recipe_id]
+		if recipe.tier != 2:
+			continue
+		if SaveManager.data.unlocked_recipes.has(recipe_id):
+			continue
+		var track: String = recipe.track
+		if SaveData.get_rep_level(track, rep) >= 1:
+			SaveManager.data.unlocked_recipes.append(recipe_id)
+			changed = true
+	if changed:
+		SaveManager.save_game()
+
+func _is_recipe_unlocked(recipe_id: String) -> bool:
+	var recipe: Dictionary = RECIPES[recipe_id]
+	if recipe.tier == 1:
+		return true
+	if recipe.tier == 2:
+		if SaveManager.data.unlocked_recipes.has(recipe_id):
+			return true
+		var rep: Dictionary = SaveManager.data.reputation
+		return SaveData.get_rep_level(recipe.track, rep) >= 1
+	# Tier 3: only via contract unlock
+	return SaveManager.data.unlocked_recipes.has(recipe_id)
+
+func _can_afford_recipe(recipe_id: String) -> bool:
+	var recipe: Dictionary = RECIPES[recipe_id]
+	var pantry: Dictionary = SaveManager.data.pantry
+	for ing_id in recipe.cost:
+		var needed: int = recipe.cost[ing_id]
+		if pantry.get(ing_id, 0) < needed:
+			return false
+	return true
+
+func _build_kitchen() -> void:
+	for child in kitchen_scroll_vbox.get_children():
+		child.queue_free()
+
+	for track in TRACK_ORDER:
+		var track_label := Label.new()
+		track_label.text = track.replace("_", " ").capitalize()
+		track_label.add_theme_color_override("font_color", TRACK_COLORS.get(track, Color.WHITE))
+		kitchen_scroll_vbox.add_child(track_label)
+
+		for recipe_id in RECIPES:
+			var recipe: Dictionary = RECIPES[recipe_id]
+			if recipe.track != track:
+				continue
+			var row := HBoxContainer.new()
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+			var info := Label.new()
+			var display_name: String = RECIPE_DISPLAY_NAMES.get(recipe_id, recipe_id)
+			var cost_str := ""
+			for ing_id in recipe.cost:
+				if not cost_str.is_empty():
+					cost_str += ", "
+				cost_str += "%s x%d" % [ing_id.replace("_", " ").capitalize(), recipe.cost[ing_id]]
+			var bonus_str: String = BONUS_DESCS.get(recipe.bonus, "")
+			var rep_str: String = "+%d rep" % recipe.rep
+			info.text = "%s [%s] %s" % [display_name, cost_str, rep_str]
+			if not bonus_str.is_empty():
+				info.text += " | %s" % bonus_str
+			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+			var unlocked: bool = _is_recipe_unlocked(recipe_id)
+			var can_afford: bool = _can_afford_recipe(recipe_id)
+
+			if not unlocked:
+				info.text = "%s — Contract reward required" % display_name
+				info.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			elif not can_afford:
+				info.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+
+			row.add_child(info)
+
+			var btn := Button.new()
+			btn.text = "Cook"
+			btn.custom_minimum_size = Vector2(60, 36)
+			btn.disabled = not unlocked or not can_afford
+			btn.pressed.connect(_on_cook_recipe.bind(recipe_id))
+			row.add_child(btn)
+
+			kitchen_scroll_vbox.add_child(row)
+
+		var track_sep := HSeparator.new()
+		kitchen_scroll_vbox.add_child(track_sep)
+
+func _on_cook_recipe(recipe_id: String) -> void:
+	var recipe: Dictionary = RECIPES[recipe_id]
+	if not _is_recipe_unlocked(recipe_id) or not _can_afford_recipe(recipe_id):
+		return
+
+	# Deduct ingredients
+	for ing_id in recipe.cost:
+		var needed: int = recipe.cost[ing_id]
+		SaveManager.data.pantry[ing_id] = SaveManager.data.pantry.get(ing_id, 0) - needed
+
+	# Award rep
+	var track: String = recipe.track
+	var old_level: int = SaveData.get_rep_level(track, SaveManager.data.reputation)
+	SaveManager.data.reputation[track] = SaveManager.data.reputation.get(track, 0) + recipe.rep
+	var new_level: int = SaveData.get_rep_level(track, SaveManager.data.reputation)
+
+	# Store bonus
+	if not recipe.bonus.is_empty():
+		SaveManager.data.active_bonuses[recipe.bonus] = true
+
+	# Check for tier 2 auto-unlocks
+	_check_tier2_unlocks()
+
+	SaveManager.save_game()
+
+	# Show feedback
+	var display_name: String = RECIPE_DISPLAY_NAMES.get(recipe_id, recipe_id)
+	cook_status_label.text = "Cooked %s! +%d %s rep" % [display_name, recipe.rep, track.replace("_", " ").capitalize()]
+
+	if new_level > old_level:
+		cook_status_label.text += " — %s Level Up! -> Level %d" % [track.replace("_", " ").capitalize(), new_level]
+
+	# Refresh UI
+	_update_pantry()
+	_update_rep_display()
+	_build_kitchen()
+	_update_stats()
 
 func _on_contract_board() -> void:
 	get_tree().change_scene_to_file("res://scenes/ContractBoard.tscn")
-
-func _on_cook() -> void:
-	cook_status_label.text = "Kitchen coming soon"
