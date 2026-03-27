@@ -1,6 +1,6 @@
 extends Control
 
-var contracts: Array[Dictionary] = []
+var contracts: Array = []
 var button_rects: Array[Rect2] = []
 var refresh_rect: Rect2 = Rect2()
 var back_rect: Rect2 = Rect2()

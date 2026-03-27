@@ -26,8 +26,8 @@ var kit_tiers: Dictionary = {}
 var kit_t3_choices: Dictionary = {}
 var kit_t2_paths: Dictionary = {}
 
-func generate_contracts(count: int = 3) -> Array[Dictionary]:
-	var contracts: Array[Dictionary] = []
+func generate_contracts(count: int = 3) -> Array:
+	var contracts: Array = []
 	# Shuffle contract types, always include 1 hunt + 2 random others
 	var available_types: Array[String] = CONTRACT_TYPES.duplicate()
 	available_types.shuffle()
