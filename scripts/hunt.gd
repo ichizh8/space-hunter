@@ -167,6 +167,13 @@ var leech_accumulator: float = 0.0
 var hud_message := ""
 var hud_message_timer := 0.0
 
+# === Environments ===
+var rivers: Array[Dictionary] = []
+var bridges: Array[Dictionary] = []
+var caves: Array[Dictionary] = []
+var void_pools: Array[Dictionary] = []
+var player_in_cave: int = -1
+
 # === Upgrade panel ===
 var upgrade_choices: Array[Dictionary] = []
 var upgrade_buttons: Array = [] # Node references
@@ -183,6 +190,12 @@ const CREATURE_DEFS: Dictionary = {
 	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 70, hp = 4, detection = 360, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.4, void_type = false, behavior = "strafe"},
 	# pack: faster when allies are nearby, swarming behavior
 	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 100, hp = 4, detection = 300, melee_dmg = 1, ranged = false, void_type = true, behavior = "pack"},
+	# lurker: dormant in caves until triggered
+	"Cave Lurker": {radius = 15, color = Color(0.25, 0.15, 0.35), speed = 140, hp = 8, detection = 999, melee_dmg = 3, ranged = false, void_type = false, behavior = "lurker"},
+	# patrol_river: patrols river banks, ranged
+	"Tide Wraith": {radius = 12, color = Color(0.1, 0.5, 0.8), speed = 120, hp = 5, detection = 340, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.6, void_type = false, behavior = "patrol_river"},
+	# pack: void swarm near void pools
+	"Void Spawn": {radius = 11, color = Color(0.6, 0.0, 0.9), speed = 95, hp = 4, detection = 280, melee_dmg = 1, ranged = false, void_type = true, behavior = "pack"},
 }
 
 const CREATURE_INGREDIENTS: Dictionary = {
@@ -191,6 +204,9 @@ const CREATURE_INGREDIENTS: Dictionary = {
 	"Abyss Worm": {id = "ingredient_abyss_flesh", name = "Abyss Flesh", symbol = "A", uses = 1, ingredient = true},
 	"Nether Stalker": {id = "ingredient_nether_bile", name = "Nether Bile", symbol = "N", uses = 1, ingredient = true},
 	"Rift Parasite": {id = "ingredient_rift_spore", name = "Rift Spore", symbol = "R", uses = 1, ingredient = true},
+	"Cave Lurker": {id = "ingredient_cave_crystal", name = "Cave Crystal", symbol = "C", uses = 1, ingredient = true},
+	"Tide Wraith": {id = "ingredient_tide_essence", name = "Tide Essence", symbol = "T", uses = 1, ingredient = true},
+	"Void Spawn": {id = "ingredient_void_core", name = "Void Core", symbol = "W", uses = 1, ingredient = true},
 }
 
 const INGREDIENT_COLORS: Dictionary = {
@@ -199,6 +215,9 @@ const INGREDIENT_COLORS: Dictionary = {
 	"ingredient_abyss_flesh": Color(0.3, 0.6, 0.1),
 	"ingredient_nether_bile": Color(0.2, 0.4, 0.9),
 	"ingredient_rift_spore": Color(0.9, 0.5, 0.1),
+	"ingredient_cave_crystal": Color(0.25, 0.15, 0.35),
+	"ingredient_tide_essence": Color(0.1, 0.5, 0.8),
+	"ingredient_void_core": Color(0.6, 0.0, 0.9),
 }
 
 const PRISTINE_NAMES: Dictionary = {
@@ -207,6 +226,13 @@ const PRISTINE_NAMES: Dictionary = {
 	"abyss_flesh": "Abyss Flesh (Raw)",
 	"nether_bile": "Nether Bile (Distilled)",
 	"rift_spore": "Rift Spore",
+}
+
+const BIOME_ENEMY_POOLS: Dictionary = {
+	"open":       ["Void Leech", "Nether Stalker", "Shadow Crawler"],
+	"river_bank": ["Abyss Worm", "Tide Wraith", "Nether Stalker"],
+	"cave":       ["Cave Lurker", "Shadow Crawler"],
+	"void_pool":  ["Rift Parasite", "Void Spawn", "Void Leech"],
 }
 
 
@@ -243,6 +269,12 @@ func _ready() -> void:
 	wave_timer = WAVE_INTERVAL_START
 
 	_spawn_obstacles()
+	_generate_rivers()
+	_generate_bridges()
+	_add_river_obstacles()
+	_generate_caves()
+	_generate_void_pools()
+	_spawn_biome_enemies()
 	_spawn_wave(depth)
 
 	set_process_input(true)
@@ -263,6 +295,171 @@ func _spawn_obstacles() -> void:
 			if abs(pos.x - 2400.0) > 300.0 or abs(pos.y - 2400.0) > 300.0:
 				break
 		obstacles.append({pos = pos, radius = r})
+
+func _generate_rivers() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var river_width := 90.0
+	var center := Vector2(2400.0, 2400.0)
+
+	# River 1: left to right
+	var r1_start := Vector2(0.0, rng.randf_range(1000.0, 3800.0))
+	var r1_end := Vector2(4800.0, rng.randf_range(1000.0, 3800.0))
+	var r1_waypoints: Array[Vector2] = [r1_start]
+	var r1_count: int = rng.randi_range(4, 6)
+	for wi in range(r1_count):
+		var t: float = float(wi + 1) / float(r1_count + 1)
+		var base: Vector2 = r1_start.lerp(r1_end, t)
+		var perp := Vector2(0.0, rng.randf_range(-400.0, 400.0))
+		var wp: Vector2 = base + perp
+		# Push away from center spawn area
+		if wp.distance_to(center) < 500.0:
+			wp = center + (wp - center).normalized() * 520.0
+		wp.x = clampf(wp.x, 0.0, 4800.0)
+		wp.y = clampf(wp.y, 0.0, 4800.0)
+		r1_waypoints.append(wp)
+	r1_waypoints.append(r1_end)
+
+	# River 2: top to bottom
+	var r2_start := Vector2(rng.randf_range(1000.0, 3800.0), 0.0)
+	var r2_end := Vector2(rng.randf_range(1000.0, 3800.0), 4800.0)
+	var r2_waypoints: Array[Vector2] = [r2_start]
+	var r2_count: int = rng.randi_range(4, 6)
+	for wi in range(r2_count):
+		var t: float = float(wi + 1) / float(r2_count + 1)
+		var base: Vector2 = r2_start.lerp(r2_end, t)
+		var perp := Vector2(rng.randf_range(-400.0, 400.0), 0.0)
+		var wp: Vector2 = base + perp
+		if wp.distance_to(center) < 500.0:
+			wp = center + (wp - center).normalized() * 520.0
+		wp.x = clampf(wp.x, 0.0, 4800.0)
+		wp.y = clampf(wp.y, 0.0, 4800.0)
+		r2_waypoints.append(wp)
+	r2_waypoints.append(r2_end)
+
+	# Build segment circles for each river
+	for waypoints in [r1_waypoints, r2_waypoints]:
+		var segs: Array[Dictionary] = []
+		for si in range(waypoints.size() - 1):
+			var a: Vector2 = waypoints[si]
+			var b: Vector2 = waypoints[si + 1]
+			var seg_len: float = a.distance_to(b)
+			var steps: int = maxi(1, int(seg_len / 60.0))
+			for step in range(steps + 1):
+				var tf: float = float(step) / float(steps)
+				segs.append({pos = a.lerp(b, tf), radius = 45.0})
+		rivers.append({points = waypoints, width = river_width, segments = segs})
+
+func _generate_bridges() -> void:
+	for ri in range(rivers.size()):
+		var river: Dictionary = rivers[ri]
+		var pts: Array = river.points
+		var mid_idx: int = pts.size() / 2
+		var bridge_pos: Vector2 = (Vector2(pts[mid_idx - 1].x, pts[mid_idx - 1].y) + Vector2(pts[mid_idx].x, pts[mid_idx].y)) * 0.5
+		var bridge_dir: Vector2 = (Vector2(pts[mid_idx].x, pts[mid_idx].y) - Vector2(pts[mid_idx - 1].x, pts[mid_idx - 1].y)).normalized()
+		bridges.append({pos = bridge_pos, dir = bridge_dir, width = 90.0, length = 180.0})
+
+func _add_river_obstacles() -> void:
+	for ri in range(rivers.size()):
+		var river: Dictionary = rivers[ri]
+		var bridge_pos: Vector2 = bridges[ri].pos
+		for seg in river.segments:
+			var sp: Vector2 = Vector2(seg.pos.x, seg.pos.y)
+			if sp.distance_to(bridge_pos) < 120.0:
+				continue
+			obstacles.append({pos = sp, radius = seg.radius})
+
+func _generate_caves() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var center := Vector2(2400.0, 2400.0)
+	for ci in range(3):
+		var pos := Vector2.ZERO
+		var valid := false
+		for _try in range(50):
+			pos = Vector2(rng.randf_range(200.0, 4600.0), rng.randf_range(200.0, 4600.0))
+			if pos.distance_to(center) < 600.0:
+				continue
+			var too_close := false
+			for c in caves:
+				if pos.distance_to(Vector2(c.pos.x, c.pos.y)) < 400.0:
+					too_close = true
+					break
+			if too_close:
+				continue
+			# Check distance from rivers
+			var near_river := false
+			for river in rivers:
+				for seg in river.segments:
+					if pos.distance_to(Vector2(seg.pos.x, seg.pos.y)) < 200.0:
+						near_river = true
+						break
+				if near_river:
+					break
+			if near_river:
+				continue
+			valid = true
+			break
+		if not valid:
+			pos = center + Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)).normalized() * 800.0
+		caves.append({pos = pos, radius = rng.randf_range(160.0, 240.0), id = ci})
+
+func _generate_void_pools() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var center := Vector2(2400.0, 2400.0)
+	var pool_count: int = rng.randi_range(5, 7)
+	for _pi in range(pool_count):
+		var pos := Vector2.ZERO
+		for _try in range(40):
+			pos = Vector2(rng.randf_range(100.0, 4700.0), rng.randf_range(100.0, 4700.0))
+			if pos.distance_to(center) < 300.0:
+				continue
+			var too_close := false
+			for c in caves:
+				if pos.distance_to(Vector2(c.pos.x, c.pos.y)) < 200.0:
+					too_close = true
+					break
+			if not too_close:
+				break
+		void_pools.append({pos = pos, radius = rng.randf_range(60.0, 110.0), pulse_phase = rng.randf() * TAU})
+
+func _spawn_biome_enemies() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	# Pre-place Cave Lurkers in each cave
+	for cave in caves:
+		var count: int = rng.randi_range(3, 4)
+		for _ci in range(count):
+			var offset := Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)).normalized() * rng.randf_range(20.0, cave.radius * 0.7)
+			_spawn_single_enemy("Cave Lurker", false, rng)
+			enemies[-1].pos = Vector2(cave.pos.x, cave.pos.y) + offset
+			enemies[-1].aggro_origin = enemies[-1].pos
+			enemies[-1].patrol_target = enemies[-1].pos
+			enemies[-1].cave_id = cave.id
+			enemies[-1].dormant = true
+			enemies[-1].is_aggroed = false
+	# Pre-place Void Spawns near each void pool
+	for pool in void_pools:
+		var count: int = rng.randi_range(3, 5)
+		for _vi in range(count):
+			var offset := Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)).normalized() * rng.randf_range(20.0, pool.radius + 40.0)
+			_spawn_single_enemy("Void Spawn", false, rng)
+			enemies[-1].pos = Vector2(pool.pos.x, pool.pos.y) + offset
+			enemies[-1].aggro_origin = enemies[-1].pos
+			enemies[-1].patrol_target = enemies[-1].pos
+	# Pre-place Tide Wraiths along rivers
+	var wraith_count: int = rng.randi_range(4, 6)
+	for _wi in range(wraith_count):
+		var river: Dictionary = rivers[rng.randi_range(0, rivers.size() - 1)]
+		var seg: Dictionary = river.segments[rng.randi_range(0, river.segments.size() - 1)]
+		var offset := Vector2(rng.randf_range(-80.0, 80.0), rng.randf_range(-80.0, 80.0))
+		_spawn_single_enemy("Tide Wraith", false, rng)
+		enemies[-1].pos = Vector2(seg.pos.x, seg.pos.y) + offset
+		enemies[-1].pos.x = clampf(enemies[-1].pos.x, 60.0, WORLD_W - 60.0)
+		enemies[-1].pos.y = clampf(enemies[-1].pos.y, 60.0, WORLD_H - 60.0)
+		enemies[-1].aggro_origin = enemies[-1].pos
+		enemies[-1].patrol_target = enemies[-1].pos
 
 func _update_waves(delta: float) -> void:
 	if exit_spawned or hunt_complete:
@@ -308,11 +505,15 @@ func _spawn_wave(depth: int) -> void:
 	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
+		# Determine spawn position first, then pick biome-appropriate type
+		var spawn_pos := Vector2(rng.randf_range(60.0, WORLD_W - 60.0), rng.randf_range(60.0, WORLD_H - 60.0))
+		var biome: String = _get_biome_at(spawn_pos)
+		var pool: Array = BIOME_ENEMY_POOLS.get(biome, BIOME_ENEMY_POOLS["open"])
 		var ft: String
-		if not contract_type.is_empty() and CREATURE_DEFS.has(contract_type) and rng.randf() < 0.6:
+		if not contract_type.is_empty() and CREATURE_DEFS.has(contract_type) and pool.has(contract_type) and rng.randf() < 0.6:
 			ft = contract_type
 		else:
-			ft = types_list[rng.randi_range(0, types_list.size() - 1)]
+			ft = pool[rng.randi_range(0, pool.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
 	# Each wave is 8% faster than previous, capped at wave 8
@@ -434,6 +635,11 @@ func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGe
 		# strafe state
 		strafe_dir = 1.0 if rng.randi() % 2 == 0 else -1.0,
 		strafe_timer = randf_range(0.8, 1.8),
+		# environment fields
+		cave_id = -1,
+		dormant = type_name == "Cave Lurker",
+		# patrol_river state
+		patrol_river_timer = randf_range(3.0, 4.0),
 	}
 	enemies.append(enemy)
 
@@ -498,6 +704,8 @@ func _process(delta: float) -> void:
 
 	_move_player(delta)
 	_update_camera()
+	_update_cave_state()
+	_update_void_pool_corruption(delta)
 	_update_weapons(delta)
 	_update_enemies(delta)
 	_update_bullets(delta)
@@ -508,6 +716,19 @@ func _process(delta: float) -> void:
 	_update_waves(delta)
 
 	queue_redraw()
+
+func _update_cave_state() -> void:
+	player_in_cave = -1
+	for cave in caves:
+		if player_pos.distance_to(Vector2(cave.pos.x, cave.pos.y)) < cave.radius:
+			player_in_cave = cave.id
+			break
+
+func _update_void_pool_corruption(delta: float) -> void:
+	for pool in void_pools:
+		if player_pos.distance_to(Vector2(pool.pos.x, pool.pos.y)) < pool.radius:
+			var resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
+			corruption += 4.0 * delta * (1.0 - resist)
 
 func _move_player(delta: float) -> void:
 	var move_dir := Vector2.ZERO
@@ -772,8 +993,8 @@ func _update_enemies(delta: float) -> void:
 
 		var dist_to_player: float = e.pos.distance_to(player_pos)
 
-		# Aggro check
-		if not e.is_aggroed:
+		# Aggro check (lurkers handle their own aggro)
+		if not e.is_aggroed and e.behavior != "lurker":
 			if dist_to_player < e.detection:
 				e.is_aggroed = true
 				e.aggro_origin = e.pos
@@ -865,6 +1086,67 @@ func _update_enemies(delta: float) -> void:
 						new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 						e.pos = new_pos
 					move_dir = Vector2.ZERO  # handled above
+
+				"lurker":
+					# Cave Lurker: dormant until player is close or in same cave
+					if e.get("dormant", false):
+						if dist_to_player < 200.0 or (e.get("cave_id", -1) >= 0 and player_in_cave == e.cave_id):
+							e.dormant = false
+							e.is_aggroed = true
+							e.aggro_origin = e.pos
+						else:
+							move_dir = Vector2.ZERO
+					if not e.get("dormant", false) and e.is_aggroed:
+						# Charge behavior once triggered
+						if dist_to_player > e.radius + PLAYER_RADIUS:
+							move_dir = (player_pos - e.pos).normalized()
+
+				"patrol_river":
+					# Tide Wraith: patrol along river, shoot at player
+					e.ranged_cooldown_timer -= delta
+					if e.ranged_cooldown_timer <= 0.0 and dist_to_player < e.detection:
+						e.ranged_cooldown_timer = e.ranged_cooldown_base
+						var shoot_dir: Vector2 = (player_pos - e.pos).normalized()
+						bullets.append({
+							pos = e.pos + shoot_dir * (e.radius + 5.0),
+							vel = shoot_dir * 260.0,
+							radius = 5.0,
+							color = Color(0.1, 0.6, 1.0),
+							damage = e.ranged_dmg,
+							lifetime = 1.4,
+							from_player = false,
+						})
+					# Patrol movement
+					e.patrol_river_timer = e.get("patrol_river_timer", 3.0) - delta
+					if e.patrol_river_timer <= 0.0:
+						e.patrol_river_timer = randf_range(3.0, 4.0)
+						# Pick new patrol point along nearest river direction
+						var best_seg_pos: Vector2 = Vector2(e.pos.x, e.pos.y)
+						var best_seg_dist: float = 999999.0
+						for river in rivers:
+							for seg in river.segments:
+								var sd: float = e.pos.distance_to(Vector2(seg.pos.x, seg.pos.y))
+								if sd < best_seg_dist:
+									best_seg_dist = sd
+									best_seg_pos = Vector2(seg.pos.x, seg.pos.y)
+						var offset := Vector2(randf_range(-300.0, 300.0), randf_range(-300.0, 300.0))
+						e.patrol_target = best_seg_pos + offset
+						e.patrol_target.x = clampf(e.patrol_target.x, e.radius, WORLD_W - e.radius)
+						e.patrol_target.y = clampf(e.patrol_target.y, e.radius, WORLD_H - e.radius)
+					# Retreat to river when low HP
+					if float(e.hp) / float(e.max_hp) < 0.3:
+						var best_seg_pos2: Vector2 = Vector2(e.pos.x, e.pos.y)
+						var best_seg_dist2: float = 999999.0
+						for river in rivers:
+							for seg in river.segments:
+								var sd2: float = e.pos.distance_to(Vector2(seg.pos.x, seg.pos.y))
+								if sd2 < best_seg_dist2:
+									best_seg_dist2 = sd2
+									best_seg_pos2 = Vector2(seg.pos.x, seg.pos.y)
+						if best_seg_dist2 > 10.0:
+							move_dir = (best_seg_pos2 - e.pos).normalized()
+					elif e.pos.distance_to(e.patrol_target) > 10.0:
+						move_dir = (e.patrol_target - e.pos).normalized()
 
 				"elite":
 					var etype: String = e.get("elite_type", "Void Hulk")
@@ -1773,6 +2055,19 @@ func _get_effective_player_stats() -> Dictionary:
 # =========================================================
 # CORRUPTION
 # =========================================================
+func _get_biome_at(pos: Vector2) -> String:
+	for cave in caves:
+		if pos.distance_to(Vector2(cave.pos.x, cave.pos.y)) < cave.radius:
+			return "cave"
+	for pool in void_pools:
+		if pos.distance_to(Vector2(pool.pos.x, pool.pos.y)) < pool.radius:
+			return "void_pool"
+	for river in rivers:
+		for seg in river.segments:
+			if pos.distance_to(Vector2(seg.pos.x, seg.pos.y)) < 200.0:
+				return "river_bank"
+	return "open"
+
 func _apply_corruption_effects():
 	# Threshold messages (first time only)
 	if corruption >= 36.0 and not corruption_threshold_35:
@@ -1802,6 +2097,37 @@ func _draw() -> void:
 	for gy in range(0, WORLD_H + 1, GRID_STEP):
 		var sy: float = float(gy) - camera_offset.y
 		draw_line(Vector2(-camera_offset.x, sy), Vector2(WORLD_W - camera_offset.x, sy), grid_color, 1.0)
+
+	# Rivers (floor level, before obstacles)
+	for ri in range(rivers.size()):
+		var river: Dictionary = rivers[ri]
+		var bridge_pos: Vector2 = bridges[ri].pos
+		for seg in river.segments:
+			var seg_pos: Vector2 = Vector2(seg.pos.x, seg.pos.y)
+			if seg_pos.distance_to(bridge_pos) < 120.0:
+				continue
+			var seg_sp: Vector2 = _w2s(seg_pos)
+			draw_circle(seg_sp, seg.radius, Color(0.05, 0.15, 0.35, 0.85))
+
+	# Bridges
+	for bridge in bridges:
+		var b_sp: Vector2 = _w2s(Vector2(bridge.pos.x, bridge.pos.y))
+		var b_dir: Vector2 = Vector2(bridge.dir.x, bridge.dir.y)
+		var b_perp: Vector2 = Vector2(-b_dir.y, b_dir.x)
+		var half_l: float = bridge.length * 0.5
+		var half_w: float = bridge.width * 0.5
+		var c0: Vector2 = b_sp + b_dir * half_l + b_perp * half_w
+		var c1: Vector2 = b_sp + b_dir * half_l - b_perp * half_w
+		var c2: Vector2 = b_sp - b_dir * half_l - b_perp * half_w
+		var c3: Vector2 = b_sp - b_dir * half_l + b_perp * half_w
+		draw_colored_polygon(PackedVector2Array([c0, c1, c2, c3]), Color(0.35, 0.28, 0.18))
+
+	# Void Pools (floor level, before obstacles)
+	for pool in void_pools:
+		var pool_sp: Vector2 = _w2s(Vector2(pool.pos.x, pool.pos.y))
+		var vp_pulse: float = 0.4 + 0.3 * sin(pool.pulse_phase + hunt_elapsed * 2.5)
+		draw_circle(pool_sp, pool.radius, Color(0.25, 0.0, 0.45, vp_pulse * 0.7))
+		draw_arc(pool_sp, pool.radius, 0.0, TAU, 32, Color(0.5, 0.0, 0.8, vp_pulse), 2.0)
 
 	# Obstacles
 	for obs in obstacles:
@@ -1856,9 +2182,17 @@ func _draw() -> void:
 	for e in enemies:
 		if e.hp <= 0:
 			continue
+		# Cave visibility: skip enemies hidden inside caves player is not in
+		var enemy_cave: int = e.get("cave_id", -1)
+		if enemy_cave >= 0 and player_in_cave != enemy_cave:
+			continue
 		var sp: Vector2 = _w2s(e.pos)
 		var is_elite: bool = e.get("is_elite", false)
-		draw_circle(sp, e.radius, e.color)
+		var draw_color: Color = e.color
+		# Dormant lurkers draw at 50% alpha
+		if e.get("dormant", false):
+			draw_color = Color(draw_color.r, draw_color.g, draw_color.b, 0.5)
+		draw_circle(sp, e.radius, draw_color)
 		if is_elite:
 			# Pulsing gold double ring for elites
 			var pulse: float = 0.6 + sin(hunt_elapsed * 4.0) * 0.3
@@ -1878,6 +2212,21 @@ func _draw() -> void:
 		else:
 			var short_name: String = e.type.split(" ")[0]
 			_draw_text(Vector2(sp.x - e.radius, sp.y - e.radius - 18.0), short_name, Color(1.0, 1.0, 1.0, 0.75), 10)
+
+	# Cave ceilings (drawn over enemies/world)
+	for cave in caves:
+		var cave_sp: Vector2 = _w2s(Vector2(cave.pos.x, cave.pos.y))
+		if player_in_cave == cave.id:
+			# Player inside: translucent border ring + slight atmosphere tint
+			draw_arc(cave_sp, cave.radius, 0.0, TAU, 64, Color(0.5, 0.3, 0.7, 0.5), 3.0)
+		else:
+			# Player outside: dark ceiling hides interior
+			draw_circle(cave_sp, cave.radius, Color(0.04, 0.03, 0.06, 0.97))
+			draw_arc(cave_sp, cave.radius, 0.0, TAU, 64, Color(0.3, 0.2, 0.4, 0.6), 2.0)
+
+	# Cave atmosphere tint when inside a cave
+	if player_in_cave >= 0:
+		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0.1, 0.05, 0.15, 0.18))
 
 	# Bullets
 	for b in bullets:
