@@ -7,7 +7,7 @@ const GRID_STEP := 300
 
 # === Weapon definitions ===
 const WEAPON_DEFS: Dictionary = {
-	"sidearm": {name="Sidearm", desc="Reliable auto-pistol.", fire_rate=0.35, damage=3, bullet_speed=400.0, bullet_radius=5.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
+	"sidearm": {name="Pistol", desc="Reliable semi-auto. Good range.", fire_rate=0.35, damage=3, bullet_speed=400.0, bullet_radius=5.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
 	"scatter": {name="Scatter Pistol", desc="3-pellet cone. Shreds packs.", fire_rate=0.7, damage=2, bullet_speed=380.0, bullet_radius=4.0, color=Color(1.0,0.5,0.1), range=220.0, pattern="scatter"},
 	"lance": {name="Void Lance", desc="Slow piercing shot. Hits all in line.", fire_rate=1.2, damage=6, bullet_speed=280.0, bullet_radius=7.0, color=Color(0.5,0.1,1.0), range=500.0, pattern="piercing"},
 	"baton": {name="Shock Baton", desc="Melee AOE pulse. Damages all within 100px.", fire_rate=0.8, damage=4, bullet_speed=0.0, bullet_radius=100.0, color=Color(0.1,0.8,1.0), range=100.0, pattern="melee_aoe"},
@@ -150,6 +150,11 @@ var corruption: float = 0.0
 var corruption_max: float = 100.0  # visual cap for bar, not hard cap
 var corruption_threshold_35 := false
 var corruption_threshold_60 := false
+var corruption_prev_threshold: int = 0  # 0=CLEAN, 1=VALLEY, 2=CORRUPT, 3=VOID
+
+# === Stim system ===
+var stims_remaining: int = 3
+var stim_cooldown: float = 0.0
 
 # === Game state ===
 var paused := false
@@ -254,6 +259,8 @@ func _ready() -> void:
 	var mag_bonus: int = SaveManager.data.ship_upgrades.get("mag_size", 0) * 3
 	var xp_bonus: float = SaveManager.data.ship_upgrades.get("xp_rate", 0) * 0.1
 	essence_collect_radius = 60.0 + (60.0 * xp_bonus)
+
+	stims_remaining = GameData.current_contract.get("stims", 3)
 
 	# Starting weapon from loadout
 	var start_wep: String = GameData.starting_weapon
@@ -492,6 +499,12 @@ func _update_waves(delta: float) -> void:
 		_spawn_elite(depth)
 
 func _spawn_wave(depth: int) -> void:
+	var living_count: int = 0
+	for e in enemies:
+		if e.hp > 0:
+			living_count += 1
+	if living_count > 80:
+		return  # dont spawn more until map clears out
 	wave_current += 1
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
@@ -660,6 +673,16 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var te: InputEventScreenTouch = event
 		if te.pressed:
+			# Stim button tap check
+			var stim_btn_pos := Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
+			var stim_rect := Rect2(stim_btn_pos, Vector2(80.0, 36.0))
+			if stim_rect.has_point(te.position) and stims_remaining > 0 and stim_cooldown <= 0.0:
+				stims_remaining -= 1
+				stim_cooldown = 8.0
+				player_hp = min(player_hp + 4, player_max_hp)
+				corruption += 15.0
+				_show_message("Stim used! +4 HP / +15 corruption")
+				return
 			# First finger down anywhere starts the joystick at that point
 			if not joy_active:
 				joy_active = true
@@ -701,6 +724,8 @@ func _process(delta: float) -> void:
 		speed_boost_timer -= delta
 	if player_hit_flash > 0.0:
 		player_hit_flash -= delta
+	if stim_cooldown > 0.0:
+		stim_cooldown -= delta
 
 	_move_player(delta)
 	_update_camera()
@@ -993,6 +1018,11 @@ func _update_enemies(delta: float) -> void:
 
 		var dist_to_player: float = e.pos.distance_to(player_pos)
 
+		# Skip far non-aggroed enemies to reduce patrol CPU
+		if not e.is_aggroed and dist_to_player > 1200.0:
+			enemies[i] = e
+			continue
+
 		# Aggro check (lurkers handle their own aggro)
 		if not e.is_aggroed and e.behavior != "lurker":
 			if dist_to_player < e.detection:
@@ -1257,6 +1287,15 @@ func _update_enemies(delta: float) -> void:
 			keys_to_remove.append(key)
 	for key in keys_to_remove:
 		enemy_melee_cooldowns.erase(key)
+
+	# Purge dead enemies every 5 seconds (not every frame — avoid index thrash)
+	if int(hunt_elapsed) % 5 == 0 and fmod(hunt_elapsed, 5.0) < delta * 2.0:
+		var living: Array[Dictionary] = []
+		for e in enemies:
+			if e.hp > 0:
+				living.append(e)
+		enemies = living
+		enemy_melee_cooldowns.clear()
 
 	# Void creature proximity corruption aura
 	var corr_resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
@@ -2294,6 +2333,62 @@ func _draw() -> void:
 		corr_color = Color(1.0, 0.1, 0.2)
 	if corr_frac > 0.0:
 		draw_rect(Rect2(corr_x, 16.0, 80.0 * corr_frac, 10.0), corr_color)
+
+	# Corruption state label + subtext
+	var corr_state_label: String
+	var corr_state_color: Color
+	var corr_subtext: String
+	var corr_threshold: int
+	if corruption < 15.0:
+		corr_state_label = "[CLEAN]"
+		corr_state_color = Color(0.3, 0.9, 0.3)
+		corr_subtext = "range+  speed+"
+		corr_threshold = 0
+	elif corruption <= 35.0:
+		corr_state_label = "[VALLEY]"
+		corr_state_color = Color(0.9, 0.8, 0.2)
+		corr_subtext = "debuffs ramp"
+		corr_threshold = 1
+	elif corruption <= 60.0:
+		corr_state_label = "[CORRUPT]"
+		corr_state_color = Color(0.9, 0.3, 0.2)
+		corr_subtext = "melee+  armor+"
+		corr_threshold = 2
+	else:
+		corr_state_label = "[VOID]"
+		corr_state_color = Color(1.0, 0.1, 0.1)
+		corr_subtext = "mutating..."
+		corr_threshold = 3
+	_draw_text(Vector2(corr_x, 28.0), corr_state_label, corr_state_color, 10)
+	_draw_text(Vector2(corr_x, 40.0), corr_subtext, Color(0.6, 0.6, 0.6), 9)
+
+	# Corruption threshold transition message
+	if corr_threshold != corruption_prev_threshold:
+		var transition_msg: String = ""
+		match corr_threshold:
+			0: transition_msg = "CLEAN — Ranged boosted"
+			1: transition_msg = "THE VALLEY — Choose your path"
+			2: transition_msg = "CORRUPTED — Melee awakens"
+			3: transition_msg = "VOID STATE — Mutations active"
+		corruption_prev_threshold = corr_threshold
+		if transition_msg != "":
+			_show_message(transition_msg)
+			hud_message_timer = 3.0
+
+	# Stim button (bottom right)
+	var stim_btn_pos := Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
+	var stim_btn_color: Color
+	if stim_cooldown > 0.0 or stims_remaining <= 0:
+		stim_btn_color = Color(0.3, 0.3, 0.3, 0.7)
+	else:
+		stim_btn_color = Color(0.15, 0.5, 0.15, 0.85)
+	draw_rect(Rect2(stim_btn_pos, Vector2(80.0, 36.0)), stim_btn_color)
+	_draw_text(stim_btn_pos + Vector2(8.0, 6.0), "STIM (%d)" % stims_remaining, Color.WHITE, 13)
+	# Cooldown bar under stim button
+	if stim_cooldown > 0.0:
+		var cd_frac: float = clampf(stim_cooldown / 8.0, 0.0, 1.0)
+		draw_rect(Rect2(stim_btn_pos.x, stim_btn_pos.y + 36.0, 80.0, 4.0), Color(0.2, 0.2, 0.2, 0.6))
+		draw_rect(Rect2(stim_btn_pos.x, stim_btn_pos.y + 36.0, 80.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
 
 	# XP bar (full width, bottom of screen)
 	var xp_bar_y: float = vp_size.y - 20.0
