@@ -157,6 +157,12 @@ var dead := false
 var dead_timer := 0.0
 var hunt_complete := false
 
+# === Perk runtime state ===
+var player_hit_flash: float = 0.0
+var kill_streak_count: int = 0
+var speed_boost_timer: float = 0.0
+var leech_accumulator: float = 0.0
+
 # === HUD message ===
 var hud_message := ""
 var hud_message_timer := 0.0
@@ -232,7 +238,7 @@ func _ready() -> void:
 	active_weapons = [{id=start_wep, level=1, cooldown_timer=0.0, mag_ammo=base_mag + mag_bonus, mag_size=base_mag + mag_bonus, reload_timer=0.0}]
 
 	# Elite interval: first elite at 3-5 min (shorter at higher depth)
-	elite_interval = randf_range(180.0 - depth * 30.0, 300.0 - depth * 30.0)
+	elite_interval = randf_range(90.0 - depth * 15.0, 150.0 - depth * 15.0)
 	elite_timer = elite_interval
 	wave_timer = WAVE_INTERVAL_START
 
@@ -302,7 +308,11 @@ func _spawn_wave(depth: int) -> void:
 	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
-		var ft: String = types_list[rng.randi_range(0, types_list.size() - 1)]
+		var ft: String
+		if not contract_type.is_empty() and CREATURE_DEFS.has(contract_type) and rng.randf() < 0.6:
+			ft = contract_type
+		else:
+			ft = types_list[rng.randi_range(0, types_list.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
 	# Each wave is 8% faster than previous, capped at wave 8
@@ -481,6 +491,11 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
+	if speed_boost_timer > 0.0:
+		speed_boost_timer -= delta
+	if player_hit_flash > 0.0:
+		player_hit_flash -= delta
+
 	_move_player(delta)
 	_update_camera()
 	_update_weapons(delta)
@@ -510,7 +525,11 @@ func _move_player(delta: float) -> void:
 	if move_dir == Vector2.ZERO:
 		return
 
-	var velocity: Vector2 = move_dir * player_speed * delta
+	var stats: Dictionary = _get_effective_player_stats()
+	var effective_speed: float = player_speed * stats.move_speed_mult
+	if speed_boost_timer > 0.0 and weapon_mods.get("_player", {}).get("kill_streak_speed", false):
+		effective_speed *= 1.5
+	var velocity: Vector2 = move_dir * effective_speed * delta
 	var new_pos: Vector2 = player_pos + velocity
 
 	# Obstacle collision
@@ -553,15 +572,18 @@ func _update_weapons(delta: float) -> void:
 			nearest_pos = e.pos
 			nearest_found = true
 
+	var corr_stats: Dictionary = _get_effective_player_stats()
+
 	for wi in range(active_weapons.size()):
 		var w: Dictionary = active_weapons[wi]
 		var def: Dictionary = WEAPON_DEFS[w.id]
 		var mods_w: Dictionary = weapon_mods.get(w.id, {})
 		var damage: int = def.damage + (w.level - 1) + mods_w.get("damage_bonus", 0)
 		var w_piercing: bool = mods_w.get("piercing", def.pattern == "piercing")
-		var w_fire_rate: float = maxf(0.1, def.fire_rate + mods_w.get("fire_rate_add", 0.0))
+		var w_fire_rate: float = maxf(0.1, (def.fire_rate + mods_w.get("fire_rate_add", 0.0)) * corr_stats.fire_rate_mult)
 		var w_bullet_speed: float = def.bullet_speed + mods_w.get("bullet_speed_bonus", 0.0)
 		var w_extra_pellets: int = mods_w.get("extra_pellets", 0)
+		var w_range: float = def.range * corr_stats.range_mult
 
 		# Handle reload
 		if w.reload_timer > 0.0:
@@ -579,7 +601,8 @@ func _update_weapons(delta: float) -> void:
 
 		# Out of ammo — start reload
 		if w.mag_ammo <= 0 and w.reload_timer <= 0.0:
-			w.reload_timer = 1.5
+			var reload_mult: float = mods_w.get("reload_mult", 1.0) * corr_stats.reload_mult
+			w.reload_timer = 1.5 * reload_mult
 			if wi == 0:
 				_show_message("Reloading...")
 			active_weapons[wi] = w
@@ -587,7 +610,7 @@ func _update_weapons(delta: float) -> void:
 
 		# Fire if ready
 		if w.cooldown_timer <= 0.0 and w.mag_ammo > 0:
-			if not nearest_found or nearest_dist > def.range:
+			if not nearest_found or nearest_dist > w_range:
 				active_weapons[wi] = w
 				continue
 
@@ -597,17 +620,21 @@ func _update_weapons(delta: float) -> void:
 			match def.pattern:
 				"single":
 					w.mag_ammo -= 1
-					bullets.append({
+					var single_b: Dictionary = {
 						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
 						vel = dir * w_bullet_speed,
 						radius = def.bullet_radius,
 						color = def.color,
 						damage = damage,
-						lifetime = def.range / maxf(1.0, w_bullet_speed),
+						lifetime = w_range / maxf(1.0, w_bullet_speed),
 						from_player = true,
 						piercing = w_piercing,
 						hit_ids = [] if w_piercing else [],
-					})
+						weapon_id = w.id,
+					}
+					if mods_w.get("explode_on_hit", false):
+						single_b["explode"] = true
+					bullets.append(single_b)
 				"scatter":
 					w.mag_ammo -= 1
 					var base_angle: float = dir.angle()
@@ -617,53 +644,110 @@ func _update_weapons(delta: float) -> void:
 					for offset_deg in pellet_angles:
 						var angle: float = base_angle + deg_to_rad(float(offset_deg))
 						var scatter_dir := Vector2(cos(angle), sin(angle))
-						bullets.append({
+						var scatter_b: Dictionary = {
 							pos = player_pos + scatter_dir * (PLAYER_RADIUS + 6.0),
 							vel = scatter_dir * w_bullet_speed,
 							radius = def.bullet_radius,
 							color = def.color,
 							damage = damage,
-							lifetime = def.range / maxf(1.0, w_bullet_speed),
+							lifetime = w_range / maxf(1.0, w_bullet_speed),
 							from_player = true,
-						})
+							weapon_id = w.id,
+						}
+						if mods_w.get("slow_on_hit", false):
+							scatter_b["slow_on_hit"] = true
+						if mods_w.get("explode_on_hit", false):
+							scatter_b["explode"] = true
+						bullets.append(scatter_b)
 				"piercing":
 					w.mag_ammo -= 1
-					bullets.append({
+					var pierce_b: Dictionary = {
 						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
 						vel = dir * w_bullet_speed,
 						radius = def.bullet_radius,
 						color = def.color,
 						damage = damage,
-						lifetime = def.range / maxf(1.0, w_bullet_speed),
+						lifetime = w_range / maxf(1.0, w_bullet_speed),
 						from_player = true,
 						piercing = true,
 						hit_ids = [],
-					})
+						weapon_id = w.id,
+					}
+					if mods_w.get("explode_on_hit", false):
+						pierce_b["explode"] = true
+					bullets.append(pierce_b)
 				"homing":
 					w.mag_ammo -= 1
-					bullets.append({
-						pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-						vel = dir * def.bullet_speed,
-						radius = def.bullet_radius,
-						color = def.color,
-						damage = damage,
-						lifetime = def.range / def.bullet_speed,
-						from_player = true,
-						homing = true,
-						bullet_speed = def.bullet_speed,
-					})
+					var dart_count: int = 2 if mods_w.get("dual_dart", false) else 1
+					for _di in range(dart_count):
+						var dart_offset := Vector2.ZERO
+						if dart_count > 1 and _di == 1:
+							dart_offset = Vector2(-dir.y, dir.x) * 10.0
+						var dart_b: Dictionary = {
+							pos = player_pos + dir * (PLAYER_RADIUS + 6.0) + dart_offset,
+							vel = dir * def.bullet_speed,
+							radius = def.bullet_radius,
+							color = def.color,
+							damage = damage,
+							lifetime = w_range / def.bullet_speed,
+							from_player = true,
+							homing = true,
+							bullet_speed = def.bullet_speed,
+							weapon_id = w.id,
+						}
+						if mods_w.get("explode_on_hit", false):
+							dart_b["explode"] = true
+						bullets.append(dart_b)
 				"melee_aoe":
 					# No bullet — instant AOE damage
+					var melee_range: float = def.range + mods_w.get("radius_bonus", 0.0)
+					var melee_hits: int = 0
+					var melee_hit_indices: Array[int] = []
 					for ei in range(enemies.size()):
 						var e: Dictionary = enemies[ei]
 						if e.hp <= 0:
 							continue
-						if player_pos.distance_to(e.pos) < def.range:
+						if player_pos.distance_to(e.pos) < melee_range:
 							e.hp -= damage
+							melee_hits += 1
+							melee_hit_indices.append(ei)
+							# Knockback (#5)
+							if mods_w.get("knockback", false):
+								var push_dir: Vector2 = (e.pos - player_pos).normalized()
+								e.pos += push_dir * 80.0
 							enemies[ei] = e
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
-					aoe_flashes.append({pos=player_pos, radius=100.0, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
+					# Chain lightning (#7)
+					if mods_w.get("chain", false):
+						for hi in melee_hit_indices:
+							var hit_e: Dictionary = enemies[hi]
+							if hit_e.hp <= 0:
+								continue
+							var chain_targets: Array[int] = []
+							for ci in range(enemies.size()):
+								if ci == hi or enemies[ci].hp <= 0:
+									continue
+								if melee_hit_indices.has(ci):
+									continue
+								if hit_e.pos.distance_to(enemies[ci].pos) < 150.0:
+									chain_targets.append(ci)
+							# Sort by distance, take up to 2
+							chain_targets.sort_custom(func(a: int, b: int) -> bool: return hit_e.pos.distance_to(enemies[a].pos) < hit_e.pos.distance_to(enemies[b].pos))
+							for ct_idx in range(mini(2, chain_targets.size())):
+								var ct: int = chain_targets[ct_idx]
+								var ce: Dictionary = enemies[ct]
+								ce.hp -= damage
+								enemies[ct] = ce
+								if ce.hp <= 0:
+									_on_enemy_killed(ct)
+					# Leech (#6)
+					if mods_w.get("leech", false) and melee_hits > 0:
+						leech_accumulator += float(melee_hits) * 0.5
+						while leech_accumulator >= 1.0:
+							leech_accumulator -= 1.0
+							player_hp = mini(player_hp + 1, player_max_hp)
+					aoe_flashes.append({pos=player_pos, radius=melee_range, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
 
 		active_weapons[wi] = w
 
@@ -792,6 +876,7 @@ func _update_enemies(delta: float) -> void:
 							e.charge_timer = 4.0
 							aoe_flashes.append({pos = e.pos, radius = 100.0, timer = 0.3, color = Color(1.0, 0.3, 0.0, 0.5)})
 							player_hp -= 2
+							player_hit_flash = 0.2
 							_show_message("SLAM! -2 HP")
 							if player_hp <= 0:
 								_die()
@@ -845,6 +930,10 @@ func _update_enemies(delta: float) -> void:
 				var spd: float = e.speed
 				if e.behavior == "burst" and e.burst_active:
 					spd *= 2.5
+				# Slow debuff (#1)
+				var now_sec: float = Time.get_ticks_msec() * 0.001
+				if e.get("slow_until", 0.0) > now_sec:
+					spd *= 0.6
 				var new_pos: Vector2 = e.pos + move_dir.normalized() * spd * delta
 				new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 				e.pos = new_pos
@@ -856,7 +945,11 @@ func _update_enemies(delta: float) -> void:
 				if cd <= 0.0:
 					player_hp -= e.melee_dmg
 					enemy_melee_cooldowns[cd_key] = 1.0
+					player_hit_flash = 0.2
 					_show_message("Hit! -%d HP" % e.melee_dmg)
+					# Corrupted path melee heal (#17)
+					if corruption >= 36.0:
+						player_hp = mini(player_hp + 1, player_max_hp)
 					if player_hp <= 0:
 						_die()
 						return
@@ -884,11 +977,12 @@ func _update_enemies(delta: float) -> void:
 		enemy_melee_cooldowns.erase(key)
 
 	# Void creature proximity corruption aura
+	var corr_resist: float = weapon_mods.get("_player", {}).get("corruption_resist", 0.0)
 	for e in enemies:
 		if e.hp <= 0 or not e.void_type:
 			continue
 		if player_pos.distance_to(e.pos) < 160.0:
-			corruption += 2.0 * delta
+			corruption += 2.0 * delta * (1.0 - corr_resist)
 
 func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vector2:
 	for obs in obstacles:
@@ -925,7 +1019,8 @@ func _update_bullets(delta: float) -> void:
 					best_pos = e.pos
 					found_target = true
 			if found_target:
-				var new_dir: Vector2 = b.vel.normalized().lerp((best_pos - b.pos).normalized(), 3.0 * delta)
+				var track_mult: float = weapon_mods.get(b.get("weapon_id", ""), {}).get("tracking_mult", 1.0)
+				var new_dir: Vector2 = b.vel.normalized().lerp((best_pos - b.pos).normalized(), 3.0 * track_mult * delta)
 				b.vel = new_dir.normalized() * b.bullet_speed
 
 		b.pos += b.vel * delta
@@ -956,36 +1051,64 @@ func _update_bullets(delta: float) -> void:
 		if b.from_player:
 			# Hit enemies
 			var is_piercing: bool = b.get("piercing", false)
+			var b_elite_bonus: float = weapon_mods.get("_player", {}).get("elite_dmg_bonus", 1.0)
 			for ei in range(enemies.size()):
 				var e: Dictionary = enemies[ei]
 				if e.hp <= 0:
 					continue
 				if b.pos.distance_to(e.pos) < e.radius + b.radius:
+					var hit_dmg: int = b.damage
+					# Elite damage bonus (#14)
+					if e.get("is_elite", false) and b_elite_bonus > 1.0:
+						hit_dmg = int(ceil(float(hit_dmg) * b_elite_bonus))
 					if is_piercing:
 						var hit_ids: Array = b.hit_ids
 						if not hit_ids.has(ei):
 							hit_ids.append(ei)
 							b.hit_ids = hit_ids
-							e.hp -= b.damage
+							e.hp -= hit_dmg
+							# Slow on hit (#1)
+							if b.get("slow_on_hit", false):
+								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
 							enemies[ei] = e
+							# Explode on hit (#3)
+							if b.get("explode", false):
+								_bullet_explode(b.pos, hit_dmg)
 							if e.hp <= 0:
-								_on_enemy_killed(ei)
+								_on_enemy_killed(ei, b.get("weapon_id", ""))
 					else:
-						e.hp -= b.damage
+						e.hp -= hit_dmg
+						# Slow on hit (#1)
+						if b.get("slow_on_hit", false):
+							e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
 						enemies[ei] = e
 						to_remove.append(i)
+						# Explode on hit (#3)
+						if b.get("explode", false):
+							_bullet_explode(b.pos, hit_dmg)
 						if e.hp <= 0:
-							_on_enemy_killed(ei)
+							_on_enemy_killed(ei, b.get("weapon_id", ""))
 						break
 		else:
 			# Hit player
 			if b.pos.distance_to(player_pos) < PLAYER_RADIUS + b.radius:
-				player_hp -= b.damage
-				to_remove.append(i)
-				_show_message("Shot! -%d HP" % b.damage)
-				if player_hp <= 0:
-					_die()
-					return
+				# Dodge chance (#11)
+				var dodge_ch: float = weapon_mods.get("_player", {}).get("dodge_chance", 0.0)
+				if dodge_ch > 0.0 and randf() < dodge_ch:
+					to_remove.append(i)
+					_show_message("Dodged!")
+				else:
+					var recv_dmg: int = b.damage
+					# Corrupted path armor vs commons (#17)
+					if corruption >= 36.0:
+						recv_dmg = maxi(1, recv_dmg - 1)
+					player_hp -= recv_dmg
+					player_hit_flash = 0.2
+					to_remove.append(i)
+					_show_message("Shot! -%d HP" % recv_dmg)
+					if player_hp <= 0:
+						_die()
+						return
 
 		bullets[i] = b
 
@@ -994,9 +1117,90 @@ func _update_bullets(delta: float) -> void:
 	for idx in range(to_remove.size() - 1, -1, -1):
 		bullets.remove_at(to_remove[idx])
 
-func _on_enemy_killed(idx: int) -> void:
+func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
+
+	# --- Passive procs on kill ---
+	# Vamp chance (#13)
+	var vamp_ch: float = weapon_mods.get("_player", {}).get("vamp_chance", 0.0)
+	if vamp_ch > 0.0 and randf() < vamp_ch:
+		player_hp = mini(player_hp + 1, player_max_hp)
+		_show_message("+1 HP")
+
+	# Kill streak speed (#12)
+	if weapon_mods.get("_player", {}).get("kill_streak_speed", false):
+		kill_streak_count += 1
+		if kill_streak_count >= 3:
+			kill_streak_count = 0
+			speed_boost_timer = 3.0
+
+	# On-kill lance (#2)
+	var lance_mods: Dictionary = weapon_mods.get("lance", {})
+	if lance_mods.get("on_kill_lance", false):
+		var has_lance: bool = false
+		for aw in active_weapons:
+			if aw.id == "lance":
+				has_lance = true
+				break
+		if has_lance:
+			var nearest_e_dist: float = 999999.0
+			var nearest_e_pos := Vector2.ZERO
+			var found_ne := false
+			for ne in enemies:
+				if ne.hp <= 0:
+					continue
+				var nd: float = death_pos.distance_to(ne.pos)
+				if nd < nearest_e_dist and nd > 1.0:
+					nearest_e_dist = nd
+					nearest_e_pos = ne.pos
+					found_ne = true
+			if found_ne:
+				var lance_def: Dictionary = WEAPON_DEFS["lance"]
+				var lance_dmg: int = lance_def.damage + lance_mods.get("damage_bonus", 0)
+				var lance_dir: Vector2 = (nearest_e_pos - death_pos).normalized()
+				var lance_spd: float = lance_def.bullet_speed + lance_mods.get("bullet_speed_bonus", 0.0)
+				bullets.append({
+					pos = death_pos,
+					vel = lance_dir * lance_spd,
+					radius = lance_def.bullet_radius,
+					color = lance_def.color,
+					damage = lance_dmg,
+					lifetime = lance_def.range / maxf(1.0, lance_spd),
+					from_player = true,
+					piercing = true,
+					hit_ids = [],
+					weapon_id = "lance",
+				})
+
+	# Split on kill — dart (#10)
+	if killer_weapon == "dart" and weapon_mods.get("dart", {}).get("split_on_kill", false):
+		var dart_def: Dictionary = WEAPON_DEFS["dart"]
+		var dart_mods: Dictionary = weapon_mods.get("dart", {})
+		var dart_dmg: int = dart_def.damage + dart_mods.get("damage_bonus", 0)
+		# Find 2 nearest living enemies
+		var split_targets: Array[Dictionary] = []
+		for se in enemies:
+			if se.hp <= 0:
+				continue
+			var sd: float = death_pos.distance_to(se.pos)
+			if sd > 1.0:
+				split_targets.append({pos = se.pos, dist = sd})
+		split_targets.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.dist < b.dist)
+		for sti in range(mini(2, split_targets.size())):
+			var st_dir: Vector2 = (split_targets[sti].pos - death_pos).normalized()
+			bullets.append({
+				pos = death_pos,
+				vel = st_dir * dart_def.bullet_speed,
+				radius = dart_def.bullet_radius,
+				color = dart_def.color,
+				damage = dart_dmg,
+				lifetime = dart_def.range / dart_def.bullet_speed,
+				from_player = true,
+				homing = true,
+				bullet_speed = dart_def.bullet_speed,
+				weapon_id = "dart",
+			})
 
 	# Elites: drop ingredient guaranteed + big essence burst
 	if e.get("is_elite", false):
@@ -1494,6 +1698,37 @@ func _update_hud_message(delta: float) -> void:
 			hud_message = ""
 
 # =========================================================
+# HELPERS — perk effects
+# =========================================================
+func _bullet_explode(impact_pos: Vector2, dmg: int) -> void:
+	aoe_flashes.append({pos = impact_pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.6, 0.1, 0.7)})
+	for ei2 in range(enemies.size()):
+		var ae: Dictionary = enemies[ei2]
+		if ae.hp <= 0:
+			continue
+		if impact_pos.distance_to(ae.pos) < 60.0:
+			ae.hp -= dmg
+			enemies[ei2] = ae
+			if ae.hp <= 0:
+				_on_enemy_killed(ei2)
+
+func _get_effective_player_stats() -> Dictionary:
+	var move_speed_mult: float = 1.0
+	var range_mult: float = 1.0
+	var fire_rate_mult: float = 1.0
+	var reload_mult: float = 1.0
+	if corruption < 15.0:
+		move_speed_mult = 1.15
+		range_mult = 1.2
+		fire_rate_mult = 0.9
+		reload_mult = 0.85
+	elif corruption >= 36.0:
+		move_speed_mult = 1.2
+		range_mult = 0.7
+	# else 15-35: all 1.0
+	return {move_speed_mult = move_speed_mult, range_mult = range_mult, fire_rate_mult = fire_rate_mult, reload_mult = reload_mult}
+
+# =========================================================
 # CORRUPTION
 # =========================================================
 func _apply_corruption_effects():
@@ -1504,10 +1739,6 @@ func _apply_corruption_effects():
 	if corruption >= 60.0 and not corruption_threshold_60:
 		corruption_threshold_60 = true
 		_show_message("Deeply corrupted")
-	# Visual thresholds only for now — Phase 6 adds mechanical effects
-	# 36+: melee heals (Phase 6)
-	# 60+: void mutations more likely (Phase 6)
-	# Field stim corruption: consumables not built yet — Phase 3+
 
 # =========================================================
 # DRAW
@@ -1620,7 +1851,8 @@ func _draw() -> void:
 
 	# Player
 	var pp: Vector2 = _w2s(player_pos)
-	draw_circle(pp, PLAYER_RADIUS, Color(0.2, 0.9, 0.2))
+	var player_color: Color = Color(1.0, 0.2, 0.2) if player_hit_flash > 0.0 else Color(0.2, 0.9, 0.2)
+	draw_circle(pp, PLAYER_RADIUS, player_color)
 
 	# --- Screen space HUD ---
 
