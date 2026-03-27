@@ -539,8 +539,8 @@ func _ready() -> void:
 func _spawn_obstacles() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	for i in range(120):
-		var r: float = rng.randf_range(25.0, 70.0)
+	for i in range(70):
+		var r: float = rng.randf_range(20.0, 45.0)
 		var pos := Vector2.ZERO
 		for _try in range(20):
 			pos = Vector2(rng.randf_range(r, WORLD_W - r), rng.randf_range(r, WORLD_H - r))
@@ -2858,29 +2858,41 @@ func _draw() -> void:
 		var sy: float = float(gy) - camera_offset.y
 		draw_line(Vector2(-camera_offset.x, sy), Vector2(WORLD_W - camera_offset.x, sy), grid_color, 1.0)
 
-	# Rivers (floor level, before obstacles)
+	# Rivers (floor level, before obstacles) — bright blue water, distinct from background
+	var water_shimmer: float = 0.75 + 0.15 * sin(hunt_elapsed * 2.2)
 	for ri in range(rivers.size()):
 		var river: Dictionary = rivers[ri]
 		var bridge_pos: Vector2 = bridges[ri].pos
 		for seg in river.segments:
 			var seg_pos: Vector2 = Vector2(seg.pos.x, seg.pos.y)
-			if seg_pos.distance_to(bridge_pos) < 120.0:
+			# Match the 160px gap used in obstacle generation
+			if seg_pos.distance_to(bridge_pos) < 160.0:
 				continue
 			var seg_sp: Vector2 = _w2s(seg_pos)
-			draw_circle(seg_sp, seg.radius, Color(0.05, 0.15, 0.35, 0.85))
+			# Deep water fill
+			draw_circle(seg_sp, seg.radius, Color(0.05, 0.35, 0.75, 0.9))
+			# Shimmer highlight on top half
+			draw_arc(seg_sp, seg.radius * 0.6, TAU * 0.6, TAU * 1.1, 12, Color(0.4, 0.7, 1.0, water_shimmer * 0.5), 2.0)
 
-	# Bridges
+	# Bridges — wooden plank, clearly passable
 	for bridge in bridges:
 		var b_sp: Vector2 = _w2s(Vector2(bridge.pos.x, bridge.pos.y))
 		var b_dir: Vector2 = Vector2(bridge.dir.x, bridge.dir.y)
 		var b_perp: Vector2 = Vector2(-b_dir.y, b_dir.x)
 		var half_l: float = bridge.length * 0.5
-		var half_w: float = bridge.width * 0.5
+		var half_w: float = 35.0  # fixed visual width — passable feels
 		var c0: Vector2 = b_sp + b_dir * half_l + b_perp * half_w
 		var c1: Vector2 = b_sp + b_dir * half_l - b_perp * half_w
 		var c2: Vector2 = b_sp - b_dir * half_l - b_perp * half_w
 		var c3: Vector2 = b_sp - b_dir * half_l + b_perp * half_w
-		draw_colored_polygon(PackedVector2Array([c0, c1, c2, c3]), Color(0.35, 0.28, 0.18))
+		# Plank fill
+		draw_colored_polygon(PackedVector2Array([c0, c1, c2, c3]), Color(0.45, 0.32, 0.18))
+		# Plank border lines (wood grain effect)
+		draw_line(c0, c3, Color(0.3, 0.22, 0.12), 1.5)
+		draw_line(c1, c2, Color(0.3, 0.22, 0.12), 1.5)
+		draw_line(b_sp + b_perp * half_w, b_sp - b_perp * half_w, Color(0.3, 0.22, 0.12, 0.5), 1.0)
+		# "BRIDGE" label above
+		_draw_text(b_sp + Vector2(-22.0, -half_w - 14.0), "BRIDGE", Color(0.9, 0.8, 0.5, 0.8), 9)
 
 	# Void Pools (floor level, before obstacles)
 	for pool in void_pools:
