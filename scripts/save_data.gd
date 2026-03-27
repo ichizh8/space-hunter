@@ -5,6 +5,13 @@ var total_credits: int = 0
 var total_corruption: int = 0
 var contracts_completed: int = 0
 var ingredients: Dictionary = {}  # ingredient_id -> count, e.g. {"void_extract": 2}
+var pantry: Dictionary = {
+	"rift_dust": 0,
+	"void_crystal": 0,
+	"cave_moss": 0,
+	"river_silt": 0,
+	"elite_core": 0,
+}
 var ship_upgrades: Dictionary = {
 	"max_hp": 0,        # levels 0-3, each +2 HP
 	"mag_size": 0,      # levels 0-3, each +3 mag
@@ -22,7 +29,31 @@ var kit_tiers: Dictionary = {"stim_pack": 1, "flash_trap": 1}
 var unlocked_kits: Array[String] = ["stim_pack", "flash_trap"]
 var kit_t3_choices: Dictionary = {}  # kit_id -> "clean" or "void"
 var kit_t2_paths: Dictionary = {}  # kit_id -> "attack"|"shield"|"harvest"
+
+# Phase A: recipe unlocks — Tier 1 unlocked from start
+var unlocked_recipes: Array[String] = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
+
+# Phase A: reputation tracks
+var reputation: Dictionary = {
+	"contractor": 0,
+	"void_walker": 0,
+	"tactician": 0,
+	"scrapper": 0,
+}
+
 var version: int = 1
+
+const REP_THRESHOLDS: Array[int] = [0, 50, 150, 350, 700, 1200]
+
+static func get_rep_level(track: String, rep_data: Dictionary) -> int:
+	var pts: int = rep_data.get(track, 0)
+	var level: int = 0
+	for i in range(1, REP_THRESHOLDS.size()):
+		if pts >= REP_THRESHOLDS[i]:
+			level = i
+		else:
+			break
+	return level
 
 func to_dict() -> Dictionary:
 	return {
@@ -31,6 +62,7 @@ func to_dict() -> Dictionary:
 		"total_corruption": total_corruption,
 		"contracts_completed": contracts_completed,
 		"ingredients": ingredients.duplicate(),
+		"pantry": pantry.duplicate(),
 		"ship_upgrades": ship_upgrades.duplicate(),
 		"unlocked_weapons": unlocked_weapons.duplicate(),
 		"loadout": loadout.duplicate(),
@@ -40,6 +72,8 @@ func to_dict() -> Dictionary:
 		"unlocked_kits": unlocked_kits.duplicate(),
 		"kit_t3_choices": kit_t3_choices.duplicate(),
 		"kit_t2_paths": kit_t2_paths.duplicate(),
+		"unlocked_recipes": unlocked_recipes.duplicate(),
+		"reputation": reputation.duplicate(),
 	}
 
 func from_dict(data: Dictionary) -> void:
@@ -52,6 +86,14 @@ func from_dict(data: Dictionary) -> void:
 		ingredients = (raw_ingredients as Dictionary).duplicate()
 	else:
 		ingredients = {}
+
+	var raw_pantry: Variant = data.get("pantry", {})
+	if raw_pantry is Dictionary:
+		var loaded_pantry: Dictionary = (raw_pantry as Dictionary).duplicate()
+		for key in pantry:
+			if loaded_pantry.has(key):
+				pantry[key] = loaded_pantry[key]
+
 	var raw_upgrades: Variant = data.get("ship_upgrades", {})
 	if raw_upgrades is Dictionary:
 		var loaded: Dictionary = (raw_upgrades as Dictionary).duplicate()
@@ -100,3 +142,17 @@ func from_dict(data: Dictionary) -> void:
 
 	var raw_t2p: Variant = data.get("kit_t2_paths", {})
 	if raw_t2p is Dictionary: kit_t2_paths = (raw_t2p as Dictionary).duplicate()
+
+	var raw_recipes: Variant = data.get("unlocked_recipes", [])
+	if raw_recipes is Array:
+		unlocked_recipes.clear()
+		for r in raw_recipes: unlocked_recipes.append(str(r))
+	if unlocked_recipes.is_empty():
+		unlocked_recipes = ["field_ration", "void_brew", "cave_jerky", "silt_stew"]
+
+	var raw_rep: Variant = data.get("reputation", {})
+	if raw_rep is Dictionary:
+		var loaded_rep: Dictionary = (raw_rep as Dictionary).duplicate()
+		for key in reputation:
+			if loaded_rep.has(key):
+				reputation[key] = loaded_rep[key]

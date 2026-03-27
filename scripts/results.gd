@@ -30,13 +30,20 @@ func _ready() -> void:
 
 	# Show pantry totals
 	text += "\n--- Pantry ---\n"
-	var pantry: Dictionary = SaveManager.data.ingredients
-	if pantry.is_empty():
+	var pantry: Dictionary = SaveManager.data.pantry
+	var has_pantry: bool = false
+	for key in pantry:
+		if pantry[key] > 0:
+			has_pantry = true
+			break
+	if not has_pantry:
 		text += "  (empty)\n"
 	else:
 		for ing_id in pantry:
-			var display_name: String = ing_id.replace("_", " ").capitalize()
-			text += "  %s: %d\n" % [display_name, pantry[ing_id]]
+			var count: int = pantry.get(ing_id, 0)
+			if count > 0:
+				var display_name: String = ing_id.replace("_", " ").capitalize()
+				text += "  %s: %d\n" % [display_name, count]
 
 	text += "\n--- Totals ---\n"
 	text += "Total credits: %d\n" % SaveManager.data.total_credits

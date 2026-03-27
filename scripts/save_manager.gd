@@ -58,4 +58,7 @@ func add_ingredients(arr: Array) -> void:
 		if ingredient_id.is_empty():
 			continue
 		data.ingredients[ingredient_id] = data.ingredients.get(ingredient_id, 0) + 1
+		# Also add to pantry if it's a known pantry ingredient
+		if data.pantry.has(ingredient_id):
+			data.pantry[ingredient_id] = data.pantry.get(ingredient_id, 0) + 1
 	save_game()

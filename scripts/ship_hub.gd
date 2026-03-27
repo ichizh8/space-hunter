@@ -488,15 +488,29 @@ func _update_stats() -> void:
 		d.total_credits, d.total_corruption, d.contracts_completed
 	]
 
+const PANTRY_COLORS: Dictionary = {
+	"rift_dust": Color(0.9, 0.8, 0.3),
+	"void_crystal": Color(0.6, 0.2, 0.9),
+	"cave_moss": Color(0.3, 0.7, 0.4),
+	"river_silt": Color(0.3, 0.6, 0.9),
+	"elite_core": Color(1.0, 0.85, 0.0),
+}
+
 func _update_pantry() -> void:
-	var pantry: Dictionary = SaveManager.data.ingredients
+	var pantry: Dictionary = SaveManager.data.pantry
+	var has_any: bool = false
+	for key in pantry:
+		if pantry[key] > 0:
+			has_any = true
+			break
 	var text := ""
-	if pantry.is_empty():
-		text = "  (empty — hunt creatures to collect ingredients)"
+	if not has_any:
+		text = "  (empty — kill elites to collect ingredients)"
 	else:
 		for ing_id in pantry:
+			var count: int = pantry.get(ing_id, 0)
 			var display_name: String = ing_id.replace("_", " ").capitalize()
-			text += "  %s: %d\n" % [display_name, pantry[ing_id]]
+			text += "  %s: %d\n" % [display_name, count]
 	pantry_label.text = text.strip_edges()
 
 func _on_contract_board() -> void:

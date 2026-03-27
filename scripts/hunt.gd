@@ -122,8 +122,8 @@ const WEAPON_MUTATIONS: Dictionary = {
 
 # Kit definitions
 const KIT_DEFS: Dictionary = {
-	"stim_pack":    {name="Stim",     icon="S", desc="T1: +4 HP, +15 corruption. 8s cooldown."},
-	"flash_trap":   {name="Trap",     icon="T", desc="T1: Stun trap 80px 2s. 2 charges/hunt."},
+	"stim_pack":    {name="Stim",     icon="S", desc="T1: +4 HP, +15 corruption. 20s cooldown."},
+	"flash_trap":   {name="Trap",     icon="T", desc="T1: 25 dmg + slow. 3 charges, recharge 25s."},
 	"blink_kit":    {name="Blink",    icon="B", desc="T1: Teleport 200px. 10s cooldown."},
 	"chain_kit":    {name="Chain",    icon="C", desc="T1: Tether enemy 3s. 12s cooldown."},
 	"charge_kit":   {name="Charge",  icon="X", desc="T1: Knockback 150px. 12s cooldown."},
@@ -288,6 +288,9 @@ var pickups: Array[Dictionary] = []
 
 # === Ingredient pickups (Phase 3 — pristine quality) ===
 var ingredient_pickups: Array[Dictionary] = []
+
+# === Float texts (ingredient drop labels) ===
+var float_texts: Array[Dictionary] = []
 
 # === AOE flashes ===
 var aoe_flashes: Array[Dictionary] = []
@@ -979,6 +982,7 @@ func _process(delta: float) -> void:
 	_update_bullets(delta)
 	_check_pickups()
 	_update_hud_message(delta)
+	_update_float_texts(delta)
 	_apply_corruption_effects()
 	_update_aoe_flashes(delta)
 	_update_waves(delta)
@@ -1491,6 +1495,9 @@ func _update_enemies(delta: float) -> void:
 			e.stunned_timer -= delta
 			enemies[i] = e
 			continue
+		# Trap slow timer
+		if e.get("slow_timer", 0.0) > 0.0:
+			e["slow_timer"] = e["slow_timer"] - delta
 
 		var dist_to_player: float = e.pos.distance_to(player_pos)
 
@@ -1732,6 +1739,9 @@ func _update_enemies(delta: float) -> void:
 				var now_sec: float = Time.get_ticks_msec() * 0.001
 				if e.get("slow_until", 0.0) > now_sec:
 					spd *= 0.6
+				# Trap slow
+				if e.get("slow_timer", 0.0) > 0.0:
+					spd *= e.get("slow_factor", 0.4)
 				# Smoke/slow field speed reduction
 				for sz in smoke_zones:
 					if sz.get("slowing", false) and e.pos.distance_to(sz.pos) < sz.radius:
@@ -2207,36 +2217,30 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 				weapon_id = "dart",
 			})
 
-	# Elites: drop ingredient guaranteed + big essence burst
+	# Elites: drop biome ingredient + elite_core + big essence burst
 	if e.get("is_elite", false):
-		_show_message("Elite down! Ingredient dropped!")
-		# Drop a big essence burst
+		# Big essence burst
 		for _b in range(5):
 			pickups.append({pos = death_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20)), type = "essence"})
-		# Drop ingredient based on elite type
-		var elite_ingredient_map := {
-			"Void Hulk": "void_extract",
-			"Phase Hunter": "nether_bile",
-			"Brood Mother": "rift_spore",
+		# Determine biome ingredient based on where elite was killed
+		var elite_biome: String = _get_biome_at(death_pos)
+		var biome_ingredient_map: Dictionary = {
+			"open": "rift_dust",
+			"void_pool": "void_crystal",
+			"cave": "cave_moss",
+			"river_bank": "river_silt",
 		}
-		var ing_id: String = elite_ingredient_map.get(e.elite_type, "void_extract")
-		var ing_color: Color = INGREDIENT_COLORS.get("ingredient_" + ing_id, Color.GOLD)
-		ingredient_pickups.append({
-			pos = death_pos,
-			data = {
-				id = "ingredient_" + ing_id + "_pristine",
-				name = ing_id.replace("_", " ").capitalize() + " (Pure)",
-				is_pristine = true,
-				ingredient = true,
-				uses = 1,
-			},
-			collected = false,
-			pulse_phase = 0.0,
-			color = ing_color,
-		})
+		var biome_ing: String = biome_ingredient_map.get(elite_biome, "rift_dust")
+		# Always drop 1 elite_core
+		run_ingredients.append({id = "elite_core", name = "Elite Core", ingredient = true})
+		_spawn_float_text(death_pos + Vector2(0, -20), "+elite_core", Color(1.0, 0.85, 0.0))
+		# Drop 1 biome ingredient
+		var biome_display: String = biome_ing.replace("_", " ").capitalize()
+		run_ingredients.append({id = biome_ing, name = biome_display, ingredient = true})
+		_spawn_float_text(death_pos + Vector2(0, -40), "+" + biome_ing, Color(0.4, 1.0, 0.6))
+		_show_message("Elite down! +%s +elite_core" % biome_ing)
 		# Track contract progress
 		target_kills += 1
-		_show_message("Ingredients: %d/%d" % [target_kills, target_total])
 		if target_kills >= target_total and not exit_spawned:
 			_spawn_exit()
 		return
@@ -2759,6 +2763,18 @@ func _update_hud_message(delta: float) -> void:
 		if hud_message_timer <= 0.0:
 			hud_message = ""
 
+func _spawn_float_text(world_pos: Vector2, text: String, color: Color) -> void:
+	float_texts.append({pos = world_pos, text = text, color = color, timer = 2.0})
+
+func _update_float_texts(delta: float) -> void:
+	var i := float_texts.size() - 1
+	while i >= 0:
+		float_texts[i].timer -= delta
+		float_texts[i].pos.y -= 30.0 * delta
+		if float_texts[i].timer <= 0.0:
+			float_texts.remove_at(i)
+		i -= 1
+
 # =========================================================
 # HELPERS — perk effects
 # =========================================================
@@ -3004,8 +3020,14 @@ func _draw() -> void:
 	for trap in traps:
 		if trap.get("active", true):
 			var tsp: Vector2 = _w2s(trap.pos)
+			var decay_left: float = trap.get("decay_timer", Constants.TRAP_DECAY_TIME)
+			var ring_alpha: float = 0.35 if decay_left > 10.0 else clampf(decay_left / 10.0, 0.05, 0.35)
+			# Faint circle ring at trigger radius
+			draw_arc(tsp, trap.get("radius", Constants.TRAP_RADIUS), 0.0, TAU, 32, Color(1.0, 0.9, 0.1, ring_alpha), 1.5)
+			# Diamond center marker
 			var diamond_pts := PackedVector2Array([tsp + Vector2(0, -5), tsp + Vector2(5, 0), tsp + Vector2(0, 5), tsp + Vector2(-5, 0)])
-			draw_colored_polygon(diamond_pts, Color(1.0, 0.9, 0.1))
+			var marker_alpha: float = 1.0 if decay_left > 10.0 else clampf(decay_left / 10.0, 0.2, 1.0)
+			draw_colored_polygon(diamond_pts, Color(1.0, 0.9, 0.1, marker_alpha))
 	for dc in decoys:
 		if dc.get("timer", 0.0) > 0.0:
 			var dsp: Vector2 = _w2s(dc.pos)
@@ -3159,12 +3181,13 @@ func _draw() -> void:
 		if charges >= 0:
 			kit_label += " (%d)" % charges
 		_draw_text(btn_pos + Vector2(4.0, 6.0), kit_label, Color.WHITE, 11)
-		# Cooldown bar
+		# Cooldown bar + timer text
 		if cd > 0.0:
 			var max_cd: float = state.get("max_cooldown", 10.0)
 			var cd_frac: float = clampf(cd / max_cd, 0.0, 1.0)
 			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0, 4.0), Color(0.2, 0.2, 0.2, 0.6))
 			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
+			_draw_text(btn_pos + Vector2(4.0, 22.0), "%ds" % ceili(cd), Color(0.8, 0.8, 0.8, 0.8), 9)
 
 	# XP bar (full width, bottom of screen)
 	var xp_bar_y: float = vp_size.y - 20.0
@@ -3190,6 +3213,12 @@ func _draw() -> void:
 	if hud_message != "":
 		var msg_alpha: float = clampf(hud_message_timer, 0.0, 1.0)
 		_draw_text(Vector2(vp_size.x * 0.5 - 80.0, vp_size.y * 0.5 - 20.0), hud_message, Color(1, 1, 1, msg_alpha), 18)
+
+	# Float texts (ingredient drops, etc.)
+	for ft in float_texts:
+		var ft_sp: Vector2 = _w2s(ft.pos)
+		var ft_alpha: float = clampf(ft.timer, 0.0, 1.0)
+		_draw_text(ft_sp, ft.text, Color(ft.color.r, ft.color.g, ft.color.b, ft_alpha), 12)
 
 	# Elite compass — arrow pointing at nearest living elite (hidden when elite is on screen)
 	var nearest_elite_pos := Vector2.ZERO
@@ -3272,8 +3301,8 @@ func _xp_needed_for_level(lv: int) -> int:
 # =========================================================
 func _init_kit_state(kit_id: String) -> Dictionary:
 	match kit_id:
-		"stim_pack": return {cooldown = 0.0, max_cooldown = 8.0}
-		"flash_trap": return {cooldown = 0.0, charges = 2}
+		"stim_pack": return {cooldown = 0.0, max_cooldown = 20.0}
+		"flash_trap": return {cooldown = 0.0, charges = Constants.TRAP_CHARGES_BASE, max_charges = Constants.TRAP_CHARGES_BASE, recharge_timer = 0.0}
 		"blink_kit": return {cooldown = 0.0, max_cooldown = 10.0}
 		"chain_kit": return {cooldown = 0.0, max_cooldown = 12.0}
 		"charge_kit": return {cooldown = 0.0, max_cooldown = 12.0, charging = false}
@@ -3308,7 +3337,7 @@ func _activate_kit(kit_id: String) -> void:
 			var heal: int = 4 if tier < 2 else 5
 			player_hp = mini(player_hp + heal, player_max_hp)
 			corruption += 15.0
-			var stim_cd: float = 8.0 if tier < 2 else 5.0
+			var stim_cd: float = 20.0 if tier < 2 else 15.0
 			_show_message("Stim! +%dHP +15 corruption" % heal)
 			state.cooldown = stim_cd
 			# T3 clean: speed boost
@@ -3316,9 +3345,19 @@ func _activate_kit(kit_id: String) -> void:
 				stim_speed_timer = 5.0
 		"flash_trap":
 			if charges > 0:
-				traps.append({pos = player_pos, radius = 80.0, active = true})
+				# Enforce max active traps — remove oldest if at cap
+				var active_count: int = 0
+				for _tr in traps:
+					if _tr.get("active", true):
+						active_count += 1
+				if active_count >= Constants.TRAP_MAX_ACTIVE:
+					for _ti in range(traps.size()):
+						if traps[_ti].get("active", true):
+							traps.remove_at(_ti)
+							break
+				traps.append({pos = player_pos, radius = Constants.TRAP_RADIUS, active = true, decay_timer = Constants.TRAP_DECAY_TIME, triggered_enemies = []})
 				state.charges = charges - 1
-				_show_message("Trap placed!")
+				_show_message("Trap placed! (%d charges)" % state.charges)
 		"blink_kit":
 			var blink_dir: Vector2 = Vector2.UP
 			if joy_active:
@@ -3624,7 +3663,21 @@ func _update_kit_cooldowns(delta: float) -> void:
 func _update_traps(delta: float) -> void:
 	var flash_tier: int = kit_tiers.get("flash_trap", 1)
 	var flash_t3: String = kit_t3_choices.get("flash_trap", "")
-	var triggered_indices: Array[int] = []
+
+	# Recharge trap charges over time
+	if kit_states.has("flash_trap"):
+		var fs: Dictionary = kit_states["flash_trap"]
+		var max_ch: int = fs.get("max_charges", Constants.TRAP_CHARGES_BASE)
+		if fs.get("charges", 0) < max_ch:
+			fs["recharge_timer"] = fs.get("recharge_timer", 0.0) + delta
+			if fs["recharge_timer"] >= Constants.TRAP_RECHARGE_TIME:
+				fs["recharge_timer"] = 0.0
+				fs["charges"] = fs.get("charges", 0) + 1
+		else:
+			fs["recharge_timer"] = 0.0
+		kit_states["flash_trap"] = fs
+
+	# Update traps: decay, trigger
 	var i := traps.size() - 1
 	while i >= 0:
 		var trap: Dictionary = traps[i]
@@ -3632,12 +3685,26 @@ func _update_traps(delta: float) -> void:
 			traps.remove_at(i)
 			i -= 1
 			continue
+		# Decay timer
+		trap["decay_timer"] = trap.get("decay_timer", Constants.TRAP_DECAY_TIME) - delta
+		if trap["decay_timer"] <= 0.0:
+			traps.remove_at(i)
+			i -= 1
+			continue
+		# Check enemies in trigger radius
+		var triggered_enemies: Array = trap.get("triggered_enemies", [])
 		for ei in range(enemies.size()):
 			var e: Dictionary = enemies[ei]
 			if e.hp <= 0:
 				continue
-			if e.pos.distance_to(trap.pos) < trap.get("radius", 80.0):
-				e.stunned_timer = 2.0
+			if triggered_enemies.has(ei):
+				continue
+			if e.pos.distance_to(trap.pos) < trap.get("radius", Constants.TRAP_RADIUS):
+				# Apply damage + slow (one trigger per enemy per trap)
+				e.hp -= Constants.TRAP_DAMAGE
+				e["slow_timer"] = Constants.TRAP_SLOW_DURATION
+				e["slow_factor"] = 0.4
+				triggered_enemies.append(ei)
 				# T3 clean: marked for +40% damage
 				if flash_tier >= 3 and flash_t3 == "clean":
 					e["marked_timer"] = 5.0
@@ -3651,29 +3718,36 @@ func _update_traps(delta: float) -> void:
 							e2.speed *= 1.2
 							enemies[ei2] = e2
 				enemies[ei] = e
-				trap.active = false
-				traps[i] = trap
-				aoe_flashes.append({pos = trap.pos, radius = 80.0, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
-				triggered_indices.append(i)
-				break
+				if e.hp <= 0:
+					_on_enemy_killed(ei)
+				aoe_flashes.append({pos = trap.pos, radius = Constants.TRAP_RADIUS, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
+		trap["triggered_enemies"] = triggered_enemies
+		traps[i] = trap
 		i -= 1
-	# T2: chain trigger — if 2 traps within 300px, triggering one triggers both
-	if flash_tier >= 2 and triggered_indices.size() > 0:
-		for ti in triggered_indices:
-			if ti >= traps.size():
+	# T2: chain trigger — if 2 traps within 300px, one triggering causes nearby to also fire
+	if flash_tier >= 2:
+		for ti in range(traps.size()):
+			var t_triggered: Array = traps[ti].get("triggered_enemies", [])
+			if t_triggered.is_empty():
 				continue
 			var t_pos: Vector2 = traps[ti].pos
 			for tj in range(traps.size()):
 				if tj == ti:
 					continue
 				if traps[tj].get("active", true) and t_pos.distance_to(traps[tj].pos) < 300.0:
-					traps[tj].active = false
-					aoe_flashes.append({pos=traps[tj].pos, radius=80.0, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
+					var tj_triggered: Array = traps[tj].get("triggered_enemies", [])
 					for ei in range(enemies.size()):
 						var e: Dictionary = enemies[ei]
-						if e.hp > 0 and e.pos.distance_to(traps[tj].pos) < 80.0:
-							e.stunned_timer = 2.0
+						if e.hp > 0 and not tj_triggered.has(ei) and e.pos.distance_to(traps[tj].pos) < Constants.TRAP_RADIUS:
+							e.hp -= Constants.TRAP_DAMAGE
+							e["slow_timer"] = Constants.TRAP_SLOW_DURATION
+							e["slow_factor"] = 0.4
+							tj_triggered.append(ei)
 							enemies[ei] = e
+							if e.hp <= 0:
+								_on_enemy_killed(ei)
+					traps[tj]["triggered_enemies"] = tj_triggered
+					aoe_flashes.append({pos=traps[tj].pos, radius=Constants.TRAP_RADIUS, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
 
 func _update_decoys(delta: float) -> void:
 	var mirage_tier: int = kit_tiers.get("mirage_kit", 1)
