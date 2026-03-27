@@ -3,14 +3,19 @@ extends Control
 # Tab containers built in _ready
 var ship_tab_content: VBoxContainer
 var upgrades_tab_content: VBoxContainer
+var kits_tab_content: VBoxContainer
 var stats_label: Label
 var pantry_label: Label
 var cook_status_label: Label
 var credits_label: Label
+var kits_credits_label: Label
+var kits_equipped_label: Label
+var kits_scroll_vbox: VBoxContainer
 
 # Tab buttons
 var ship_tab_btn: Button
 var upgrades_tab_btn: Button
+var kits_tab_btn: Button
 
 # Upgrade shop buttons (for refresh)
 var upgrade_buttons: Array[Button] = []
@@ -28,6 +33,64 @@ const WEAPON_UNLOCK_DEFS: Array[Dictionary] = [
 	{id="lance", name="Unlock Void Lance", desc="Starting weapon", cost=150},
 	{id="baton", name="Unlock Shock Baton", desc="Starting weapon", cost=130},
 	{id="dart", name="Unlock Homing Dart", desc="Starting weapon", cost=80},
+	{id="pulse_cannon", name="Unlock Pulse Cannon", desc="Starting weapon", cost=180},
+	{id="chain_rifle", name="Unlock Chain Rifle", desc="Starting weapon", cost=160},
+]
+
+const KIT_NAMES: Dictionary = {
+	"stim_pack": "Stim Pack",
+	"flash_trap": "Flash Trap",
+	"blink_kit": "Blink",
+	"chain_kit": "Chain",
+	"charge_kit": "Charge",
+	"mirage_kit": "Mirage",
+	"turret_kit": "Turret",
+	"smoke_kit": "Smoke",
+	"anchor_kit": "Anchor",
+	"drone_kit": "Drone",
+	"familiar_kit": "Familiar",
+	"pack_kit": "Pack",
+	"void_surge": "Void Surge",
+	"rupture_kit": "Rupture",
+}
+
+const KIT_DESCS: Dictionary = {
+	"stim_pack": "Heal HP, gain corruption",
+	"flash_trap": "Stun trap, 2 charges",
+	"blink_kit": "Teleport 200px",
+	"chain_kit": "Tether enemy 3s",
+	"charge_kit": "Knockback blast",
+	"mirage_kit": "Decoy draws aggro",
+	"turret_kit": "Auto-turret",
+	"smoke_kit": "Smoke screen",
+	"anchor_kit": "Gravity pull",
+	"drone_kit": "Intercept bullets",
+	"familiar_kit": "Void familiar",
+	"pack_kit": "Summon allies",
+	"void_surge": "Speed burst",
+	"rupture_kit": "Corruption AOE",
+}
+
+const KIT_UNLOCK_COSTS: Dictionary = {
+	"stim_pack": 0, "flash_trap": 0,
+	"blink_kit": 120, "chain_kit": 150, "charge_kit": 120, "mirage_kit": 180,
+	"turret_kit": 150, "smoke_kit": 100, "anchor_kit": 180,
+	"drone_kit": 200, "familiar_kit": 160, "pack_kit": 180,
+	"void_surge": 220, "rupture_kit": 250,
+}
+
+const KIT_TIER_COSTS: Dictionary = {
+	"stim_pack": [0,60,120], "flash_trap": [0,80,160],
+	"blink_kit": [120,100,200], "chain_kit": [150,120,220], "charge_kit": [120,100,200],
+	"mirage_kit": [180,140,260], "turret_kit": [150,120,220], "smoke_kit": [100,80,180],
+	"anchor_kit": [180,150,280], "drone_kit": [200,150,300], "familiar_kit": [160,130,250],
+	"pack_kit": [180,150,280], "void_surge": [220,180,320], "rupture_kit": [250,200,380],
+}
+
+const ALL_KIT_IDS: Array[String] = [
+	"stim_pack", "flash_trap", "blink_kit", "chain_kit", "charge_kit",
+	"mirage_kit", "turret_kit", "smoke_kit", "anchor_kit", "drone_kit",
+	"familiar_kit", "pack_kit", "void_surge", "rupture_kit",
 ]
 
 func _ready() -> void:
@@ -56,15 +119,21 @@ func _ready() -> void:
 
 	ship_tab_btn = Button.new()
 	ship_tab_btn.text = "SHIP"
-	ship_tab_btn.custom_minimum_size = Vector2(120, 40)
+	ship_tab_btn.custom_minimum_size = Vector2(100, 40)
 	ship_tab_btn.pressed.connect(_show_ship_tab)
 	tab_bar.add_child(ship_tab_btn)
 
 	upgrades_tab_btn = Button.new()
 	upgrades_tab_btn.text = "UPGRADES"
-	upgrades_tab_btn.custom_minimum_size = Vector2(120, 40)
+	upgrades_tab_btn.custom_minimum_size = Vector2(100, 40)
 	upgrades_tab_btn.pressed.connect(_show_upgrades_tab)
 	tab_bar.add_child(upgrades_tab_btn)
+
+	kits_tab_btn = Button.new()
+	kits_tab_btn.text = "KITS"
+	kits_tab_btn.custom_minimum_size = Vector2(100, 40)
+	kits_tab_btn.pressed.connect(_show_kits_tab)
+	tab_bar.add_child(kits_tab_btn)
 
 	var sep := HSeparator.new()
 	vbox.add_child(sep)
@@ -130,6 +199,31 @@ func _ready() -> void:
 	for def in WEAPON_UNLOCK_DEFS:
 		var row := _make_weapon_unlock_row(def)
 		shop_vbox.add_child(row)
+
+	# === KITS TAB CONTENT ===
+	kits_tab_content = VBoxContainer.new()
+	kits_tab_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(kits_tab_content)
+
+	kits_credits_label = Label.new()
+	kits_credits_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kits_tab_content.add_child(kits_credits_label)
+
+	kits_equipped_label = Label.new()
+	kits_equipped_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kits_tab_content.add_child(kits_equipped_label)
+
+	var kits_sep := HSeparator.new()
+	kits_tab_content.add_child(kits_sep)
+
+	var kits_scroll := ScrollContainer.new()
+	kits_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	kits_scroll.custom_minimum_size = Vector2(0, 300)
+	kits_tab_content.add_child(kits_scroll)
+
+	kits_scroll_vbox = VBoxContainer.new()
+	kits_scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	kits_scroll.add_child(kits_scroll_vbox)
 
 	# Start on ship tab
 	_update_stats()
@@ -210,6 +304,144 @@ func _refresh_shop() -> void:
 	credits_label.text = "Credits: %d" % SaveManager.data.total_credits
 	_update_stats()
 
+func _build_kits_list() -> void:
+	# Clear existing kit rows
+	for child in kits_scroll_vbox.get_children():
+		child.queue_free()
+
+	kits_credits_label.text = "Credits: %d" % SaveManager.data.total_credits
+	var eq: Array[String] = SaveManager.data.equipped_kits
+	if eq.is_empty():
+		eq = ["stim_pack", "flash_trap"]
+	var slot1_name: String = KIT_NAMES.get(eq[0], eq[0]) if eq.size() > 0 else "None"
+	var slot2_name: String = KIT_NAMES.get(eq[1], eq[1]) if eq.size() > 1 else "None"
+	kits_equipped_label.text = "Slot 1: %s  |  Slot 2: %s" % [slot1_name, slot2_name]
+
+	for kit_id in ALL_KIT_IDS:
+		var owned: bool = SaveManager.data.unlocked_kits.has(kit_id)
+		var tier: int = SaveManager.data.kit_tiers.get(kit_id, 0)
+		var kit_name: String = KIT_NAMES.get(kit_id, kit_id)
+		var kit_desc: String = KIT_DESCS.get(kit_id, "")
+		var t3_choice: String = SaveManager.data.kit_t3_choices.get(kit_id, "")
+
+		var row := VBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+
+		# Kit name and info
+		var info_lbl := Label.new()
+		if owned:
+			info_lbl.text = "%s (T%d) - %s" % [kit_name, tier, kit_desc]
+		else:
+			info_lbl.text = "%s - %s" % [kit_name, kit_desc]
+		info_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(info_lbl)
+
+		# Action buttons
+		var btn_row := HBoxContainer.new()
+		btn_row.add_theme_constant_override("separation", 4)
+		row.add_child(btn_row)
+
+		if not owned:
+			var cost: int = KIT_UNLOCK_COSTS.get(kit_id, 999)
+			var unlock_btn := Button.new()
+			unlock_btn.text = "Unlock (%dcr)" % cost
+			unlock_btn.custom_minimum_size = Vector2(120, 36)
+			unlock_btn.disabled = SaveManager.data.total_credits < cost
+			unlock_btn.pressed.connect(_on_kit_unlock.bind(kit_id, cost))
+			btn_row.add_child(unlock_btn)
+		else:
+			if tier < 2:
+				var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
+				var t2_cost: int = costs[1] if costs.size() > 1 else 100
+				var t2_btn := Button.new()
+				t2_btn.text = "Upgrade T2 (%dcr)" % t2_cost
+				t2_btn.custom_minimum_size = Vector2(140, 36)
+				t2_btn.disabled = SaveManager.data.total_credits < t2_cost
+				t2_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 2, t2_cost))
+				btn_row.add_child(t2_btn)
+			elif tier == 2:
+				var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
+				var t3_cost: int = costs[2] if costs.size() > 2 else 200
+				var clean_btn := Button.new()
+				clean_btn.text = "T3 Clean (%dcr)" % t3_cost
+				clean_btn.custom_minimum_size = Vector2(120, 36)
+				clean_btn.disabled = SaveManager.data.total_credits < t3_cost
+				clean_btn.pressed.connect(_on_kit_t3_choice.bind(kit_id, "clean", t3_cost))
+				btn_row.add_child(clean_btn)
+
+				var void_btn := Button.new()
+				void_btn.text = "T3 Void (%dcr)" % t3_cost
+				void_btn.custom_minimum_size = Vector2(120, 36)
+				void_btn.disabled = SaveManager.data.total_credits < t3_cost
+				void_btn.pressed.connect(_on_kit_t3_choice.bind(kit_id, "void", t3_cost))
+				btn_row.add_child(void_btn)
+			else:
+				var maxed_lbl := Label.new()
+				maxed_lbl.text = "MAXED (T3 %s)" % t3_choice.capitalize()
+				btn_row.add_child(maxed_lbl)
+
+			# Assign to slot buttons
+			var s1_btn := Button.new()
+			s1_btn.text = "Slot 1"
+			s1_btn.custom_minimum_size = Vector2(60, 36)
+			s1_btn.pressed.connect(_on_kit_assign.bind(kit_id, 0))
+			btn_row.add_child(s1_btn)
+
+			var s2_btn := Button.new()
+			s2_btn.text = "Slot 2"
+			s2_btn.custom_minimum_size = Vector2(60, 36)
+			s2_btn.pressed.connect(_on_kit_assign.bind(kit_id, 1))
+			btn_row.add_child(s2_btn)
+
+		var kit_sep := HSeparator.new()
+		row.add_child(kit_sep)
+
+		kits_scroll_vbox.add_child(row)
+
+func _on_kit_unlock(kit_id: String, cost: int) -> void:
+	if SaveManager.data.total_credits < cost:
+		return
+	SaveManager.data.total_credits -= cost
+	SaveManager.data.unlocked_kits.append(kit_id)
+	SaveManager.data.kit_tiers[kit_id] = 1
+	SaveManager.save_game()
+	_build_kits_list()
+	_update_stats()
+
+func _on_kit_tier_upgrade(kit_id: String, new_tier: int, cost: int) -> void:
+	if SaveManager.data.total_credits < cost:
+		return
+	SaveManager.data.total_credits -= cost
+	SaveManager.data.kit_tiers[kit_id] = new_tier
+	SaveManager.save_game()
+	_build_kits_list()
+	_update_stats()
+
+func _on_kit_t3_choice(kit_id: String, choice: String, cost: int) -> void:
+	if SaveManager.data.total_credits < cost:
+		return
+	SaveManager.data.total_credits -= cost
+	SaveManager.data.kit_tiers[kit_id] = 3
+	SaveManager.data.kit_t3_choices[kit_id] = choice
+	SaveManager.save_game()
+	_build_kits_list()
+	_update_stats()
+
+func _on_kit_assign(kit_id: String, slot: int) -> void:
+	var eq: Array[String] = SaveManager.data.equipped_kits
+	if eq.is_empty():
+		eq = ["stim_pack", "flash_trap"]
+	while eq.size() < 2:
+		eq.append("")
+	# Avoid duplicate
+	var other_slot: int = 1 - slot
+	if eq[other_slot] == kit_id:
+		eq[other_slot] = eq[slot]
+	eq[slot] = kit_id
+	SaveManager.data.equipped_kits = eq
+	SaveManager.save_game()
+	_build_kits_list()
+
 func _on_buy_upgrade(upgrade_id: String, cost: int) -> void:
 	SaveManager.buy_upgrade(upgrade_id, cost)
 	_refresh_shop()
@@ -227,15 +459,28 @@ func _on_buy_weapon(weapon_id: String, cost: int) -> void:
 func _show_ship_tab() -> void:
 	ship_tab_content.visible = true
 	upgrades_tab_content.visible = false
+	kits_tab_content.visible = false
 	ship_tab_btn.disabled = true
 	upgrades_tab_btn.disabled = false
+	kits_tab_btn.disabled = false
 
 func _show_upgrades_tab() -> void:
 	ship_tab_content.visible = false
 	upgrades_tab_content.visible = true
+	kits_tab_content.visible = false
 	ship_tab_btn.disabled = false
 	upgrades_tab_btn.disabled = true
+	kits_tab_btn.disabled = false
 	_refresh_shop()
+
+func _show_kits_tab() -> void:
+	ship_tab_content.visible = false
+	upgrades_tab_content.visible = false
+	kits_tab_content.visible = true
+	ship_tab_btn.disabled = false
+	upgrades_tab_btn.disabled = false
+	kits_tab_btn.disabled = true
+	_build_kits_list()
 
 func _update_stats() -> void:
 	var d := SaveManager.data

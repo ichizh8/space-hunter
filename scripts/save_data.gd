@@ -20,6 +20,8 @@ var stock: Dictionary = {
 var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
 var kit_tiers: Dictionary = {"stim_pack": 1, "flash_trap": 1}
 var unlocked_kits: Array[String] = ["stim_pack", "flash_trap"]
+var kit_t3_choices: Dictionary = {}  # kit_id -> "clean" or "void"
+var kit_t2_paths: Dictionary = {}  # kit_id -> "attack"|"shield"|"harvest"
 var version: int = 1
 
 func to_dict() -> Dictionary:
@@ -36,6 +38,8 @@ func to_dict() -> Dictionary:
 		"equipped_kits": equipped_kits.duplicate(),
 		"kit_tiers": kit_tiers.duplicate(),
 		"unlocked_kits": unlocked_kits.duplicate(),
+		"kit_t3_choices": kit_t3_choices.duplicate(),
+		"kit_t2_paths": kit_t2_paths.duplicate(),
 	}
 
 func from_dict(data: Dictionary) -> void:
@@ -88,3 +92,9 @@ func from_dict(data: Dictionary) -> void:
 		unlocked_kits.clear()
 		for k in raw_unlocked_kits: unlocked_kits.append(str(k))
 	if unlocked_kits.is_empty(): unlocked_kits = ["stim_pack", "flash_trap"]
+
+	var raw_t3: Variant = data.get("kit_t3_choices", {})
+	if raw_t3 is Dictionary: kit_t3_choices = (raw_t3 as Dictionary).duplicate()
+
+	var raw_t2p: Variant = data.get("kit_t2_paths", {})
+	if raw_t2p is Dictionary: kit_t2_paths = (raw_t2p as Dictionary).duplicate()

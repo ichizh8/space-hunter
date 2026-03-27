@@ -8,6 +8,8 @@ var hunt_result: Dictionary = {}
 var starting_weapon: String = "sidearm"
 var equipped_kits: Array[String] = ["stim_pack", "flash_trap"]
 var kit_tiers: Dictionary = {}
+var kit_t3_choices: Dictionary = {}
+var kit_t2_paths: Dictionary = {}
 
 func generate_contracts(count: int = 3) -> Array[Dictionary]:
 	var contracts: Array[Dictionary] = []

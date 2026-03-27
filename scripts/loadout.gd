@@ -6,6 +6,10 @@ var weapon_buttons: Array[Button] = []
 var consumable_labels: Dictionary = {}  # item_id -> Label
 var slots_label: Label
 var total_slots: int = 4
+var kit_slot_labels: Array[Label] = []
+var kit_picker_visible: int = -1  # -1 = hidden, 0/1 = slot being changed
+var kit_picker_container: VBoxContainer = null
+var main_vbox: VBoxContainer = null
 
 const STOCK_NAMES: Dictionary = {
 	"field_stim": "Field Stim",
@@ -47,34 +51,34 @@ func _ready() -> void:
 	margin.add_theme_constant_override("margin_bottom", 40)
 	add_child(margin)
 
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 12)
-	margin.add_child(vbox)
+	main_vbox = VBoxContainer.new()
+	main_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_vbox.add_theme_constant_override("separation", 12)
+	margin.add_child(main_vbox)
 
 	# Title
 	var title := Label.new()
 	title.text = "Hunt Loadout"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	main_vbox.add_child(title)
 
 	# Subtitle
 	var subtitle := Label.new()
 	subtitle.text = "Contract: %s | Depth %d" % [contract.get("name", "Unknown"), contract.get("depth", 1)]
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(subtitle)
+	main_vbox.add_child(subtitle)
 
 	var sep1 := HSeparator.new()
-	vbox.add_child(sep1)
+	main_vbox.add_child(sep1)
 
 	# Starting weapon section
 	var weapon_title := Label.new()
 	weapon_title.text = "Starting Weapon:"
-	vbox.add_child(weapon_title)
+	main_vbox.add_child(weapon_title)
 
 	var weapon_row := HBoxContainer.new()
 	weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(weapon_row)
+	main_vbox.add_child(weapon_row)
 
 	var unlocked: Array[String] = SaveManager.data.unlocked_weapons
 	if unlocked.is_empty():
@@ -92,39 +96,59 @@ func _ready() -> void:
 	_update_weapon_highlight()
 
 	var sep2 := HSeparator.new()
-	vbox.add_child(sep2)
+	main_vbox.add_child(sep2)
 
-	# Equipped Kits section
+	# Equipped Kits section with Change buttons
 	var kit_title := Label.new()
 	kit_title.text = "Equipped Kits:"
-	vbox.add_child(kit_title)
-
-	var kit_row := HBoxContainer.new()
-	kit_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	kit_row.add_theme_constant_override("separation", 20)
-	vbox.add_child(kit_row)
+	main_vbox.add_child(kit_title)
 
 	var eq_kits: Array[String] = SaveManager.data.equipped_kits
 	if eq_kits.is_empty():
 		eq_kits = ["stim_pack", "flash_trap"]
-	for ki in range(mini(2, eq_kits.size())):
-		var kit_id: String = eq_kits[ki]
+
+	for ki in range(2):
+		var kit_row := HBoxContainer.new()
+		kit_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		kit_row.add_theme_constant_override("separation", 10)
+		main_vbox.add_child(kit_row)
+
+		var kit_id: String = eq_kits[ki] if ki < eq_kits.size() else ""
+		var tier: int = SaveManager.data.kit_tiers.get(kit_id, 1)
+		var t3c: String = SaveManager.data.kit_t3_choices.get(kit_id, "")
+		var tier_str: String = " T%d" % tier
+		if tier >= 3 and not t3c.is_empty():
+			tier_str += " (%s)" % t3c.capitalize()
+
 		var kit_lbl := Label.new()
-		kit_lbl.text = "Slot %d: %s" % [ki + 1, KIT_NAMES.get(kit_id, kit_id.capitalize())]
+		kit_lbl.text = "Slot %d: %s%s" % [ki + 1, KIT_NAMES.get(kit_id, kit_id.capitalize()), tier_str]
 		kit_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		kit_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		kit_row.add_child(kit_lbl)
+		kit_slot_labels.append(kit_lbl)
+
+		var change_btn := Button.new()
+		change_btn.text = "Change"
+		change_btn.custom_minimum_size = Vector2(80, 36)
+		change_btn.pressed.connect(_on_kit_change.bind(ki))
+		kit_row.add_child(change_btn)
+
+	# Kit picker container (hidden initially)
+	kit_picker_container = VBoxContainer.new()
+	kit_picker_container.visible = false
+	main_vbox.add_child(kit_picker_container)
 
 	var sep2b := HSeparator.new()
-	vbox.add_child(sep2b)
+	main_vbox.add_child(sep2b)
 
 	# Consumables section
 	var consumable_title := Label.new()
 	consumable_title.text = "Consumables:"
-	vbox.add_child(consumable_title)
+	main_vbox.add_child(consumable_title)
 
 	slots_label = Label.new()
 	slots_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(slots_label)
+	main_vbox.add_child(slots_label)
 	_update_slots_label()
 
 	var stock: Dictionary = SaveManager.data.stock
@@ -133,7 +157,7 @@ func _ready() -> void:
 			continue
 		var row := HBoxContainer.new()
 		row.alignment = BoxContainer.ALIGNMENT_CENTER
-		vbox.add_child(row)
+		main_vbox.add_child(row)
 
 		var display_name: String = STOCK_NAMES.get(item_id, item_id.replace("_", " ").capitalize())
 		var lbl := Label.new()
@@ -157,18 +181,18 @@ func _ready() -> void:
 		_update_consumable_label(item_id)
 
 	var sep3 := HSeparator.new()
-	vbox.add_child(sep3)
+	main_vbox.add_child(sep3)
 
 	# Credits
 	var credits_lbl := Label.new()
 	credits_lbl.text = "Credits: %d" % SaveManager.data.total_credits
 	credits_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(credits_lbl)
+	main_vbox.add_child(credits_lbl)
 
 	# Buttons
 	var btn_row := HBoxContainer.new()
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(btn_row)
+	main_vbox.add_child(btn_row)
 
 	var back_btn := Button.new()
 	back_btn.text = "BACK"
@@ -181,6 +205,71 @@ func _ready() -> void:
 	go_btn.custom_minimum_size = Vector2(120, 60)
 	go_btn.pressed.connect(_on_go_hunt)
 	btn_row.add_child(go_btn)
+
+func _on_kit_change(slot: int) -> void:
+	kit_picker_visible = slot
+	# Clear and rebuild picker
+	for child in kit_picker_container.get_children():
+		child.queue_free()
+
+	var picker_lbl := Label.new()
+	picker_lbl.text = "Select kit for Slot %d:" % (slot + 1)
+	picker_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kit_picker_container.add_child(picker_lbl)
+
+	var unlocked_kits: Array[String] = SaveManager.data.unlocked_kits
+	for kid in unlocked_kits:
+		var tier: int = SaveManager.data.kit_tiers.get(kid, 1)
+		var t3c: String = SaveManager.data.kit_t3_choices.get(kid, "")
+		var desc: String = KIT_NAMES.get(kid, kid)
+		if tier >= 3 and not t3c.is_empty():
+			desc += " T%d (%s)" % [tier, t3c.capitalize()]
+		else:
+			desc += " T%d" % tier
+
+		var pick_btn := Button.new()
+		pick_btn.text = desc
+		pick_btn.custom_minimum_size = Vector2(0, 36)
+		pick_btn.pressed.connect(_on_kit_picked.bind(kid, slot))
+		kit_picker_container.add_child(pick_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.custom_minimum_size = Vector2(0, 36)
+	cancel_btn.pressed.connect(_on_kit_picker_cancel)
+	kit_picker_container.add_child(cancel_btn)
+
+	kit_picker_container.visible = true
+
+func _on_kit_picked(kit_id: String, slot: int) -> void:
+	var eq: Array[String] = SaveManager.data.equipped_kits
+	if eq.is_empty():
+		eq = ["stim_pack", "flash_trap"]
+	while eq.size() < 2:
+		eq.append("")
+	var other: int = 1 - slot
+	if eq[other] == kit_id:
+		eq[other] = eq[slot]
+	eq[slot] = kit_id
+	SaveManager.data.equipped_kits = eq
+	SaveManager.save_game()
+
+	# Update labels
+	for ki in range(2):
+		var kid: String = eq[ki]
+		var tier: int = SaveManager.data.kit_tiers.get(kid, 1)
+		var t3c: String = SaveManager.data.kit_t3_choices.get(kid, "")
+		var tier_str: String = " T%d" % tier
+		if tier >= 3 and not t3c.is_empty():
+			tier_str += " (%s)" % t3c.capitalize()
+		kit_slot_labels[ki].text = "Slot %d: %s%s" % [ki + 1, KIT_NAMES.get(kid, kid.capitalize()), tier_str]
+
+	kit_picker_container.visible = false
+	kit_picker_visible = -1
+
+func _on_kit_picker_cancel() -> void:
+	kit_picker_container.visible = false
+	kit_picker_visible = -1
 
 func _get_total_chosen() -> int:
 	var total := 0
@@ -235,6 +324,8 @@ func _on_go_hunt() -> void:
 	GameData.starting_weapon = selected_weapon
 	GameData.equipped_kits = SaveManager.data.equipped_kits.duplicate()
 	GameData.kit_tiers = SaveManager.data.kit_tiers.duplicate()
+	GameData.kit_t3_choices = SaveManager.data.kit_t3_choices.duplicate()
+	GameData.kit_t2_paths = SaveManager.data.kit_t2_paths.duplicate()
 
 	# Build loadout array and consume stock
 	var loadout_arr: Array[Dictionary] = []
