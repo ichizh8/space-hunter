@@ -390,6 +390,7 @@ var obstacles: Array = []
 
 # === Enemies ===
 var enemies: Array = []
+var pending_enemy_spawns: Array = []
 var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
 
 # === Pickups ===
@@ -1492,6 +1493,12 @@ func _process(delta: float) -> void:
 	_update_familiar(delta)
 	_update_contract_mode(delta)
 	_update_affix_trails(delta)
+
+	# Flush pending enemy spawns (never append during iteration)
+	if not pending_enemy_spawns.is_empty():
+		for _pe in pending_enemy_spawns:
+			enemies.append(_pe)
+		pending_enemy_spawns.clear()
 
 	queue_redraw()
 
@@ -2985,7 +2992,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		copy.pos = death_pos + perp
 		copy.hp = int(float(e.max_hp) * 0.3)
 		copy.has_split = true
-		enemies.append(copy)
+		pending_enemy_spawns.append(copy)
 		_show_message("Current Stalker splits!")
 		return
 
@@ -3005,7 +3012,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			mc_copy.affix_list = []
 			mc_copy["is_multiplier_copy"] = true
 			mc_copy["no_drops"] = true
-			enemies.append(mc_copy)
+			pending_enemy_spawns.append(mc_copy)
 
 	# Apex death: reset timer
 	if e.get("is_apex", false):
@@ -4951,23 +4958,23 @@ func _update_turrets(delta: float) -> void:
 					best_idx = ei
 			if best_idx >= 0:
 				var e: Dictionary = enemies[best_idx]
-				# T3 clean: turret has shield
-				if tr.get("shield_hp", 0) > 0:
-					pass  # shield absorbs damage passively
-				e.hp -= 1
-				enemies[best_idx] = e
-				if e.hp <= 0:
-					# T3 void: killed enemies explode
-					if tr.get("void_rounds", false):
-						aoe_flashes.append({pos=e.pos, radius=30.0, timer=0.2, color=Color(0.6,0.0,0.9,0.5)})
-						for ei2 in range(enemies.size()):
-							if ei2 == best_idx or enemies[ei2].hp <= 0:
-								continue
-							if e.pos.distance_to(enemies[ei2].pos) < 30.0:
-								enemies[ei2].hp -= 1
-								if enemies[ei2].hp <= 0:
-									_on_enemy_killed(ei2)
-					_on_enemy_killed(best_idx)
+				var turret_bullet: Dictionary = {
+					pos = tr.pos,
+					vel = (e.pos - tr.pos).normalized() * 500.0,
+					damage = 1,
+					radius = 4.0,
+					color = Color(1.0, 0.8, 0.0),
+					pierce = false,
+					weapon_id = "turret_kit",
+					lifetime = 0.8,
+					from_player = true,
+					source = "turret",
+				}
+				if turret_tier >= 2:
+					turret_bullet.damage = 2
+				if tr.get("void_rounds", false):
+					turret_bullet["explode"] = true
+				bullets.append(turret_bullet)
 		turrets[i] = tr
 		i -= 1
 
