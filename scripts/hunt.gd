@@ -1689,7 +1689,7 @@ func _update_enemies(delta: float) -> void:
 							rng2.randomize()
 							# Teleport 350-550px from player — far enough to react
 							var angle: float = rng2.randf() * TAU
-							var tdist: float = rng2.randf_range(350.0, 550.0)
+							var tdist: float = rng2.randf_range(180.0, 280.0)
 							var new_p := player_pos + Vector2(cos(angle), sin(angle)) * tdist
 							new_p.x = clampf(new_p.x, 80.0, WORLD_W - 80.0)
 							new_p.y = clampf(new_p.y, 80.0, WORLD_H - 80.0)
