@@ -3067,15 +3067,15 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	if e.get("is_elite", false) and weapon_mods.get(main_weapon.get("id", ""), {}).get("missile_burst", false):
 		for _mb in range(2):
 			var mb_dir: Vector2 = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
-			bullets.append({pos=death_pos, vel=mb_dir * 120.0, radius=12.0, color=Color(0.2,1.0,0.5), damage=15, lifetime=4.0, from_player=true, homing=true, bullet_speed=120.0, weapon_id="dart"})
+			bullets.append({pos=death_pos, vel=mb_dir * 120.0, radius=12.0, color=Color(0.2,1.0,0.5), damage=15, lifetime=4.0, from_player=true, homing=true, bullet_speed=120.0, weapon_id="missile", is_missile=true})
 
 	# Scavenger: elites drop extra essence
 	if "scavenger" in modifiers_taken and e.get("is_elite", false):
 		pickups.append({pos = death_pos + Vector2(randf_range(-10, 10), randf_range(-10, 10)), type = "essence"})
 
-	# On-kill lance (#2)
+	# On-kill lance (#2) — only triggers from player-fired lances, not from auto-lances
 	var lance_mods: Dictionary = weapon_mods.get("lance", {})
-	if lance_mods.get("on_kill_lance", false) and main_weapon.get("id", "") == "lance":
+	if lance_mods.get("on_kill_lance", false) and main_weapon.get("id", "") == "lance" and killer_weapon != "auto_lance":
 		var nearest_e_dist: float = 999999.0
 		var nearest_e_pos := Vector2.ZERO
 		var found_ne := false
@@ -3102,10 +3102,10 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 				from_player = true,
 				piercing = true,
 				hit_ids = [],
-				weapon_id = "lance",
+				weapon_id = "auto_lance",
 			})
 
-	# Split on kill — dart (#10)
+	# Split on kill — dart (#10) — skip for missile_burst missiles (killer_weapon="missile")
 	if killer_weapon == "dart" and weapon_mods.get("dart", {}).get("split_on_kill", false):
 		var dart_def: Dictionary = WEAPON_DEFS["dart"]
 		var dart_mods: Dictionary = weapon_mods.get("dart", {})
