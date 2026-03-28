@@ -64,7 +64,7 @@ const WEAPON_LEVEL_PERKS: Dictionary = {
 }
 
 # Run modifiers — drawn randomly, no repeats per run
-const RUN_MODIFIERS: Array[Dictionary] = [
+const RUN_MODIFIERS: Array = [
 	{id="adrenaline",   rarity="rare",   icon="E", name="Adrenaline",    desc="3 kills in 3s: +5% speed stacking (resets on hit)"},
 	{id="void_hunger",  rarity="common", icon="V", name="Void Hunger",   desc="Killing void-type enemies restores 1 HP"},
 	{id="stalker",      rarity="rare",   icon="S", name="Stalker",       desc="+40% damage to enemies not targeting you"},
@@ -84,9 +84,9 @@ const RUN_MODIFIERS: Array[Dictionary] = [
 	{id="elite_dmg",    rarity="rare",   icon="K", name="Hunters Mark",  desc="+30% damage vs elites"},
 	{id="corruption_resist", rarity="rare", icon="C", name="Void Skin", desc="Corruption gain -25%"},
 ]
-var modifiers_taken: Array[String] = []
-var mastery_taken: Array[String] = []
-var resonance_taken: Array[String] = []
+var modifiers_taken: Array = []
+var mastery_taken: Array = []
+var resonance_taken: Array = []
 
 # Weapon mutations
 const WEAPON_MUTATIONS: Dictionary = {
@@ -242,7 +242,7 @@ const WEAPON_MASTERY: Dictionary = {
 }
 
 # Resonance perks (cross-kit combos, post-T3)
-const RESONANCE_POOL: Array[Dictionary] = [
+const RESONANCE_POOL: Array = [
 	{id="linked_fuse", kits=["flash_trap","blink_kit"], icon="L", name="Linked Fuse", desc="Blink teleports you to nearest triggered trap."},
 	{id="sympathetic_fire", kits=["drone_kit","blink_kit"], icon="S", name="Sympathetic Fire", desc="Drone fires when you fire, not on timer."},
 	{id="overcharge_drone", kits=["drone_kit","anchor_kit"], icon="O", name="Overcharge", desc="Drone fires 2x faster after anchor well expires."},
@@ -271,26 +271,26 @@ var main_weapon: Dictionary = {}
 
 # === Bullets ===
 # {pos, vel, radius, color, damage, lifetime, from_player}
-var bullets: Array[Dictionary] = []
+var bullets: Array = []
 
 # === Obstacles ===
 # {pos: Vector2, radius: float}
-var obstacles: Array[Dictionary] = []
+var obstacles: Array = []
 
 # === Enemies ===
-var enemies: Array[Dictionary] = []
+var enemies: Array = []
 var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
 
 # === Pickups ===
 # {pos, type, color, ingredient_data} for ingredients
 # {pos, type} for essence
-var pickups: Array[Dictionary] = []
+var pickups: Array = []
 
 # === Ingredient pickups (Phase 3 — pristine quality) ===
-var ingredient_pickups: Array[Dictionary] = []
+var ingredient_pickups: Array = []
 
 # === AOE flashes ===
-var aoe_flashes: Array[Dictionary] = []
+var aoe_flashes: Array = []
 
 # === Essence collect radius ===
 var essence_collect_radius: float = 60.0
@@ -314,7 +314,7 @@ var elite_spawned_count := 0
 const ELITE_TYPES: Array = ["Void Hulk", "Phase Hunter", "Brood Mother"]
 
 # === Ingredients collected ===
-var run_ingredients: Array[Dictionary] = []
+var run_ingredients: Array = []
 
 # === Void essence / leveling ===
 var essence_collected := 0
@@ -345,16 +345,16 @@ var corruption_prev_threshold: int = 0  # 0=CLEAN, 1=VALLEY, 2=CORRUPT, 3=VOID
 var xp_threshold: int = 20
 
 # === Kit system ===
-var equipped_kits: Array[String] = []
+var equipped_kits: Array = []
 var kit_states: Dictionary = {}
 var kit_tiers: Dictionary = {}
-var kit_button_rects: Array[Rect2] = []
+var kit_button_rects: Array = []
 
-var traps: Array[Dictionary] = []
-var decoys: Array[Dictionary] = []
-var turrets: Array[Dictionary] = []
-var smoke_zones: Array[Dictionary] = []
-var gravity_wells: Array[Dictionary] = []
+var traps: Array = []
+var decoys: Array = []
+var turrets: Array = []
+var smoke_zones: Array = []
+var gravity_wells: Array = []
 var drone_active: bool = false
 var drone_pos: Vector2 = Vector2.ZERO
 var drone_intercept_timer: float = 0.0
@@ -369,10 +369,10 @@ var kit_t2_paths: Dictionary = {}
 var drone_fire_timer: float = 0.0
 var stim_speed_timer: float = 0.0
 var blink_empowered: bool = false
-var walls: Array[Dictionary] = []
+var walls: Array = []
 var overcharge_timer: float = 0.0
 var drone_barrier_timer: float = 0.0
-var pack_allies: Array[int] = []
+var pack_allies: Array = []
 var baton_hit_count: int = 0
 var baton_hit_timer: float = 0.0
 
@@ -400,14 +400,14 @@ var hud_message := ""
 var hud_message_timer := 0.0
 
 # === Environments ===
-var rivers: Array[Dictionary] = []
-var bridges: Array[Dictionary] = []
-var caves: Array[Dictionary] = []
-var void_pools: Array[Dictionary] = []
+var rivers: Array = []
+var bridges: Array = []
+var caves: Array = []
+var void_pools: Array = []
 var player_in_cave: int = -1
 
 # === Upgrade panel ===
-var upgrade_choices: Array[Dictionary] = []
+var upgrade_choices: Array = []
 var upgrade_buttons: Array = [] # Node references
 
 # === Creature data ===
@@ -558,7 +558,7 @@ func _generate_rivers() -> void:
 	# River 1: left to right
 	var r1_start := Vector2(0.0, rng.randf_range(1000.0, 3800.0))
 	var r1_end := Vector2(4800.0, rng.randf_range(1000.0, 3800.0))
-	var r1_waypoints: Array[Vector2] = [r1_start]
+	var r1_waypoints: Array = [r1_start]
 	var r1_count: int = rng.randi_range(4, 6)
 	for wi in range(r1_count):
 		var t: float = float(wi + 1) / float(r1_count + 1)
@@ -576,7 +576,7 @@ func _generate_rivers() -> void:
 	# River 2: top to bottom
 	var r2_start := Vector2(rng.randf_range(1000.0, 3800.0), 0.0)
 	var r2_end := Vector2(rng.randf_range(1000.0, 3800.0), 4800.0)
-	var r2_waypoints: Array[Vector2] = [r2_start]
+	var r2_waypoints: Array = [r2_start]
 	var r2_count: int = rng.randi_range(4, 6)
 	for wi in range(r2_count):
 		var t: float = float(wi + 1) / float(r2_count + 1)
@@ -592,7 +592,7 @@ func _generate_rivers() -> void:
 
 	# Build segment circles for each river
 	for waypoints in [r1_waypoints, r2_waypoints]:
-		var segs: Array[Dictionary] = []
+		var segs: Array = []
 		for si in range(waypoints.size() - 1):
 			var a: Vector2 = waypoints[si]
 			var b: Vector2 = waypoints[si + 1]
@@ -1295,7 +1295,7 @@ func _update_weapons(delta: float) -> void:
 				# No bullet — instant AOE damage
 				var melee_range: float = def.range + mods_w.get("radius_bonus", 0.0)
 				var melee_hits: int = 0
-				var melee_hit_indices: Array[int] = []
+				var melee_hit_indices: Array = []
 				# Consuming vortex: expand AOE
 				var vortex_active: bool = mods_w.get("consuming_vortex", false)
 				if vortex_active:
@@ -1325,7 +1325,7 @@ func _update_weapons(delta: float) -> void:
 						var hit_e: Dictionary = enemies[hi]
 						if hit_e.hp <= 0:
 							continue
-						var chain_targets: Array[int] = []
+						var chain_targets: Array = []
 						for ci in range(enemies.size()):
 							if ci == hi or enemies[ci].hp <= 0:
 								continue
@@ -1441,7 +1441,7 @@ func _update_aoe_flashes(delta: float) -> void:
 # ENEMIES
 # =========================================================
 func _update_enemies(delta: float) -> void:
-	var dead_indices: Array[int] = []
+	var dead_indices: Array = []
 
 	for i in range(enemies.size()):
 		var e: Dictionary = enemies[i]
@@ -1788,7 +1788,7 @@ func _update_enemies(delta: float) -> void:
 
 	# Purge dead enemies every 5 seconds (not every frame — avoid index thrash)
 	if int(hunt_elapsed) % 5 == 0 and fmod(hunt_elapsed, 5.0) < delta * 2.0:
-		var living: Array[Dictionary] = []
+		var living: Array = []
 		for e in enemies:
 			if e.hp > 0:
 				living.append(e)
@@ -1826,8 +1826,8 @@ func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vect
 # BULLETS
 # =========================================================
 func _update_bullets(delta: float) -> void:
-	var to_remove: Array[int] = []
-	var new_bullets: Array[Dictionary] = []
+	var to_remove: Array = []
+	var new_bullets: Array = []
 
 	for i in range(bullets.size()):
 		var b: Dictionary = bullets[i]
@@ -2184,7 +2184,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		var dart_mods: Dictionary = weapon_mods.get("dart", {})
 		var dart_dmg: int = dart_def.damage + dart_mods.get("damage_bonus", 0)
 		# Find 2 nearest living enemies
-		var split_targets: Array[Dictionary] = []
+		var split_targets: Array = []
 		for se in enemies:
 			if se.hp <= 0:
 				continue
@@ -2311,7 +2311,7 @@ func _spawn_exit() -> void:
 # PICKUPS
 # =========================================================
 func _check_pickups() -> void:
-	var to_remove: Array[int] = []
+	var to_remove: Array = []
 
 	for i in range(pickups.size()):
 		var p: Dictionary = pickups[i]
@@ -2361,7 +2361,7 @@ func _level_up() -> void:
 	call_deferred("_create_upgrade_panel")
 
 func _generate_upgrades() -> Array:
-	var options: Array[Dictionary] = []
+	var options: Array = []
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 
@@ -2407,7 +2407,7 @@ func _generate_upgrades() -> Array:
 		# Mutated, offer mastery perk
 		if WEAPON_MASTERY.has(w.id) and WEAPON_MASTERY[w.id].has(w.mutation_type):
 			var mastery_pool: Array = WEAPON_MASTERY[w.id][w.mutation_type]
-			var available_m: Array[Dictionary] = []
+			var available_m: Array = []
 			for mp in mastery_pool:
 				if not mastery_taken.has(mp.id):
 					available_m.append(mp)
@@ -2427,7 +2427,7 @@ func _generate_upgrades() -> Array:
 	# Check if both kits have T3 — offer resonance
 	var both_t3: bool = equipped_kits.size() >= 2 and kit_tiers.get(equipped_kits[0], 1) >= 3 and kit_tiers.get(equipped_kits[1], 1) >= 3
 	if both_t3:
-		var avail_res: Array[Dictionary] = []
+		var avail_res: Array = []
 		for rp in RESONANCE_POOL:
 			if resonance_taken.has(rp.id):
 				continue
@@ -2461,7 +2461,7 @@ func _generate_upgrades() -> Array:
 				slot2_done = true
 				break
 	if not slot2_done:
-		var avail2: Array[Dictionary] = []
+		var avail2: Array = []
 		for m in RUN_MODIFIERS:
 			if not modifiers_taken.has(m.id):
 				avail2.append(m)
@@ -2471,11 +2471,11 @@ func _generate_upgrades() -> Array:
 			options.append({type="modifier", id=m2.id, rarity=m2.rarity, icon=m2.icon, label=m2.name, desc=m2.desc, perk={}})
 
 	# --- Slot 3: MODIFIER ---
-	var used_mod_ids: Array[String] = modifiers_taken.duplicate()
+	var used_mod_ids: Array = modifiers_taken.duplicate()
 	for o in options:
 		if o.type == "modifier":
 			used_mod_ids.append(o.get("id", ""))
-	var avail3: Array[Dictionary] = []
+	var avail3: Array = []
 	for m in RUN_MODIFIERS:
 		if not used_mod_ids.has(m.id):
 			avail3.append(m)
@@ -2486,7 +2486,7 @@ func _generate_upgrades() -> Array:
 
 	# --- Guaranteed fallbacks so panel is never empty ---
 	if options.size() < 3:
-		var fallbacks: Array[Dictionary] = [
+		var fallbacks: Array = [
 			{type="fallback", id="hp_restore",   rarity="common", icon="H", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
 			{type="fallback", id="dmg_boost",    rarity="common", icon="D", label="Weapon Calibration", desc="+1 damage",                           perk={}},
 			{type="fallback", id="speed_boost",  rarity="common", icon="S", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
@@ -3624,7 +3624,7 @@ func _update_kit_cooldowns(delta: float) -> void:
 func _update_traps(delta: float) -> void:
 	var flash_tier: int = kit_tiers.get("flash_trap", 1)
 	var flash_t3: String = kit_t3_choices.get("flash_trap", "")
-	var triggered_indices: Array[int] = []
+	var triggered_indices: Array = []
 	var i := traps.size() - 1
 	while i >= 0:
 		var trap: Dictionary = traps[i]
@@ -3964,7 +3964,7 @@ func _update_familiar(delta: float) -> void:
 	var atk_interval: float = 3.0 if fam_tier < 2 else 2.0
 	if familiar_attack_timer <= 0.0:
 		familiar_attack_timer = atk_interval
-		var positions: Array[Vector2] = [familiar_pos]
+		var positions: Array = [familiar_pos]
 		if familiar2_active:
 			positions.append(familiar2_pos)
 		for fpos in positions:
