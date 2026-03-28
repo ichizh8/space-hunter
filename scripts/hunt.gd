@@ -8,7 +8,7 @@ const GRID_STEP := 300
 # === Weapon definitions ===
 const WEAPON_DEFS: Dictionary = {
 	# Sidearm: safe, balanced, no gimmick — pure reliability
-	"sidearm": {name="Pistol", desc="Reliable semi-auto. Consistent damage.", fire_rate=0.45, damage=2, bullet_speed=420.0, bullet_radius=4.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
+	"sidearm": {name="Pistol", desc="Reliable semi-auto. Aim carefully — has spread.", fire_rate=0.45, damage=2, bullet_speed=420.0, bullet_radius=4.0, color=Color(1.0,0.9,0.2), range=220.0, pattern="single"},
 	# Scatter: high spread, low range — must get close, big payoff in packs
 	"scatter": {name="Scatter", desc="3-pellet burst. Weak at range, deadly close.", fire_rate=0.8, damage=1, bullet_speed=360.0, bullet_radius=4.0, color=Color(1.0,0.5,0.1), range=180.0, pattern="scatter"},
 	# Lance: slow, high damage, pierces — punishes lined-up enemies
@@ -1723,9 +1723,16 @@ func _update_weapons(delta: float) -> void:
 		match def.pattern:
 			"single":
 				w.mag_ammo -= 1
+				# Sidearm has spread — not perfect auto-aim
+				var fire_dir: Vector2 = dir
+				if w.id == "sidearm":
+					var spread_rad: float = deg_to_rad(12.0)
+					if mods_w.get("tight_aim", false):
+						spread_rad = deg_to_rad(5.0)
+					fire_dir = dir.rotated(randf_range(-spread_rad, spread_rad))
 				var single_b: Dictionary = {
-					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
-					vel = dir * w_bullet_speed,
+					pos = player_pos + fire_dir * (PLAYER_RADIUS + 6.0),
+					vel = fire_dir * w_bullet_speed,
 					radius = def.bullet_radius,
 					color = def.color,
 					damage = fire_damage,
