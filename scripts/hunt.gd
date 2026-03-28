@@ -7,13 +7,20 @@ const GRID_STEP := 300
 
 # === Weapon definitions ===
 const WEAPON_DEFS: Dictionary = {
-	"sidearm": {name="Pistol", desc="Reliable semi-auto. Good range.", fire_rate=0.35, damage=3, bullet_speed=400.0, bullet_radius=5.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
-	"scatter": {name="Scatter Pistol", desc="3-pellet cone. Shreds packs.", fire_rate=0.7, damage=2, bullet_speed=380.0, bullet_radius=4.0, color=Color(1.0,0.5,0.1), range=220.0, pattern="scatter"},
-	"lance": {name="Void Lance", desc="Slow piercing shot. Hits all in line.", fire_rate=1.2, damage=6, bullet_speed=280.0, bullet_radius=7.0, color=Color(0.5,0.1,1.0), range=500.0, pattern="piercing"},
-	"baton": {name="Shock Baton", desc="Melee AOE pulse. Damages all within 100px.", fire_rate=0.8, damage=4, bullet_speed=0.0, bullet_radius=100.0, color=Color(0.1,0.8,1.0), range=100.0, pattern="melee_aoe"},
-	"dart": {name="Homing Dart", desc="Slow seeking projectile.", fire_rate=0.9, damage=3, bullet_speed=200.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"},
-	"pulse_cannon": {name="Pulse Cannon", desc="Charge to release knockback blast.", fire_rate=1.4, damage=5, bullet_speed=0.0, bullet_radius=120.0, color=Color(0.3,0.8,1.0), range=120.0, pattern="pulse"},
-	"chain_rifle": {name="Chain Rifle", desc="Bullet arcs between nearby enemies.", fire_rate=0.6, damage=3, bullet_speed=380.0, bullet_radius=6.0, color=Color(0.2,1.0,0.4), range=380.0, pattern="chain_shot"},
+	# Sidearm: safe, balanced, no gimmick — pure reliability
+	"sidearm": {name="Pistol", desc="Reliable semi-auto. Consistent damage.", fire_rate=0.45, damage=2, bullet_speed=420.0, bullet_radius=4.0, color=Color(1.0,0.9,0.2), range=350.0, pattern="single"},
+	# Scatter: high spread, low range — must get close, big payoff in packs
+	"scatter": {name="Scatter", desc="3-pellet burst. Weak at range, deadly close.", fire_rate=0.8, damage=1, bullet_speed=360.0, bullet_radius=4.0, color=Color(1.0,0.5,0.1), range=180.0, pattern="scatter"},
+	# Lance: slow, high damage, pierces — punishes lined-up enemies
+	"lance": {name="Lance", desc="Slow pierce. Hits everything in line.", fire_rate=1.6, damage=5, bullet_speed=260.0, bullet_radius=7.0, color=Color(0.5,0.1,1.0), range=500.0, pattern="piercing"},
+	# Baton: melee only — risky, high reward, needs corruption/perk investment
+	"baton": {name="Baton", desc="Melee AOE. High risk, scales with corruption.", fire_rate=1.0, damage=3, bullet_speed=0.0, bullet_radius=90.0, color=Color(0.1,0.8,1.0), range=90.0, pattern="melee_aoe"},
+	# Dart: homing, auto-aim — lowest damage but never misses
+	"dart": {name="Dart", desc="Homing. Tracks enemies. Low damage.", fire_rate=1.1, damage=2, bullet_speed=180.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"},
+	# Pulse: slow AOE melee knockback — crowd control, not burst damage
+	"pulse_cannon": {name="Pulse", desc="AOE knockback. Pushes crowds. Weak solo.", fire_rate=1.8, damage=3, bullet_speed=0.0, bullet_radius=110.0, color=Color(0.3,0.8,1.0), range=110.0, pattern="pulse"},
+	# Chain: chaining shots — strong when enemies cluster, weak vs single targets
+	"chain_rifle": {name="Chain", desc="Arcs between enemies. Scales with packs.", fire_rate=0.7, damage=2, bullet_speed=380.0, bullet_radius=6.0, color=Color(0.2,1.0,0.4), range=380.0, pattern="chain_shot"},
 }
 
 # Per-weapon level-up perks: each level 2-5 has a named perk with icon + description
@@ -414,15 +421,15 @@ var upgrade_buttons: Array = [] # Node references
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
 	# charge: runs straight at player — dumb, fast, cannon fodder
-	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 100, hp = 3, detection = 280, melee_dmg = 1, ranged = false, void_type = false, behavior = "charge"},
+	"Void Leech": {radius = 12, color = Color(0.8, 0.2, 0.2), speed = 100, hp = 5, detection = 280, melee_dmg = 1, ranged = false, void_type = false, behavior = "charge"},
 	# flank: tries to circle and approach from the side
-	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 110, hp = 3, detection = 300, melee_dmg = 1, ranged = false, void_type = false, behavior = "flank"},
+	"Shadow Crawler": {radius = 13, color = Color(0.5, 0.1, 0.7), speed = 110, hp = 5, detection = 300, melee_dmg = 1, ranged = false, void_type = false, behavior = "flank"},
 	# burst: slow patrol, then sudden 2.5x speed lunge, pauses after
-	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 65, hp = 6, detection = 320, melee_dmg = 2, ranged = false, void_type = false, behavior = "burst"},
+	"Abyss Worm": {radius = 14, color = Color(0.3, 0.6, 0.1), speed = 65, hp = 9, detection = 320, melee_dmg = 2, ranged = false, void_type = false, behavior = "burst"},
 	# strafe: ranged, sidesteps perpendicular to player while shooting
-	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 70, hp = 4, detection = 360, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.4, void_type = false, behavior = "strafe"},
+	"Nether Stalker": {radius = 12, color = Color(0.2, 0.4, 0.9), speed = 70, hp = 6, detection = 360, melee_dmg = 0, ranged = true, ranged_dmg = 2, ranged_cooldown = 1.4, void_type = false, behavior = "strafe"},
 	# pack: faster when allies are nearby, swarming behavior
-	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 100, hp = 4, detection = 300, melee_dmg = 1, ranged = false, void_type = true, behavior = "pack"},
+	"Rift Parasite": {radius = 11, color = Color(0.9, 0.5, 0.1), speed = 100, hp = 6, detection = 300, melee_dmg = 1, ranged = false, void_type = true, behavior = "pack"},
 	# lurker: dormant in caves until triggered
 	"Cave Lurker": {radius = 15, color = Color(0.25, 0.15, 0.35), speed = 140, hp = 8, detection = 999, melee_dmg = 3, ranged = false, void_type = false, behavior = "lurker"},
 	# patrol_river: patrols river banks, ranged
@@ -3053,8 +3060,14 @@ func _draw() -> void:
 	for trap in traps:
 		if trap.get("active", true):
 			var tsp: Vector2 = _w2s(trap.pos)
-			var diamond_pts := PackedVector2Array([tsp + Vector2(0, -5), tsp + Vector2(5, 0), tsp + Vector2(0, 5), tsp + Vector2(-5, 0)])
+			var decay_left: float = trap.get("decay_timer", 60.0)
+			# Radius ring — fades when <10s remaining
+			var ring_alpha: float = 0.35 if decay_left > 10.0 else (decay_left / 10.0) * 0.35
+			draw_arc(tsp, trap.get("radius", 80.0), 0.0, TAU, 32, Color(1.0, 0.9, 0.1, ring_alpha), 1.5)
+			# Center diamond
+			var diamond_pts := PackedVector2Array([tsp + Vector2(0, -6), tsp + Vector2(6, 0), tsp + Vector2(0, 6), tsp + Vector2(-6, 0)])
 			draw_colored_polygon(diamond_pts, Color(1.0, 0.9, 0.1))
+			draw_arc(tsp, 7.0, 0.0, TAU, 8, Color(1.0, 0.6, 0.0), 1.5)
 	for dc in decoys:
 		if dc.get("timer", 0.0) > 0.0:
 			var dsp: Vector2 = _w2s(dc.pos)
@@ -3322,7 +3335,7 @@ func _xp_needed_for_level(lv: int) -> int:
 func _init_kit_state(kit_id: String) -> Dictionary:
 	match kit_id:
 		"stim_pack": return {cooldown = 0.0, max_cooldown = 8.0}
-		"flash_trap": return {cooldown = 0.0, charges = 2}
+		"flash_trap": return {cooldown = 0.0, charges = 3, max_charges = 3, recharge_timer = 0.0}
 		"blink_kit": return {cooldown = 0.0, max_cooldown = 10.0}
 		"chain_kit": return {cooldown = 0.0, max_cooldown = 12.0}
 		"charge_kit": return {cooldown = 0.0, max_cooldown = 12.0, charging = false}
@@ -3365,9 +3378,19 @@ func _activate_kit(kit_id: String) -> void:
 				stim_speed_timer = 5.0
 		"flash_trap":
 			if charges > 0:
-				traps.append({pos = player_pos, radius = 80.0, active = true})
+				# Max 3 active at once — remove oldest if at cap
+				var active_count: int = 0
+				for tr in traps:
+					if tr.get("active", true): active_count += 1
+				if active_count >= 3:
+					for tridx in range(traps.size()):
+						if traps[tridx].get("active", true):
+							traps.remove_at(tridx)
+							break
+				traps.append({pos = player_pos, radius = 80.0, active = true, decay_timer = 60.0})
 				state.charges = charges - 1
-				_show_message("Trap placed!")
+				state.recharge_timer = 0.0
+				_show_message("Trap placed! [%d charges]" % (charges - 1))
 		"blink_kit":
 			var blink_dir: Vector2 = Vector2.UP
 			if joy_active:
@@ -3673,10 +3696,30 @@ func _update_kit_cooldowns(delta: float) -> void:
 func _update_traps(delta: float) -> void:
 	var flash_tier: int = kit_tiers.get("flash_trap", 1)
 	var flash_t3: String = kit_t3_choices.get("flash_trap", "")
+
+	# Recharge charges over time
+	if kit_states.has("flash_trap"):
+		var fs: Dictionary = kit_states["flash_trap"]
+		var max_ch: int = fs.get("max_charges", 3)
+		if fs.get("charges", 0) < max_ch:
+			fs["recharge_timer"] = fs.get("recharge_timer", 0.0) + delta
+			if fs["recharge_timer"] >= 25.0:
+				fs["recharge_timer"] = 0.0
+				fs["charges"] = fs.get("charges", 0) + 1
+		kit_states["flash_trap"] = fs
+
 	var triggered_indices: Array = []
 	var i := traps.size() - 1
 	while i >= 0:
 		var trap: Dictionary = traps[i]
+		# Decay timer
+		if trap.has("decay_timer"):
+			trap["decay_timer"] = trap["decay_timer"] - delta
+			if trap["decay_timer"] <= 0.0:
+				traps.remove_at(i)
+				i -= 1
+				continue
+			traps[i] = trap
 		if not trap.get("active", true):
 			traps.remove_at(i)
 			i -= 1
