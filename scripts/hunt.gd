@@ -586,10 +586,14 @@ func _init_contract_mode(contract: Dictionary) -> void:
 			pod_active = true
 			_show_message("Escort the pod to the target zone!")
 		"void_breach":
-			# Pick rift position far from player
-			rift_pos = Vector2(randf_range(600, WORLD_W - 600), randf_range(600, WORLD_H - 600))
-			while rift_pos.distance_to(player_pos) < 800.0:
-				rift_pos = Vector2(randf_range(600, WORLD_W - 600), randf_range(600, WORLD_H - 600))
+			# Pick rift position 400-700px from player — visible on screen or just off
+			var rng_vb := RandomNumberGenerator.new()
+			rng_vb.randomize()
+			var vb_angle: float = rng_vb.randf() * TAU
+			var vb_dist: float = rng_vb.randf_range(400.0, 700.0)
+			rift_pos = player_pos + Vector2(cos(vb_angle), sin(vb_angle)) * vb_dist
+			rift_pos.x = clampf(rift_pos.x, 200.0, WORLD_W - 200.0)
+			rift_pos.y = clampf(rift_pos.y, 200.0, WORLD_H - 200.0)
 			rift_hold_time = contract.get("hold_time", 180.0)
 			rift_active = true
 			_show_message("Get to the rift and hold position!")
@@ -683,15 +687,16 @@ func _update_void_breach(delta: float) -> void:
 	var player_dist: float = player_pos.distance_to(rift_pos)
 	if player_dist < rift_radius:
 		rift_time_held += delta
-		rift_time_outside = 0.0
 		# Extra corruption while in rift zone
 		corruption += 3.0 * delta
 	else:
-		rift_time_outside += delta
-	if rift_time_outside >= 10.0:
-		_show_message("Left rift too long! Failed!")
-		_finish_hunt(0)
-		return
+		# Only accumulate outside time after player has reached rift at least once
+		if rift_time_held > 0.0:
+			rift_time_outside += delta
+		if rift_time_outside >= 10.0:
+			_show_message("Left rift too long! Failed!")
+			_finish_hunt(0)
+			return
 	if rift_time_held >= rift_hold_time:
 		_show_message("Rift sealed! Hunt complete!")
 		_complete_hunt()
