@@ -843,7 +843,11 @@ func _spawn_elite(depth: int) -> void:
 		flank_side = 1.0, flank_timer = 1.5,
 		strafe_dir = 1.0, strafe_timer = 1.0,
 		# elite-specific state
-		phase_timer = 0.0,    # Phase Hunter teleport
+		phase_timer = 0.0,    # Phase Hunter jump cooldown
+		phase_jumping = false, # currently mid-jump
+		phase_jump_from = Vector2.ZERO,
+		phase_jump_to = Vector2.ZERO,
+		phase_jump_progress = 0.0, # 0.0 to 1.0
 		brood_triggered = false,  # Brood Mother add spawn
 		charge_timer = 0.0,   # Void Hulk slam cooldown
 	}
@@ -1680,32 +1684,52 @@ func _update_enemies(delta: float) -> void:
 							if player_hp <= 0:
 								_die()
 					elif etype == "Phase Hunter":
-						# Ranged + teleports every 4s
-						e.phase_timer -= delta
+						# Jump toward player every 6-9s, visible arc
 						e.ranged_cooldown_timer -= delta
-						if e.phase_timer <= 0.0:
-							e.phase_timer = randf_range(7.0, 10.0)
-							var rng2 := RandomNumberGenerator.new()
-							rng2.randomize()
-							# Teleport 350-550px from player — far enough to react
-							var angle: float = rng2.randf() * TAU
-							var tdist: float = rng2.randf_range(180.0, 280.0)
-							var new_p := player_pos + Vector2(cos(angle), sin(angle)) * tdist
-							new_p.x = clampf(new_p.x, 80.0, WORLD_W - 80.0)
-							new_p.y = clampf(new_p.y, 80.0, WORLD_H - 80.0)
-							e.pos = new_p
-							# Warning flash at destination before appearing
-							aoe_flashes.append({pos = new_p, radius = 50.0, timer = 0.5, color = Color(0.5, 0.1, 1.0, 0.6)})
-							aoe_flashes.append({pos = new_p, radius = 25.0, timer = 0.3, color = Color(0.8, 0.3, 1.0, 0.9)})
-						if e.ranged_cooldown_timer <= 0.0:
-							e.ranged_cooldown_timer = 1.2
+						if e.get("phase_jumping", false):
+							# Mid-jump: advance progress
+							e.phase_jump_progress = minf(e.phase_jump_progress + delta * 2.5, 1.0)
+							var jfrom: Vector2 = e.get("phase_jump_from", e.pos)
+							var jto: Vector2 = e.get("phase_jump_to", e.pos)
+							e.pos = jfrom.lerp(jto, e.phase_jump_progress)
+							if e.phase_jump_progress >= 1.0:
+								e.phase_jumping = false
+								e.phase_timer = randf_range(6.0, 9.0)
+								# Landing impact flash
+								aoe_flashes.append({pos = e.pos, radius = 60.0, timer = 0.3, color = Color(0.5, 0.1, 1.0, 0.7)})
+								# Landing damage if very close
+								if e.pos.distance_to(player_pos) < 50.0:
+									player_hp -= 2
+									player_hit_flash = 0.2
+									if player_hp <= 0:
+										_die()
+						else:
+							e.phase_timer -= delta
+							if e.phase_timer <= 0.0:
+								# Start jump toward player
+								var rng2 := RandomNumberGenerator.new()
+								rng2.randomize()
+								var angle: float = rng2.randf() * TAU
+								var tdist: float = rng2.randf_range(150.0, 250.0)
+								var jto := player_pos + Vector2(cos(angle), sin(angle)) * tdist
+								jto.x = clampf(jto.x, 80.0, WORLD_W - 80.0)
+								jto.y = clampf(jto.y, 80.0, WORLD_H - 80.0)
+								e.phase_jump_from = e.pos
+								e.phase_jump_to = jto
+								e.phase_jump_progress = 0.0
+								e.phase_jumping = true
+								# Warning flash at landing zone
+								aoe_flashes.append({pos = jto, radius = 55.0, timer = 0.4, color = Color(0.6, 0.2, 1.0, 0.5)})
+							# Walk toward player while not jumping
+							var to_p2: Vector2 = (player_pos - e.pos).normalized()
+							move_dir = to_p2
+						if e.ranged_cooldown_timer <= 0.0 and not e.get("phase_jumping", false):
+							e.ranged_cooldown_timer = 1.4
 							var shoot_dir: Vector2 = (player_pos - e.pos).normalized()
 							for spread_f in [-0.2, 0.0, 0.2]:
 								var sd: Vector2 = shoot_dir.rotated(spread_f)
-								bullets.append({pos = e.pos + sd * 25.0, vel = sd * 300.0, radius = 6.0,
+								bullets.append({pos = e.pos + sd * 25.0, vel = sd * 280.0, radius = 6.0,
 									color = Color(0.8, 0.2, 1.0), damage = 2, lifetime = 1.5, from_player = false})
-						var to_p2: Vector2 = (player_pos - e.pos).normalized()
-						move_dir = Vector2(-to_p2.y, to_p2.x)  # orbit
 					elif etype == "Brood Mother":
 						# Ranged + spawns adds at 50% HP
 						e.ranged_cooldown_timer -= delta
@@ -2980,7 +3004,16 @@ func _draw() -> void:
 		# Dormant lurkers draw at 50% alpha
 		if e.get("dormant", false):
 			draw_color = Color(draw_color.r, draw_color.g, draw_color.b, 0.5)
-		draw_circle(sp, e.radius, draw_color)
+		# Phase Hunter mid-jump: scale up and add motion trail
+		var draw_radius: float = e.radius
+		if e.get("elite_type", "") == "Phase Hunter" and e.get("phase_jumping", false):
+			var jp: float = e.get("phase_jump_progress", 0.0)
+			var arc_scale: float = 1.0 + sin(jp * PI) * 0.6  # peaks at midpoint
+			draw_radius = e.radius * arc_scale
+			draw_color = Color(0.8, 0.3, 1.0, 0.9)
+			# Shadow on ground
+			draw_circle(sp, e.radius * 0.5, Color(0.3, 0.0, 0.5, 0.3))
+		draw_circle(sp, draw_radius, draw_color)
 		if is_elite:
 			# Pulsing gold double ring for elites
 			var pulse: float = 0.6 + sin(hunt_elapsed * 4.0) * 0.3
