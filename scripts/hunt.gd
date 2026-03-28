@@ -1,5 +1,13 @@
 extends Control
 
+# Trap constants (inlined from Constants class to avoid WASM class resolution issues)
+const TRAP_CHARGES_BASE: int = 3
+const TRAP_RECHARGE_TIME: float = 25.0
+const TRAP_RADIUS: float = 80.0
+const TRAP_MAX_ACTIVE: int = 3
+const TRAP_DECAY_TIME: float = 60.0
+const TRAP_DAMAGE: int = 25
+const TRAP_SLOW_DURATION: float = 2.0
 
 # === World ===
 const WORLD_W := 4800
@@ -79,7 +87,7 @@ const WEAPON_LEVEL_PERKS: Dictionary = {
 }
 
 # Run modifiers — drawn randomly, no repeats per run
-const RUN_MODIFIERS: Array[Dictionary] = [
+const RUN_MODIFIERS: Array = [
 	{id="adrenaline",   rarity="rare",   icon="E", name="Adrenaline",    desc="3 kills in 3s: +5% speed stacking (resets on hit)"},
 	{id="void_hunger",  rarity="common", icon="V", name="Void Hunger",   desc="Killing void-type enemies restores 1 HP"},
 	{id="stalker",      rarity="rare",   icon="S", name="Stalker",       desc="+40% damage to enemies not targeting you"},
@@ -99,9 +107,9 @@ const RUN_MODIFIERS: Array[Dictionary] = [
 	{id="elite_dmg",    rarity="rare",   icon="K", name="Hunters Mark",  desc="+30% damage vs elites"},
 	{id="corruption_resist", rarity="rare", icon="C", name="Void Skin", desc="Corruption gain -25%"},
 ]
-var modifiers_taken: Array[String] = []
-var mastery_taken: Array[String] = []
-var resonance_taken: Array[String] = []
+var modifiers_taken: Array = []
+var mastery_taken: Array = []
+var resonance_taken: Array = []
 
 # Weapon mutations
 const WEAPON_MUTATIONS: Dictionary = {
@@ -293,7 +301,7 @@ const WEAPON_MASTERY: Dictionary = {
 }
 
 # Resonance perks (cross-kit combos, post-T3)
-const RESONANCE_POOL: Array[Dictionary] = [
+const RESONANCE_POOL: Array = [
 	{id="linked_fuse", kits=["flash_trap","blink_kit"], icon="L", name="Linked Fuse", desc="Blink teleports you to nearest triggered trap."},
 	{id="sympathetic_fire", kits=["drone_kit","blink_kit"], icon="S", name="Sympathetic Fire", desc="Drone fires when you fire, not on timer."},
 	{id="overcharge_drone", kits=["drone_kit","anchor_kit"], icon="O", name="Overcharge", desc="Drone fires 2x faster after anchor well expires."},
@@ -322,29 +330,29 @@ var main_weapon: Dictionary = {}
 
 # === Bullets ===
 # {pos, vel, radius, color, damage, lifetime, from_player}
-var bullets: Array[Dictionary] = []
+var bullets: Array = []
 
 # === Obstacles ===
 # {pos: Vector2, radius: float}
-var obstacles: Array[Dictionary] = []
+var obstacles: Array = []
 
 # === Enemies ===
-var enemies: Array[Dictionary] = []
+var enemies: Array = []
 var enemy_melee_cooldowns: Dictionary = {} # enemy index -> float
 
 # === Pickups ===
 # {pos, type, color, ingredient_data} for ingredients
 # {pos, type} for essence
-var pickups: Array[Dictionary] = []
+var pickups: Array = []
 
 # === Ingredient pickups (Phase 3 — pristine quality) ===
-var ingredient_pickups: Array[Dictionary] = []
+var ingredient_pickups: Array = []
 
 # === Float texts (ingredient drop labels) ===
-var float_texts: Array[Dictionary] = []
+var float_texts: Array = []
 
 # === AOE flashes ===
-var aoe_flashes: Array[Dictionary] = []
+var aoe_flashes: Array = []
 
 # === Essence collect radius ===
 var essence_collect_radius: float = 60.0
@@ -365,7 +373,7 @@ const WAVE_INTERVAL_MIN   := 8.0
 var elite_timer := 0.0
 var elite_interval := 0.0   # set on ready: 180-300s
 var elite_spawned_count := 0
-var elite_death_timeout_timers: Array[float] = []  # 90s per active elite for timeout
+var elite_death_timeout_timers: Array = []  # 90s per active elite for timeout
 
 const ELITE_POOLS: Dictionary = {
 	"open": ["Phase Hunter", "Rift Colossus"],
@@ -373,7 +381,7 @@ const ELITE_POOLS: Dictionary = {
 	"cave": ["Brood Mother", "Stone Sentinel"],
 	"river_bank": ["Tide Reaper", "Current Stalker"],
 }
-const ELITE_BIOME_WEIGHTS: Array[Dictionary] = [
+const ELITE_BIOME_WEIGHTS: Array = [
 	{biome = "open", weight = 0.40},
 	{biome = "cave", weight = 0.25},
 	{biome = "void_pool", weight = 0.20},
@@ -410,7 +418,7 @@ const AFFIX_DEFS: Dictionary = {
 	"armored": {name = "Armored", desc = "Ranged dmg -60%"},
 	"corrupting": {name = "Corrupting", desc = "Each hit +5 corruption"},
 }
-const AFFIX_BANNED_COMBOS: Array[Array] = [
+const AFFIX_BANNED_COMBOS: Array = [
 	["voidbound", "teleporter"],
 	["multiplier", "spectral"],
 	["multiplier", "voidbound"],
@@ -423,11 +431,11 @@ const AFFIX_BIOME_WEIGHTS: Dictionary = {
 }
 var affix_message_text := ""
 var affix_message_timer := 0.0
-var poison_trails: Array[Dictionary] = []  # {pos, timer}
-var hollow_pools: Array[Dictionary] = []  # persistent void pools from The Hollow
+var poison_trails: Array = []  # {pos, timer}
+var hollow_pools: Array = []  # persistent void pools from The Hollow
 
 # === Ingredients collected ===
-var run_ingredients: Array[Dictionary] = []
+var run_ingredients: Array = []
 
 # === Void essence / leveling ===
 var essence_collected := 0
@@ -458,16 +466,16 @@ var corruption_prev_threshold: int = 0  # 0=CLEAN, 1=VALLEY, 2=CORRUPT, 3=VOID
 var xp_threshold: int = 20
 
 # === Kit system ===
-var equipped_kits: Array[String] = []
+var equipped_kits: Array = []
 var kit_states: Dictionary = {}
 var kit_tiers: Dictionary = {}
-var kit_button_rects: Array[Rect2] = []
+var kit_button_rects: Array = []
 
-var traps: Array[Dictionary] = []
-var decoys: Array[Dictionary] = []
-var turrets: Array[Dictionary] = []
-var smoke_zones: Array[Dictionary] = []
-var gravity_wells: Array[Dictionary] = []
+var traps: Array = []
+var decoys: Array = []
+var turrets: Array = []
+var smoke_zones: Array = []
+var gravity_wells: Array = []
 var drone_active: bool = false
 var drone_pos: Vector2 = Vector2.ZERO
 var drone_intercept_timer: float = 0.0
@@ -482,10 +490,10 @@ var kit_t2_paths: Dictionary = {}
 var drone_fire_timer: float = 0.0
 var stim_speed_timer: float = 0.0
 var blink_empowered: bool = false
-var walls: Array[Dictionary] = []
+var walls: Array = []
 var overcharge_timer: float = 0.0
 var drone_barrier_timer: float = 0.0
-var pack_allies: Array[int] = []
+var pack_allies: Array = []
 var baton_hit_count: int = 0
 var baton_hit_timer: float = 0.0
 
@@ -520,7 +528,7 @@ var pause_menu_open: bool = false
 
 # === Phase D: New weapon state ===
 # Entropy Cannon: void trails
-var void_trails: Array[Dictionary] = []  # {pos, timer}
+var void_trails: Array = []  # {pos, timer}
 
 # Chain Rifle: overheat
 var chain_heat: float = 0.0  # 0.0 to 1.0
@@ -562,7 +570,7 @@ var boss_killed: bool = false
 var boss_timer: float = 480.0  # 8 minutes
 
 # Extraction Run
-var caches: Array[Dictionary] = []  # {pos, biome, collected, channel_timer, channeling}
+var caches: Array = []  # {pos, biome, collected, channel_timer, channeling}
 var caches_collected: int = 0
 var cache_total: int = 3
 var cache_channel_time: float = 2.0
@@ -573,14 +581,14 @@ var hud_message := ""
 var hud_message_timer := 0.0
 
 # === Environments ===
-var rivers: Array[Dictionary] = []
-var bridges: Array[Dictionary] = []
-var caves: Array[Dictionary] = []
-var void_pools: Array[Dictionary] = []
+var rivers: Array = []
+var bridges: Array = []
+var caves: Array = []
+var void_pools: Array = []
 var player_in_cave: int = -1
 
 # === Upgrade panel ===
-var upgrade_choices: Array[Dictionary] = []
+var upgrade_choices: Array = []
 var upgrade_buttons: Array = [] # Node references
 
 # === Creature data ===
@@ -747,7 +755,7 @@ func _generate_rivers() -> void:
 	# River 1: left to right
 	var r1_start := Vector2(0.0, rng.randf_range(1000.0, 3800.0))
 	var r1_end := Vector2(4800.0, rng.randf_range(1000.0, 3800.0))
-	var r1_waypoints: Array[Vector2] = [r1_start]
+	var r1_waypoints: Array = [r1_start]
 	var r1_count: int = rng.randi_range(4, 6)
 	for wi in range(r1_count):
 		var t: float = float(wi + 1) / float(r1_count + 1)
@@ -765,7 +773,7 @@ func _generate_rivers() -> void:
 	# River 2: top to bottom
 	var r2_start := Vector2(rng.randf_range(1000.0, 3800.0), 0.0)
 	var r2_end := Vector2(rng.randf_range(1000.0, 3800.0), 4800.0)
-	var r2_waypoints: Array[Vector2] = [r2_start]
+	var r2_waypoints: Array = [r2_start]
 	var r2_count: int = rng.randi_range(4, 6)
 	for wi in range(r2_count):
 		var t: float = float(wi + 1) / float(r2_count + 1)
@@ -781,7 +789,7 @@ func _generate_rivers() -> void:
 
 	# Build segment circles for each river
 	for waypoints in [r1_waypoints, r2_waypoints]:
-		var segs: Array[Dictionary] = []
+		var segs: Array = []
 		for si in range(waypoints.size() - 1):
 			var a: Vector2 = waypoints[si]
 			var b: Vector2 = waypoints[si + 1]
@@ -1010,7 +1018,7 @@ func _pick_biome_weighted(rng: RandomNumberGenerator) -> String:
 			return entry.biome
 	return "open"
 
-func _roll_affixes(biome: String, is_apex: bool, rng: RandomNumberGenerator) -> Array[String]:
+func _roll_affixes(biome: String, is_apex: bool, rng: RandomNumberGenerator) -> Array:
 	var affix_count: int
 	if is_apex:
 		affix_count = rng.randi_range(2, 3)
@@ -1021,7 +1029,7 @@ func _roll_affixes(biome: String, is_apex: bool, rng: RandomNumberGenerator) -> 
 	else:
 		affix_count = 1
 
-	var all_ids: Array[String] = []
+	var all_ids: Array = []
 	for k in AFFIX_DEFS:
 		if k == "voidbound" and biome != "void_pool":
 			continue
@@ -1031,13 +1039,13 @@ func _roll_affixes(biome: String, is_apex: bool, rng: RandomNumberGenerator) -> 
 
 	# Build weighted pool
 	var biome_boosted: Array = AFFIX_BIOME_WEIGHTS.get(biome, [])
-	var weighted_pool: Array[String] = []
+	var weighted_pool: Array = []
 	for aid in all_ids:
 		weighted_pool.append(aid)
 		if aid in biome_boosted:
 			weighted_pool.append(aid)  # 2x weight
 
-	var picked: Array[String] = []
+	var picked: Array = []
 	for _i in range(affix_count):
 		if weighted_pool.is_empty():
 			break
@@ -1182,7 +1190,7 @@ func _spawn_elite(depth: int) -> void:
 	_apply_elite_type_overrides(elite, elite_type, hp_scale, depth)
 
 	# Roll affixes
-	var affixes: Array[String] = _roll_affixes(biome, false, rng)
+	var affixes: Array = _roll_affixes(biome, false, rng)
 	elite.affixes = affixes
 	_apply_affixes(elite)
 
@@ -1240,7 +1248,7 @@ func _spawn_apex_elite(depth: int) -> void:
 	elite.speed = base_speed
 
 	# Roll affixes (apex always 2-3, never multiplier)
-	var affixes: Array[String] = _roll_affixes(biome, true, rng)
+	var affixes: Array = _roll_affixes(biome, true, rng)
 	elite.affixes = affixes
 	_apply_affixes(elite)
 	elite.apex_ability_timer = 15.0
@@ -1760,7 +1768,7 @@ func _update_weapons(delta: float) -> void:
 				# No bullet — instant AOE damage
 				var melee_range: float = def.range + mods_w.get("radius_bonus", 0.0)
 				var melee_hits: int = 0
-				var melee_hit_indices: Array[int] = []
+				var melee_hit_indices: Array = []
 				# Consuming vortex: expand AOE
 				var vortex_active: bool = mods_w.get("consuming_vortex", false)
 				if vortex_active:
@@ -1790,7 +1798,7 @@ func _update_weapons(delta: float) -> void:
 						var hit_e: Dictionary = enemies[hi]
 						if hit_e.hp <= 0:
 							continue
-						var chain_targets: Array[int] = []
+						var chain_targets: Array = []
 						for ci in range(enemies.size()):
 							if ci == hi or enemies[ci].hp <= 0:
 								continue
@@ -2029,7 +2037,7 @@ func _update_aoe_flashes(delta: float) -> void:
 # ENEMIES
 # =========================================================
 func _update_enemies(delta: float) -> void:
-	var dead_indices: Array[int] = []
+	var dead_indices: Array = []
 
 	for i in range(enemies.size()):
 		var e: Dictionary = enemies[i]
@@ -2553,7 +2561,7 @@ func _update_enemies(delta: float) -> void:
 
 	# Purge dead enemies every 5 seconds (not every frame — avoid index thrash)
 	if int(hunt_elapsed) % 5 == 0 and fmod(hunt_elapsed, 5.0) < delta * 2.0:
-		var living: Array[Dictionary] = []
+		var living: Array = []
 		for e in enemies:
 			if e.hp > 0:
 				living.append(e)
@@ -2591,8 +2599,8 @@ func _avoid_obstacles(old_pos: Vector2, new_pos: Vector2, radius: float) -> Vect
 # BULLETS
 # =========================================================
 func _update_bullets(delta: float) -> void:
-	var to_remove: Array[int] = []
-	var new_bullets: Array[Dictionary] = []
+	var to_remove: Array = []
+	var new_bullets: Array = []
 
 	for i in range(bullets.size()):
 		var b: Dictionary = bullets[i]
@@ -3109,7 +3117,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		var dart_mods: Dictionary = weapon_mods.get("dart", {})
 		var dart_dmg: int = dart_def.damage + dart_mods.get("damage_bonus", 0)
 		# Find 2 nearest living enemies
-		var split_targets: Array[Dictionary] = []
+		var split_targets: Array = []
 		for se in enemies:
 			if se.hp <= 0:
 				continue
@@ -3276,7 +3284,7 @@ func _spawn_exit() -> void:
 # PICKUPS
 # =========================================================
 func _check_pickups() -> void:
-	var to_remove: Array[int] = []
+	var to_remove: Array = []
 
 	for i in range(pickups.size()):
 		var p: Dictionary = pickups[i]
@@ -3326,7 +3334,7 @@ func _level_up() -> void:
 	call_deferred("_create_upgrade_panel")
 
 func _generate_upgrades() -> Array:
-	var options: Array[Dictionary] = []
+	var options: Array = []
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 
@@ -3372,7 +3380,7 @@ func _generate_upgrades() -> Array:
 		# Mutated, offer mastery perk
 		if WEAPON_MASTERY.has(w.id) and WEAPON_MASTERY[w.id].has(w.mutation_type):
 			var mastery_pool: Array = WEAPON_MASTERY[w.id][w.mutation_type]
-			var available_m: Array[Dictionary] = []
+			var available_m: Array = []
 			for mp in mastery_pool:
 				if not mastery_taken.has(mp.id):
 					available_m.append(mp)
@@ -3392,7 +3400,7 @@ func _generate_upgrades() -> Array:
 	# Check if both kits have T3 — offer resonance
 	var both_t3: bool = equipped_kits.size() >= 2 and kit_tiers.get(equipped_kits[0], 1) >= 3 and kit_tiers.get(equipped_kits[1], 1) >= 3
 	if both_t3:
-		var avail_res: Array[Dictionary] = []
+		var avail_res: Array = []
 		for rp in RESONANCE_POOL:
 			if resonance_taken.has(rp.id):
 				continue
@@ -3426,7 +3434,7 @@ func _generate_upgrades() -> Array:
 				slot2_done = true
 				break
 	if not slot2_done:
-		var avail2: Array[Dictionary] = []
+		var avail2: Array = []
 		for m in RUN_MODIFIERS:
 			if not modifiers_taken.has(m.id):
 				avail2.append(m)
@@ -3436,11 +3444,11 @@ func _generate_upgrades() -> Array:
 			options.append({type="modifier", id=m2.id, rarity=m2.rarity, icon=m2.icon, label=m2.name, desc=m2.desc, perk={}})
 
 	# --- Slot 3: MODIFIER ---
-	var used_mod_ids: Array[String] = modifiers_taken.duplicate()
+	var used_mod_ids: Array = modifiers_taken.duplicate()
 	for o in options:
 		if o.type == "modifier":
 			used_mod_ids.append(o.get("id", ""))
-	var avail3: Array[Dictionary] = []
+	var avail3: Array = []
 	for m in RUN_MODIFIERS:
 		if not used_mod_ids.has(m.id):
 			avail3.append(m)
@@ -3451,7 +3459,7 @@ func _generate_upgrades() -> Array:
 
 	# --- Guaranteed fallbacks so panel is never empty ---
 	if options.size() < 3:
-		var fallbacks: Array[Dictionary] = [
+		var fallbacks: Array = [
 			{type="fallback", id="hp_restore",   rarity="common", icon="H", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
 			{type="fallback", id="dmg_boost",    rarity="common", icon="D", label="Weapon Calibration", desc="+1 damage",                           perk={}},
 			{type="fallback", id="speed_boost",  rarity="common", icon="S", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
@@ -3811,7 +3819,7 @@ func _init_contract_mode(contract: Dictionary) -> void:
 
 func _spawn_caches() -> void:
 	caches.clear()
-	var biome_targets: Array[String] = ["void_pool", "cave", "river_bank"]
+	var biome_targets: Array = ["void_pool", "cave", "river_bank"]
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	for i in range(cache_total):
@@ -4311,10 +4319,10 @@ func _draw() -> void:
 	for trap in traps:
 		if trap.get("active", true):
 			var tsp: Vector2 = _w2s(trap.pos)
-			var decay_left: float = trap.get("decay_timer", Constants.TRAP_DECAY_TIME)
+			var decay_left: float = trap.get("decay_timer", TRAP_DECAY_TIME)
 			var ring_alpha: float = 0.35 if decay_left > 10.0 else clampf(decay_left / 10.0, 0.05, 0.35)
 			# Faint circle ring at trigger radius
-			draw_arc(tsp, trap.get("radius", Constants.TRAP_RADIUS), 0.0, TAU, 32, Color(1.0, 0.9, 0.1, ring_alpha), 1.5)
+			draw_arc(tsp, trap.get("radius", TRAP_RADIUS), 0.0, TAU, 32, Color(1.0, 0.9, 0.1, ring_alpha), 1.5)
 			# Diamond center marker
 			var diamond_pts := PackedVector2Array([tsp + Vector2(0, -5), tsp + Vector2(5, 0), tsp + Vector2(0, 5), tsp + Vector2(-5, 0)])
 			var marker_alpha: float = 1.0 if decay_left > 10.0 else clampf(decay_left / 10.0, 0.2, 1.0)
@@ -4804,7 +4812,7 @@ func _xp_needed_for_level(lv: int) -> int:
 func _init_kit_state(kit_id: String) -> Dictionary:
 	match kit_id:
 		"stim_pack": return {cooldown = 0.0, max_cooldown = 20.0}
-		"flash_trap": return {cooldown = 0.0, charges = Constants.TRAP_CHARGES_BASE, max_charges = Constants.TRAP_CHARGES_BASE, recharge_timer = 0.0}
+		"flash_trap": return {cooldown = 0.0, charges = TRAP_CHARGES_BASE, max_charges = TRAP_CHARGES_BASE, recharge_timer = 0.0}
 		"blink_kit": return {cooldown = 0.0, max_cooldown = 10.0}
 		"chain_kit": return {cooldown = 0.0, max_cooldown = 12.0}
 		"charge_kit": return {cooldown = 0.0, max_cooldown = 12.0, charging = false}
@@ -4852,12 +4860,12 @@ func _activate_kit(kit_id: String) -> void:
 				for _tr in traps:
 					if _tr.get("active", true):
 						active_count += 1
-				if active_count >= Constants.TRAP_MAX_ACTIVE:
+				if active_count >= TRAP_MAX_ACTIVE:
 					for _ti in range(traps.size()):
 						if traps[_ti].get("active", true):
 							traps.remove_at(_ti)
 							break
-				traps.append({pos = player_pos, radius = Constants.TRAP_RADIUS, active = true, decay_timer = Constants.TRAP_DECAY_TIME, triggered_enemies = []})
+				traps.append({pos = player_pos, radius = TRAP_RADIUS, active = true, decay_timer = TRAP_DECAY_TIME, triggered_enemies = []})
 				state.charges = charges - 1
 				_show_message("Trap placed! (%d charges)" % state.charges)
 		"blink_kit":
@@ -5169,10 +5177,10 @@ func _update_traps(delta: float) -> void:
 	# Recharge trap charges over time
 	if kit_states.has("flash_trap"):
 		var fs: Dictionary = kit_states["flash_trap"]
-		var max_ch: int = fs.get("max_charges", Constants.TRAP_CHARGES_BASE)
+		var max_ch: int = fs.get("max_charges", TRAP_CHARGES_BASE)
 		if fs.get("charges", 0) < max_ch:
 			fs["recharge_timer"] = fs.get("recharge_timer", 0.0) + delta
-			if fs["recharge_timer"] >= Constants.TRAP_RECHARGE_TIME:
+			if fs["recharge_timer"] >= TRAP_RECHARGE_TIME:
 				fs["recharge_timer"] = 0.0
 				fs["charges"] = fs.get("charges", 0) + 1
 		else:
@@ -5188,7 +5196,7 @@ func _update_traps(delta: float) -> void:
 			i -= 1
 			continue
 		# Decay timer
-		trap["decay_timer"] = trap.get("decay_timer", Constants.TRAP_DECAY_TIME) - delta
+		trap["decay_timer"] = trap.get("decay_timer", TRAP_DECAY_TIME) - delta
 		if trap["decay_timer"] <= 0.0:
 			traps.remove_at(i)
 			i -= 1
@@ -5201,10 +5209,10 @@ func _update_traps(delta: float) -> void:
 				continue
 			if triggered_enemies.has(ei):
 				continue
-			if e.pos.distance_to(trap.pos) < trap.get("radius", Constants.TRAP_RADIUS):
+			if e.pos.distance_to(trap.pos) < trap.get("radius", TRAP_RADIUS):
 				# Apply damage + slow (one trigger per enemy per trap)
-				e.hp -= Constants.TRAP_DAMAGE
-				e["slow_timer"] = Constants.TRAP_SLOW_DURATION
+				e.hp -= TRAP_DAMAGE
+				e["slow_timer"] = TRAP_SLOW_DURATION
 				e["slow_factor"] = 0.4
 				triggered_enemies.append(ei)
 				# T3 clean: marked for +40% damage
@@ -5222,7 +5230,7 @@ func _update_traps(delta: float) -> void:
 				enemies[ei] = e
 				if e.hp <= 0:
 					_on_enemy_killed(ei)
-				aoe_flashes.append({pos = trap.pos, radius = Constants.TRAP_RADIUS, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
+				aoe_flashes.append({pos = trap.pos, radius = TRAP_RADIUS, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
 		trap["triggered_enemies"] = triggered_enemies
 		traps[i] = trap
 		i -= 1
@@ -5240,16 +5248,16 @@ func _update_traps(delta: float) -> void:
 					var tj_triggered: Array = traps[tj].get("triggered_enemies", [])
 					for ei in range(enemies.size()):
 						var e: Dictionary = enemies[ei]
-						if e.hp > 0 and not tj_triggered.has(ei) and e.pos.distance_to(traps[tj].pos) < Constants.TRAP_RADIUS:
-							e.hp -= Constants.TRAP_DAMAGE
-							e["slow_timer"] = Constants.TRAP_SLOW_DURATION
+						if e.hp > 0 and not tj_triggered.has(ei) and e.pos.distance_to(traps[tj].pos) < TRAP_RADIUS:
+							e.hp -= TRAP_DAMAGE
+							e["slow_timer"] = TRAP_SLOW_DURATION
 							e["slow_factor"] = 0.4
 							tj_triggered.append(ei)
 							enemies[ei] = e
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
 					traps[tj]["triggered_enemies"] = tj_triggered
-					aoe_flashes.append({pos=traps[tj].pos, radius=Constants.TRAP_RADIUS, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
+					aoe_flashes.append({pos=traps[tj].pos, radius=TRAP_RADIUS, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
 
 func _update_decoys(delta: float) -> void:
 	var mirage_tier: int = kit_tiers.get("mirage_kit", 1)
@@ -5540,7 +5548,7 @@ func _update_familiar(delta: float) -> void:
 	var atk_interval: float = 3.0 if fam_tier < 2 else 2.0
 	if familiar_attack_timer <= 0.0:
 		familiar_attack_timer = atk_interval
-		var positions: Array[Vector2] = [familiar_pos]
+		var positions: Array = [familiar_pos]
 		if familiar2_active:
 			positions.append(familiar2_pos)
 		for fpos in positions:
