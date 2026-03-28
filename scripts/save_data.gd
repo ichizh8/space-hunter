@@ -18,7 +18,7 @@ var ship_upgrades: Dictionary = {
 	"xp_rate": 0,       # levels 0-3, each +10% essence gain
 	"loadout_slots": 0, # levels 0-2, each +1 slot (start 4, max 6)
 }
-var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]
+var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher", "pulse_cannon", "chain_rifle"]
 var loadout: Array = []
 var stock: Dictionary = {
 	"field_stim": 3,
@@ -45,6 +45,20 @@ var reputation: Dictionary = {
 var version: int = 1
 
 const REP_THRESHOLDS: Array = [0, 50, 150, 350, 700, 1200]
+
+func get_available_weapons() -> Array:
+	var always: Array = ["sidearm", "scatter", "lance", "baton", "dart", "flamethrower", "grenade_launcher"]
+	var result: Array = always.duplicate()
+	# Rep-gated weapons
+	if get_rep_level("void_walker", reputation) >= 2:
+		result.append("entropy_cannon")
+	if get_rep_level("tactician", reputation) >= 2:
+		result.append("pulse_cannon")
+	if get_rep_level("contractor", reputation) >= 3:
+		result.append("sniper_carbine")
+	if get_rep_level("scrapper", reputation) >= 2:
+		result.append("chain_rifle")
+	return result
 
 static func get_rep_level(track: String, rep_data: Dictionary) -> int:
 	var pts: int = rep_data.get(track, 0)
@@ -108,7 +122,7 @@ func from_dict(data: Dictionary) -> void:
 		for w in raw_weapons:
 			unlocked_weapons.append(str(w))
 		# Always ensure all weapons are unlocked for testing
-		for _test_wep in ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]:
+		for _test_wep in ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher", "pulse_cannon", "chain_rifle"]:
 			if not unlocked_weapons.has(_test_wep):
 				unlocked_weapons.append(_test_wep)
 	var raw_loadout: Variant = data.get("loadout", [])

@@ -13,9 +13,11 @@ const WEAPON_DISPLAY_NAMES: Dictionary = {
 	"flamethrower": "Flamer",
 	"sniper_carbine": "Sniper",
 	"grenade_launcher": "Grenade",
+	"pulse_cannon": "Pulse",
+	"chain_rifle": "Chain",
 }
 
-const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]
+const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher", "pulse_cannon", "chain_rifle"]
 
 func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract
@@ -53,15 +55,16 @@ func _ready() -> void:
 	wlbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(wlbl)
 
-	# Weapon buttons — 3 per row
+	# Weapon buttons — 3 per row, filtered by rep unlocks
+	var available_weapons: Array = SaveManager.data.get_available_weapons()
 	var row: HBoxContainer = null
-	for i in ALL_WEAPONS.size():
+	for i in available_weapons.size():
 		if i % 3 == 0:
 			row = HBoxContainer.new()
 			row.alignment = BoxContainer.ALIGNMENT_CENTER
 			row.add_theme_constant_override("separation", 6)
 			vbox.add_child(row)
-		var wid: String = ALL_WEAPONS[i]
+		var wid: String = available_weapons[i]
 		var btn := Button.new()
 		btn.text = WEAPON_DISPLAY_NAMES.get(wid, wid)
 		btn.custom_minimum_size = Vector2(90, 40)
