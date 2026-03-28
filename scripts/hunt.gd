@@ -418,6 +418,33 @@ var player_in_cave: int = -1
 var upgrade_choices: Array = []
 var upgrade_buttons: Array = [] # Node references
 
+# Contract mode state
+var contract_mode: String = "hunt"
+# Payload Escort
+var pod_pos: Vector2 = Vector2.ZERO
+var pod_target: Vector2 = Vector2.ZERO
+var pod_hp: int = 200
+var pod_max_hp: int = 200
+var pod_speed: float = 40.0
+var pod_active: bool = false
+# Void Breach
+var rift_pos: Vector2 = Vector2.ZERO
+var rift_hold_time: float = 180.0
+var rift_time_held: float = 0.0
+var rift_time_outside: float = 0.0
+var rift_active: bool = false
+var rift_radius: float = 400.0
+# Boss Hunt
+var boss_name: String = ""
+var boss_spawned: bool = false
+var boss_killed: bool = false
+var boss_timer: float = 480.0
+# Extraction Run
+var extraction_caches: Array = []
+var caches_collected: int = 0
+var cache_total: int = 3
+var cache_channel_time: float = 2.0
+
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
 	# charge: runs straight at player — dumb, fast, cannon fodder
@@ -483,8 +510,12 @@ func _ready() -> void:
 	# Parse contract
 	var contract: Dictionary = GameData.current_contract
 	contract_type = contract.get("creature_type", "Void Leech")
+	contract_mode = contract.get("type", "hunt")
 	var depth: int = contract.get("depth", 1)
-	target_total = 3 + depth
+	if contract_mode == "hunt" or contract_mode == "":
+		target_total = 3 + depth
+	else:
+		target_total = 9999
 
 	# Apply ship upgrades
 	var hp_bonus: int = SaveManager.data.ship_upgrades.get("max_hp", 0) * 2
@@ -540,6 +571,184 @@ func _ready() -> void:
 
 	set_process_input(true)
 	queue_redraw()
+	_init_contract_mode(contract)
+
+func _init_contract_mode(contract: Dictionary) -> void:
+	match contract_mode:
+		"payload_escort":
+			pod_pos = player_pos + Vector2(100, 0)
+			pod_target = Vector2(randf_range(300, WORLD_W - 300), randf_range(300, WORLD_H - 300))
+			# Make sure target is far from start
+			while pod_target.distance_to(pod_pos) < 2000.0:
+				pod_target = Vector2(randf_range(300, WORLD_W - 300), randf_range(300, WORLD_H - 300))
+			pod_hp = 200
+			pod_max_hp = 200
+			pod_active = true
+			_show_message("Escort the pod to the target zone!")
+		"void_breach":
+			# Pick rift position far from player
+			rift_pos = Vector2(randf_range(600, WORLD_W - 600), randf_range(600, WORLD_H - 600))
+			while rift_pos.distance_to(player_pos) < 800.0:
+				rift_pos = Vector2(randf_range(600, WORLD_W - 600), randf_range(600, WORLD_H - 600))
+			rift_hold_time = contract.get("hold_time", 180.0)
+			rift_active = true
+			_show_message("Get to the rift and hold position!")
+		"boss_hunt":
+			boss_name = contract.get("boss_name", "Void Overlord")
+			boss_timer = 480.0
+			boss_spawned = false
+			boss_killed = false
+			_show_message("Hunt the " + boss_name + "!")
+		"extraction_run":
+			_spawn_caches()
+			_show_message("Find and collect 3 caches!")
+
+func _spawn_caches() -> void:
+	extraction_caches.clear()
+	var rng2 = RandomNumberGenerator.new()
+	rng2.randomize()
+	var placed: int = 0
+	# Try to place near void pools first
+	for pool in void_pools:
+		if placed >= cache_total:
+			break
+		var cpos: Vector2 = Vector2(pool.pos.x + rng2.randf_range(-80, 80), pool.pos.y + rng2.randf_range(-80, 80))
+		cpos.x = clampf(cpos.x, 100, WORLD_W - 100)
+		cpos.y = clampf(cpos.y, 100, WORLD_H - 100)
+		extraction_caches.append({pos=cpos, biome="void_pool", collected=false, channel_timer=0.0, channeling=false})
+		placed += 1
+	# Then near caves
+	for cave in caves:
+		if placed >= cache_total:
+			break
+		var cpos2: Vector2 = Vector2(cave.pos.x + rng2.randf_range(-60, 60), cave.pos.y + rng2.randf_range(-60, 60))
+		cpos2.x = clampf(cpos2.x, 100, WORLD_W - 100)
+		cpos2.y = clampf(cpos2.y, 100, WORLD_H - 100)
+		extraction_caches.append({pos=cpos2, biome="cave", collected=false, channel_timer=0.0, channeling=false})
+		placed += 1
+	# Then near rivers
+	for river in rivers:
+		if placed >= cache_total:
+			break
+		if river.segments.size() > 0:
+			var seg: Dictionary = river.segments[rng2.randi_range(0, river.segments.size() - 1)]
+			var cpos3: Vector2 = Vector2(seg.pos.x + rng2.randf_range(-60, 60), seg.pos.y + rng2.randf_range(-60, 60))
+			cpos3.x = clampf(cpos3.x, 100, WORLD_W - 100)
+			cpos3.y = clampf(cpos3.y, 100, WORLD_H - 100)
+			extraction_caches.append({pos=cpos3, biome="river_bank", collected=false, channel_timer=0.0, channeling=false})
+			placed += 1
+	# Fill remaining with random positions
+	while placed < cache_total:
+		var rpos: Vector2 = Vector2(rng2.randf_range(200, WORLD_W - 200), rng2.randf_range(200, WORLD_H - 200))
+		extraction_caches.append({pos=rpos, biome="random", collected=false, channel_timer=0.0, channeling=false})
+		placed += 1
+
+func _update_contract_mode(delta: float) -> void:
+	match contract_mode:
+		"payload_escort":
+			_update_payload_escort(delta)
+		"void_breach":
+			_update_void_breach(delta)
+		"boss_hunt":
+			_update_boss_hunt(delta)
+		"extraction_run":
+			_update_extraction_run(delta)
+
+func _update_payload_escort(delta: float) -> void:
+	if not pod_active:
+		return
+	# Pod moves toward target when player is within 400px
+	var player_dist: float = player_pos.distance_to(pod_pos)
+	if player_dist < 400.0:
+		var dir: Vector2 = (pod_target - pod_pos).normalized()
+		pod_pos += dir * pod_speed * delta
+	# Check if pod reached target
+	if pod_pos.distance_to(pod_target) < 50.0:
+		_show_message("Pod delivered! Hunt complete!")
+		_complete_hunt()
+		return
+	# Enemies damage pod
+	for e in enemies:
+		if e.hp <= 0:
+			continue
+		if e.pos.distance_to(pod_pos) < 30.0:
+			pod_hp -= int(1.0 * delta + 0.5)
+	if pod_hp <= 0:
+		_show_message("Pod destroyed!")
+		_finish_hunt(0)
+
+func _update_void_breach(delta: float) -> void:
+	if not rift_active:
+		return
+	var player_dist: float = player_pos.distance_to(rift_pos)
+	if player_dist < rift_radius:
+		rift_time_held += delta
+		rift_time_outside = 0.0
+		# Extra corruption while in rift zone
+		corruption += 3.0 * delta
+	else:
+		rift_time_outside += delta
+	if rift_time_outside >= 10.0:
+		_show_message("Left rift too long! Failed!")
+		_finish_hunt(0)
+		return
+	if rift_time_held >= rift_hold_time:
+		_show_message("Rift sealed! Hunt complete!")
+		_complete_hunt()
+
+func _update_boss_hunt(delta: float) -> void:
+	boss_timer -= delta
+	if not boss_spawned:
+		boss_spawned = true
+		# Spawn the boss using existing elite spawn, but override the type
+		var depth: int = GameData.current_contract.get("depth", 1)
+		_spawn_elite(depth)
+		# Mark the last spawned enemy as the boss
+		if enemies.size() > 0:
+			var boss_enemy: Dictionary = enemies[enemies.size() - 1]
+			boss_enemy.type = boss_name
+			boss_enemy.elite_type = boss_name
+			boss_enemy.hp = int(boss_enemy.hp * 2.5)
+			boss_enemy.max_hp = boss_enemy.hp
+			enemies[enemies.size() - 1] = boss_enemy
+		_show_message("TARGET: " + boss_name + " has appeared!")
+	# Check if boss is dead
+	var boss_alive: bool = false
+	for e in enemies:
+		if e.get("elite_type", "") == boss_name and e.hp > 0:
+			boss_alive = true
+			break
+	if boss_spawned and not boss_alive:
+		boss_killed = true
+		_show_message(boss_name + " eliminated!")
+		_complete_hunt()
+		return
+	if boss_timer <= 0.0:
+		_show_message("Time's up! " + boss_name + " escaped!")
+		_finish_hunt(0)
+
+func _update_extraction_run(delta: float) -> void:
+	for ci in range(extraction_caches.size()):
+		var cache: Dictionary = extraction_caches[ci]
+		if cache.collected:
+			continue
+		var dist: float = player_pos.distance_to(cache.pos)
+		if dist < 40.0:
+			cache.channeling = true
+			cache.channel_timer += delta
+			if cache.channel_timer >= cache_channel_time:
+				cache.collected = true
+				cache.channeling = false
+				caches_collected += 1
+				_show_message("Cache collected! %d/%d" % [caches_collected, cache_total])
+		else:
+			if cache.channeling:
+				cache.channel_timer = 0.0
+				cache.channeling = false
+		extraction_caches[ci] = cache
+	if caches_collected >= cache_total:
+		_show_message("All caches collected! Hunt complete!")
+		_complete_hunt()
 
 # =========================================================
 # SPAWN
@@ -1002,6 +1211,7 @@ func _process(delta: float) -> void:
 	_update_gravity_wells(delta)
 	_update_drone(delta)
 	_update_familiar(delta)
+	_update_contract_mode(delta)
 
 	queue_redraw()
 
@@ -1534,6 +1744,10 @@ func _update_enemies(delta: float) -> void:
 						move_target = dc.pos
 			# Replace player_pos with move_target in charge-like behaviors below
 			var dist_to_target: float = e.pos.distance_to(move_target)
+			# Payload escort: 50% chance enemies target pod instead of player
+			if contract_mode == "payload_escort" and pod_active and randf() < 0.5:
+				move_target = pod_pos
+				dist_to_target = e.pos.distance_to(move_target)
 
 			match e.behavior:
 				"charge":
@@ -3142,6 +3356,7 @@ func _draw() -> void:
 	# Target counter (top center)
 	var target_text := "Ingredients: %d/%d" % [target_kills, target_total]
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
+	_draw_contract_ui(vp_size)
 
 	# Corruption meter (top right)
 	var corr_x: float = vp_size.x - 92.0
@@ -3313,6 +3528,75 @@ func _draw() -> void:
 	if dead:
 		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0, 0, 0, 0.6))
 		_draw_text(Vector2(vp_size.x * 0.5 - 40.0, vp_size.y * 0.5 - 20.0), "DEAD", Color(1, 0.2, 0.2), 32)
+
+func _draw_contract_ui(vp_size: Vector2) -> void:
+	match contract_mode:
+		"payload_escort":
+			if pod_active:
+				# Draw pod as cyan box
+				var pod_sp: Vector2 = _w2s(pod_pos)
+				draw_rect(Rect2(pod_sp - Vector2(12, 12), Vector2(24, 24)), Color(0.1, 0.9, 0.9))
+				# Glow
+				draw_arc(pod_sp, 16.0, 0.0, TAU, 16, Color(0.1, 0.9, 0.9, 0.5), 2.0)
+				# HP bar above pod
+				var bar_w: float = 40.0
+				var bar_pos: Vector2 = Vector2(pod_sp.x - bar_w * 0.5, pod_sp.y - 20.0)
+				draw_rect(Rect2(bar_pos, Vector2(bar_w, 4.0)), Color(0.3, 0.3, 0.3))
+				var hp_frac: float = clampf(float(pod_hp) / float(pod_max_hp), 0.0, 1.0)
+				draw_rect(Rect2(bar_pos, Vector2(bar_w * hp_frac, 4.0)), Color(0.1, 0.9, 0.9))
+				# Draw target as green circle
+				var tgt_sp: Vector2 = _w2s(pod_target)
+				var tgt_pulse: float = 0.4 + 0.3 * sin(hunt_elapsed * 3.0)
+				draw_arc(tgt_sp, 40.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.2, tgt_pulse), 2.0)
+				draw_circle(tgt_sp, 8.0, Color(0.2, 0.9, 0.2, 0.6))
+				# Proximity circle around pod (400px)
+				draw_arc(pod_sp, 400.0, 0.0, TAU, 64, Color(0.1, 0.9, 0.9, 0.15), 1.0)
+				# HUD text
+				_draw_text(Vector2(vp_size.x * 0.5 - 60.0, 34.0), "Pod HP: %d/%d" % [pod_hp, pod_max_hp], Color(0.1, 0.9, 0.9), 12)
+		"void_breach":
+			if rift_active:
+				# Draw rift as pulsing purple circle
+				var rift_sp: Vector2 = _w2s(rift_pos)
+				var rift_pulse: float = 25.0 + 8.0 * sin(hunt_elapsed * 3.5)
+				draw_circle(rift_sp, rift_pulse, Color(0.5, 0.0, 0.8, 0.6))
+				draw_arc(rift_sp, 30.0, 0.0, TAU, 32, Color(0.7, 0.2, 1.0, 0.8), 2.5)
+				# Hold radius
+				draw_arc(rift_sp, rift_radius, 0.0, TAU, 64, Color(0.5, 0.0, 0.8, 0.2), 1.5)
+				# HUD: hold timer
+				var hold_text: String = "Hold: %.1fs / %.0fs" % [rift_time_held, rift_hold_time]
+				_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 34.0), hold_text, Color(0.7, 0.3, 1.0), 12)
+				# Outside timer warning
+				if rift_time_outside > 0.0:
+					var outside_color: Color = Color(1.0, 0.3, 0.3) if rift_time_outside > 6.0 else Color(1.0, 0.8, 0.3)
+					var outside_text: String = "Outside: %.1fs / 10s" % rift_time_outside
+					_draw_text(Vector2(vp_size.x * 0.5 - 70.0, 50.0), outside_text, outside_color, 12)
+		"boss_hunt":
+			# Target name
+			_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 34.0), "TARGET: " + boss_name, Color(1.0, 0.6, 0.1), 13)
+			# Countdown
+			var mins: int = int(boss_timer) / 60
+			var secs: int = int(boss_timer) % 60
+			var time_color: Color = Color(1.0, 0.3, 0.3) if boss_timer < 60.0 else Color(1.0, 0.9, 0.3)
+			_draw_text(Vector2(vp_size.x * 0.5 - 40.0, 50.0), "Time: %d:%02d" % [mins, secs], time_color, 12)
+		"extraction_run":
+			# HUD: cache count
+			_draw_text(Vector2(vp_size.x * 0.5 - 50.0, 34.0), "Caches: %d/%d" % [caches_collected, cache_total], Color(1.0, 0.9, 0.2), 13)
+			# Draw each cache
+			for cache in extraction_caches:
+				if cache.collected:
+					continue
+				var csp: Vector2 = _w2s(cache.pos)
+				# Yellow diamond
+				var diamond_pts: PackedVector2Array = PackedVector2Array([
+					csp + Vector2(0, -10), csp + Vector2(10, 0),
+					csp + Vector2(0, 10), csp + Vector2(-10, 0)
+				])
+				draw_colored_polygon(diamond_pts, Color(1.0, 0.9, 0.2))
+				draw_polyline(PackedVector2Array([csp + Vector2(0, -10), csp + Vector2(10, 0), csp + Vector2(0, 10), csp + Vector2(-10, 0), csp + Vector2(0, -10)]), Color(1.0, 1.0, 0.5), 1.5)
+				# Channel progress arc
+				if cache.channeling:
+					var progress: float = clampf(cache.channel_timer / cache_channel_time, 0.0, 1.0)
+					draw_arc(csp, 18.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 32, Color(0.2, 1.0, 0.2), 3.0)
 
 func _w2s(world_pos: Vector2) -> Vector2:
 	return world_pos - camera_offset
