@@ -802,6 +802,7 @@ func _update_void_breach(delta: float) -> void:
 		rift_time_held += delta
 		# Extra corruption while in rift zone
 		corruption += 3.0 * delta
+		rift_time_outside = 0.0
 	else:
 		# Only accumulate outside time after player has reached rift at least once
 		if rift_time_held > 0.0:
@@ -1353,7 +1354,7 @@ func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGe
 	var def: Dictionary = CREATURE_DEFS[type_name]
 	var pos := Vector2.ZERO
 	for _try in range(30):
-		pos = Vector2(rng.randf_range(60.0, WORLD_W - 60.0), rng.randf_range(60.0, WORLD_H - 60.0))
+		pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
 		if pos.distance_to(player_pos) < 180.0:
 			continue
 		var blocked := false
@@ -2585,6 +2586,10 @@ func _update_enemies(delta: float) -> void:
 			new_pos = _avoid_obstacles(e.pos, new_pos, e.radius)
 			e.pos = new_pos
 
+		# Clamp enemies within world bounds
+		e.pos.x = clampf(e.pos.x, 50.0, WORLD_W - 50.0)
+		e.pos.y = clampf(e.pos.y, 50.0, WORLD_H - 50.0)
+
 		enemies[i] = e
 
 	# Decrement melee cooldowns
@@ -3165,7 +3170,10 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		})
 		# Track contract progress
 		target_kills += 1
-		_show_message("Ingredients: %d/%d" % [target_kills, target_total])
+		if contract_mode == "hunt" or contract_mode == "":
+			_show_message("Ingredients: %d/%d" % [target_kills, target_total])
+		else:
+			_show_message("Ingredients: %d" % target_kills)
 		if target_kills >= target_total and not exit_spawned:
 			_spawn_exit()
 		return
@@ -4133,7 +4141,11 @@ func _draw() -> void:
 		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
-	var target_text := "Ingredients: %d/%d" % [target_kills, target_total]
+	var target_text: String = ""
+	if contract_mode == "hunt" or contract_mode == "":
+		target_text = "Ingredients: %d/%d" % [target_kills, target_total]
+	else:
+		target_text = "Ingredients: %d" % target_kills
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
 	_draw_contract_ui(vp_size)
 
