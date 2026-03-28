@@ -474,6 +474,8 @@ var traps: Array = []
 var decoys: Array = []
 var turrets: Array = []
 var smoke_zones: Array = []
+var smoke_interact_timer: float = 0.0
+var draw_timer: float = 0.0
 var gravity_wells: Array = []
 var drone_active: bool = false
 var drone_pos: Vector2 = Vector2.ZERO
@@ -1304,7 +1306,7 @@ func _spawn_apex_elite(depth: int) -> void:
 	enemies.append(elite)
 
 	# Screen flash
-	aoe_flashes.append({pos = player_pos, radius = 400.0, timer = 0.5, color = Color(1.0, 0.85, 0.0, 0.3)})
+	_add_aoe_flash({pos = player_pos, radius = 400.0, timer = 0.5, color = Color(1.0, 0.85, 0.0, 0.3)})
 
 const ALL_AFFIXES: Array = ["extra_fast", "vampiric", "shielded", "teleporter", "venomous", "berserker", "spectral", "multiplier", "magnetic", "voidbound", "armored", "corrupting"]
 const BANNED_COMBOS: Array = [["voidbound", "teleporter"], ["multiplier", "spectral"]]
@@ -1460,11 +1462,17 @@ func _process(delta: float) -> void:
 		dead_timer -= delta
 		if dead_timer <= 0.0:
 			_finish_hunt(0)
-		queue_redraw()
+		draw_timer += delta
+		if draw_timer >= 0.033:
+			draw_timer = 0.0
+			queue_redraw()
 		return
 
 	if hunt_complete or paused:
-		queue_redraw()
+		draw_timer += delta
+		if draw_timer >= 0.033:
+			draw_timer = 0.0
+			queue_redraw()
 		return
 
 	if speed_boost_timer > 0.0:
@@ -1501,7 +1509,10 @@ func _process(delta: float) -> void:
 			enemies.append(_pe)
 		pending_enemy_spawns.clear()
 
-	queue_redraw()
+	draw_timer += delta
+	if draw_timer >= 0.033:
+		draw_timer = 0.0
+		queue_redraw()
 
 func _update_cave_state() -> void:
 	player_in_cave = -1
@@ -1890,17 +1901,17 @@ func _update_weapons(delta: float) -> void:
 					while leech_accumulator >= 1.0:
 						leech_accumulator -= 1.0
 						player_hp = mini(player_hp + 1, player_max_hp)
-				aoe_flashes.append({pos=player_pos, radius=melee_range, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
+				_add_aoe_flash({pos=player_pos, radius=melee_range, timer=0.3, color=Color(0.1,0.8,1.0,0.6)})
 				# Arc blade mutation: place slow field
 				if mods_w.get("arc_fields", false):
-					smoke_zones.append({pos=player_pos, radius=80.0, timer=3.0, slowing=true})
+					_add_smoke_zone({pos=player_pos, radius=80.0, timer=3.0, slowing=true})
 				# Static charge mastery: track hits
 				if mods_w.get("static_charge", false):
 					baton_hit_count += 1
 					baton_hit_timer = 3.0
 					if baton_hit_count >= 3:
 						baton_hit_count = 0
-						aoe_flashes.append({pos=player_pos, radius=melee_range + 40.0, timer=0.3, color=Color(0.3,0.9,1.0,0.6)})
+						_add_aoe_flash({pos=player_pos, radius=melee_range + 40.0, timer=0.3, color=Color(0.3,0.9,1.0,0.6)})
 						for ei in range(enemies.size()):
 							var e_sc: Dictionary = enemies[ei]
 							if e_sc.hp > 0 and player_pos.distance_to(e_sc.pos) < melee_range + 40.0:
@@ -1943,7 +1954,7 @@ func _update_weapons(delta: float) -> void:
 						flame_b["slow_on_hit"] = true
 					bullets.append(flame_b)
 				# Brief cone flash
-				aoe_flashes.append({pos=player_pos + dir * 40.0, radius=30.0, timer=0.1, color=Color(1.0, 0.4, 0.0, 0.5) if not is_cryo else Color(0.3, 0.8, 1.0, 0.5)})
+				_add_aoe_flash({pos=player_pos + dir * 40.0, radius=30.0, timer=0.1, color=Color(1.0, 0.4, 0.0, 0.5) if not is_cryo else Color(0.3, 0.8, 1.0, 0.5)})
 			"arc_aoe":
 				# Grenade launcher: single slow projectile that explodes at range or on hit
 				w.mag_ammo -= 1
@@ -2259,7 +2270,7 @@ func _update_enemies(delta: float) -> void:
 						move_dir = (player_pos - e.pos).normalized()
 						if e.charge_timer <= 0.0 and dist_to_player < 120.0:
 							e.charge_timer = 4.0
-							aoe_flashes.append({pos = e.pos, radius = 100.0, timer = 0.3, color = Color(1.0, 0.3, 0.0, 0.5)})
+							_add_aoe_flash({pos = e.pos, radius = 100.0, timer = 0.3, color = Color(1.0, 0.3, 0.0, 0.5)})
 							player_hp -= 2
 							player_hit_flash = 0.2
 							_show_message("SLAM! -2 HP")
@@ -2278,7 +2289,7 @@ func _update_enemies(delta: float) -> void:
 								e.phase_jumping = false
 								e.phase_timer = randf_range(6.0, 9.0)
 								# Landing impact flash
-								aoe_flashes.append({pos = e.pos, radius = 60.0, timer = 0.3, color = Color(0.5, 0.1, 1.0, 0.7)})
+								_add_aoe_flash({pos = e.pos, radius = 60.0, timer = 0.3, color = Color(0.5, 0.1, 1.0, 0.7)})
 								# Landing damage if very close
 								if e.pos.distance_to(player_pos) < 50.0:
 									player_hp -= 2
@@ -2301,7 +2312,7 @@ func _update_enemies(delta: float) -> void:
 								e.phase_jump_progress = 0.0
 								e.phase_jumping = true
 								# Warning flash at landing zone
-								aoe_flashes.append({pos = jto, radius = 55.0, timer = 0.4, color = Color(0.6, 0.2, 1.0, 0.5)})
+								_add_aoe_flash({pos = jto, radius = 55.0, timer = 0.4, color = Color(0.6, 0.2, 1.0, 0.5)})
 							# Walk toward player while not jumping
 							var to_p2: Vector2 = (player_pos - e.pos).normalized()
 							move_dir = to_p2
@@ -2340,7 +2351,7 @@ func _update_enemies(delta: float) -> void:
 						e.shockwave_timer = e.get("shockwave_timer", 6.0) - delta
 						if e.shockwave_timer <= 0.0:
 							e.shockwave_timer = 6.0
-							aoe_flashes.append({pos = e.pos, radius = 60.0, timer = 0.5, color = Color(1.0, 1.0, 1.0, 0.6)})
+							_add_aoe_flash({pos = e.pos, radius = 60.0, timer = 0.5, color = Color(1.0, 1.0, 1.0, 0.6)})
 							if dist_to_player < 60.0:
 								player_hp -= 18
 								player_hit_flash = 0.2
@@ -2408,7 +2419,7 @@ func _update_enemies(delta: float) -> void:
 							if e.phase_jump_progress >= 1.0:
 								e.phase_jumping = false
 								e.phase_timer = 4.0
-								aoe_flashes.append({pos = e.pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.85, 0.0, 0.7)})
+								_add_aoe_flash({pos = e.pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.85, 0.0, 0.7)})
 								if e.pos.distance_to(player_pos) < 50.0:
 									player_hp -= 3
 									player_hit_flash = 0.2
@@ -2449,7 +2460,7 @@ func _update_enemies(delta: float) -> void:
 						# Ground slam
 						if e.charge_timer <= 0.0 and dist_to_player < 120.0:
 							e.charge_timer = 4.0
-							aoe_flashes.append({pos = e.pos, radius = 120.0, timer = 0.3, color = Color(0.4, 0.0, 0.6, 0.5)})
+							_add_aoe_flash({pos = e.pos, radius = 120.0, timer = 0.3, color = Color(0.4, 0.0, 0.6, 0.5)})
 							player_hp -= 3
 							player_hit_flash = 0.2
 							if player_hp <= 0:
@@ -2458,7 +2469,16 @@ func _update_enemies(delta: float) -> void:
 						e.void_trail_timer = e.get("void_trail_timer", 3.0) - delta
 						if e.void_trail_timer <= 0.0:
 							e.void_trail_timer = 3.0
-							smoke_zones.append({pos = Vector2(e.pos.x, e.pos.y), radius = 40.0, timer = 20.0, slowing = false, corruption_zone = true, corruption_rate = 10.0})
+							var _hollow_count: int = 0
+							for _sz in smoke_zones:
+								if _sz.get("source", "") == "hollow":
+									_hollow_count += 1
+							if _hollow_count >= 5:
+								for _szi in range(smoke_zones.size()):
+									if smoke_zones[_szi].get("source", "") == "hollow":
+										smoke_zones.remove_at(_szi)
+										break
+							_add_smoke_zone({pos = Vector2(e.pos.x, e.pos.y), radius = 40.0, timer = 20.0, slowing = false, corruption_zone = true, corruption_rate = 10.0, source = "hollow"})
 					elif etype == "Ancient Brood":
 						# Stationary, spawns buffed adds
 						move_dir = Vector2.ZERO
@@ -2514,11 +2534,13 @@ func _update_enemies(delta: float) -> void:
 								e["tp_timer"] = 8.0
 								var tp_dir: Vector2 = (player_pos - e.pos).normalized()
 								e.pos = player_pos - tp_dir * 80.0
-								aoe_flashes.append({pos = e.pos, radius = 30.0, timer = 0.2, color = Color(0.5, 0.0, 1.0, 0.6)})
+								_add_aoe_flash({pos = e.pos, radius = 30.0, timer = 0.2, color = Color(0.5, 0.0, 1.0, 0.6)})
 						# Venomous trail
 						if afxs.get("venomous", false):
 							var vt: Array = e.get("venom_trail", [])
 							vt.append({pos = Vector2(e.pos.x, e.pos.y), timer = 4.0})
+							if vt.size() > 15:
+								vt.remove_at(0)
 							e["venom_trail"] = vt
 						# Magnetic pull
 						if afxs.get("magnetic", false):
@@ -2692,7 +2714,7 @@ func _update_bullets(delta: float) -> void:
 				_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""), b.get("mini_grenade", false))
 			# Slow field on land (lance clean mutation)
 			if b.get("slow_field_on_land", false) and b.from_player:
-				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
+				_add_smoke_zone({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 			# Momentum reset on miss
 			if b.from_player and "momentum" in modifiers_taken and not b.get("hit_enemy", false):
 				momentum_stack = 0
@@ -2732,7 +2754,7 @@ func _update_bullets(delta: float) -> void:
 				break
 		if hit_obs:
 			if b.get("slow_field_on_land", false) and b.from_player:
-				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
+				_add_smoke_zone({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 			to_remove.append(i)
 			bullets[i] = b
 			continue
@@ -2813,7 +2835,7 @@ func _update_bullets(delta: float) -> void:
 							if b.get("explode", false):
 								_bullet_explode(b.pos, hit_dmg)
 							if b.get("slow_field_on_land", false):
-								smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
+								_add_smoke_zone({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 							if e.hp <= 0:
 								_on_enemy_killed(ei, b.get("weapon_id", ""))
 							# Pierce count limit for scatter clean
@@ -2947,7 +2969,7 @@ func _update_bullets(delta: float) -> void:
 						if b.get("explode", false):
 							_bullet_explode(b.pos, hit_dmg)
 						if b.get("slow_field_on_land", false):
-							smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
+							_add_smoke_zone({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
 						if e.hp <= 0:
 							_on_enemy_killed(ei, b.get("weapon_id", ""))
 						break
@@ -2956,7 +2978,7 @@ func _update_bullets(delta: float) -> void:
 			if drone_active and b.pos.distance_to(drone_pos) < 100.0 and drone_intercept_timer <= 0.0:
 				drone_intercept_timer = 4.0
 				to_remove.append(i)
-				aoe_flashes.append({pos=drone_pos, radius=15.0, timer=0.2, color=Color(1.0, 1.0, 1.0, 0.8)})
+				_add_aoe_flash({pos=drone_pos, radius=15.0, timer=0.2, color=Color(1.0, 1.0, 1.0, 0.8)})
 				bullets[i] = b
 				continue
 			# Hit player
@@ -3078,7 +3100,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 
 	# Scavenger: elites drop extra essence
 	if "scavenger" in modifiers_taken and e.get("is_elite", false):
-		pickups.append({pos = death_pos + Vector2(randf_range(-10, 10), randf_range(-10, 10)), type = "essence"})
+		_add_pickup({pos = death_pos + Vector2(randf_range(-10, 10), randf_range(-10, 10)), type = "essence"})
 
 	# On-kill lance (#2) — only triggers from player-fired lances, not from auto-lances
 	var lance_mods: Dictionary = weapon_mods.get("lance", {})
@@ -3146,7 +3168,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		_show_message("Elite down! Ingredient dropped!")
 		# Drop a big essence burst
 		for _b in range(5):
-			pickups.append({pos = death_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20)), type = "essence"})
+			_add_pickup({pos = death_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20)), type = "essence"})
 		# Biome-based ingredient drop
 		var elite_biome: String = e.get("elite_biome", _get_biome_at(death_pos))
 		var biome_ingredient_map: Dictionary = {
@@ -3164,13 +3186,13 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			"elite_core": Color(1.0, 0.85, 0.0),
 		}
 		# Drop biome ingredient
-		ingredient_pickups.append({
+		ingredient__add_pickup({
 			pos = death_pos,
 			data = {id = ing_id, name = ing_id.replace("_", " ").capitalize(), is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get(ing_id, Color.GOLD),
 		})
 		# Always also drop 1 elite_core
-		ingredient_pickups.append({
+		ingredient__add_pickup({
 			pos = death_pos + Vector2(15, 0),
 			data = {id = "elite_core", name = "Elite Core", is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get("elite_core", Color.GOLD),
@@ -3186,7 +3208,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 		return
 
 	# Regular enemies: essence only (no ingredients)
-	pickups.append({pos = death_pos + Vector2(-10, 0), type = "essence"})
+	_add_pickup({pos = death_pos + Vector2(-10, 0), type = "essence"})
 
 func _drop_ingredient(enemy: Dictionary) -> void:
 	var ing_id: String = enemy.get("ingredient_id", "")
@@ -3221,7 +3243,7 @@ func _drop_ingredient(enemy: Dictionary) -> void:
 		uses = 1,
 	}
 
-	ingredient_pickups.append({
+	ingredient__add_pickup({
 		pos = enemy.pos,
 		data = drop,
 		collected = false,
@@ -3712,7 +3734,7 @@ func _update_hud_message(delta: float) -> void:
 # HELPERS — perk effects
 # =========================================================
 func _bullet_explode(impact_pos: Vector2, dmg: int) -> void:
-	aoe_flashes.append({pos = impact_pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.6, 0.1, 0.7)})
+	_add_aoe_flash({pos = impact_pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.6, 0.1, 0.7)})
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
 		if ae.hp <= 0:
@@ -3750,7 +3772,7 @@ func _apply_affix_damage(e: Dictionary, dmg: int, is_ranged: bool = true) -> int
 func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String, is_mini: bool = false) -> void:
 	var mods_g: Dictionary = weapon_mods.get(wid, {})
 	var aoe_radius: float = 80.0 + mods_g.get("aoe_radius_bonus", 0.0)
-	aoe_flashes.append({pos = impact_pos, radius = aoe_radius, timer = 0.3, color = Color(0.4, 0.9, 0.2, 0.7)})
+	_add_aoe_flash({pos = impact_pos, radius = aoe_radius, timer = 0.3, color = Color(0.4, 0.9, 0.2, 0.7)})
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
 		if ae.hp <= 0:
@@ -3788,7 +3810,7 @@ func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String, is_mini: bool 
 	# Void grenade mutation: leave corruption zone
 	if mods_g.get("void_grenade", false):
 		var zone_radius: float = 80.0 + mods_g.get("corr_zone_radius_bonus", 0.0)
-		smoke_zones.append({pos=impact_pos, radius=zone_radius, timer=5.0, toxic=true, slowing=false})
+		_add_smoke_zone({pos=impact_pos, radius=zone_radius, timer=5.0, toxic=true, slowing=false})
 
 func _get_effective_player_stats() -> Dictionary:
 	var move_speed_mult: float = 1.0
@@ -3881,6 +3903,8 @@ func _draw() -> void:
 		var bridge_pos: Vector2 = bridges[ri].pos
 		for seg in river.segments:
 			var seg_pos: Vector2 = Vector2(seg.pos.x, seg.pos.y)
+			if not _is_on_screen(seg_pos):
+				continue
 			# Match the 160px gap used in obstacle generation
 			if seg_pos.distance_to(bridge_pos) < 160.0:
 				continue
@@ -3912,6 +3936,8 @@ func _draw() -> void:
 
 	# Void Pools (floor level, before obstacles)
 	for pool in void_pools:
+		if not _is_on_screen(Vector2(pool.pos.x, pool.pos.y)):
+			continue
 		var pool_sp: Vector2 = _w2s(Vector2(pool.pos.x, pool.pos.y))
 		var vp_pulse: float = 0.4 + 0.3 * sin(pool.pulse_phase + hunt_elapsed * 2.5)
 		draw_circle(pool_sp, pool.radius, Color(0.25, 0.0, 0.45, vp_pulse * 0.7))
@@ -3919,6 +3945,8 @@ func _draw() -> void:
 
 	# Obstacles
 	for obs in obstacles:
+		if not _is_on_screen(obs.pos):
+			continue
 		var sp: Vector2 = _w2s(obs.pos)
 		draw_circle(sp, obs.radius, Color(0.2, 0.15, 0.25))
 		draw_arc(sp, obs.radius, 0.0, TAU, 32, Color(0.4, 0.3, 0.5), 1.5)
@@ -3933,6 +3961,8 @@ func _draw() -> void:
 	# Pickups
 	var pulse_alpha: float = 0.3 + 0.3 * sin(Time.get_ticks_msec() * 0.004)
 	for p in pickups:
+		if not _is_on_screen(p.pos):
+			continue
 		var sp: Vector2 = _w2s(p.pos)
 		if p.type == "ingredient":
 			# Pulsing outline
@@ -3949,6 +3979,8 @@ func _draw() -> void:
 	var time_sec: float = Time.get_ticks_msec() * 0.001
 	for ip in ingredient_pickups:
 		if ip.collected:
+			continue
+		if not _is_on_screen(ip.pos):
 			continue
 		var sp: Vector2 = _w2s(ip.pos)
 		var is_pristine: bool = ip.data.get("is_pristine", false)
@@ -3973,6 +4005,8 @@ func _draw() -> void:
 		# Cave visibility: skip enemies hidden inside caves player is not in
 		var enemy_cave: int = e.get("cave_id", -1)
 		if enemy_cave >= 0 and player_in_cave != enemy_cave:
+			continue
+		if not _is_on_screen(e.pos):
 			continue
 		var sp: Vector2 = _w2s(e.pos)
 		var is_elite: bool = e.get("is_elite", false)
@@ -4067,6 +4101,8 @@ func _draw() -> void:
 	# Kit entities
 	for trap in traps:
 		if trap.get("active", true):
+			if not _is_on_screen(trap.pos):
+				continue
 			var tsp: Vector2 = _w2s(trap.pos)
 			var decay_left: float = trap.get("decay_timer", 60.0)
 			# Radius ring — fades when <10s remaining
@@ -4084,11 +4120,15 @@ func _draw() -> void:
 		var tsp2: Vector2 = _w2s(tr.pos)
 		draw_rect(Rect2(tsp2 - Vector2(7, 7), Vector2(14, 14)), Color(0.1, 0.8, 0.9))
 	for sz in smoke_zones:
+		if not _is_on_screen(sz.pos):
+			continue
 		var ssp: Vector2 = _w2s(sz.pos)
 		var s_pulse: float = 0.15 + 0.05 * sin(hunt_elapsed * 3.0)
 		draw_circle(ssp, sz.radius, Color(0.4, 0.5, 0.6, s_pulse))
 		draw_arc(ssp, sz.radius, 0.0, TAU, 32, Color(0.5, 0.6, 0.7, 0.4), 1.5)
 	for gw in gravity_wells:
+		if not _is_on_screen(gw.pos):
+			continue
 		var gwsp: Vector2 = _w2s(gw.pos)
 		var gw_pulse: float = gw.radius + 10.0 * sin(hunt_elapsed * 4.0)
 		draw_arc(gwsp, gw_pulse, 0.0, TAU, 32, Color(0.6, 0.1, 0.8, 0.6), 2.0)
@@ -4101,11 +4141,15 @@ func _draw() -> void:
 
 	# Bullets
 	for b in bullets:
+		if not _is_on_screen(b.pos):
+			continue
 		var sp: Vector2 = _w2s(b.pos)
 		draw_circle(sp, b.radius, b.color)
 
 	# AOE flashes
 	for f in aoe_flashes:
+		if not _is_on_screen(f.pos):
+			continue
 		var fsp: Vector2 = _w2s(f.pos)
 		var alpha: float = f.timer / 0.3
 		draw_arc(fsp, f.radius, 0.0, TAU, 32, Color(f.color.r, f.color.g, f.color.b, alpha * 0.8), 3.0)
@@ -4437,6 +4481,32 @@ func _draw_contract_ui(vp_size: Vector2) -> void:
 func _w2s(world_pos: Vector2) -> Vector2:
 	return world_pos - camera_offset
 
+func _is_on_screen(world_pos: Vector2) -> bool:
+	var sp: Vector2 = world_pos - camera_offset
+	var vp_size: Vector2 = get_viewport_rect().size
+	return sp.x > -100.0 and sp.x < vp_size.x + 100.0 and sp.y > -100.0 and sp.y < vp_size.y + 100.0
+
+func _add_smoke_zone(zone: Dictionary) -> void:
+	if smoke_zones.size() >= 20:
+		return
+	smoke_zones.append(zone)
+
+func _add_aoe_flash(flash: Dictionary) -> void:
+	if aoe_flashes.size() >= 30:
+		aoe_flashes.remove_at(0)
+	aoe_flashes.append(flash)
+
+func _add_pickup(pickup: Dictionary) -> void:
+	if pickups.size() >= 60 and pickup.type == "essence":
+		# Drop oldest essence pickup
+		for pi in range(pickups.size()):
+			if pickups[pi].type == "essence":
+				pickups.remove_at(pi)
+				break
+	if pickups.size() >= 60:
+		return
+	pickups.append(pickup)
+
 func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -> void:
 	var font: Font = ThemeDB.fallback_font
 	draw_string(font, pos + Vector2(0, font_size), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
@@ -4539,7 +4609,7 @@ func _activate_kit(kit_id: String) -> void:
 			player_pos.y = clampf(player_pos.y, PLAYER_RADIUS, WORLD_H - PLAYER_RADIUS)
 			# T2: stun field at departure point
 			if tier >= 2:
-				aoe_flashes.append({pos=old_pos, radius=100.0, timer=0.3, color=Color(0.8,0.8,1.0,0.5)})
+				_add_aoe_flash({pos=old_pos, radius=100.0, timer=0.3, color=Color(0.8,0.8,1.0,0.5)})
 				for ei in range(enemies.size()):
 					var e: Dictionary = enemies[ei]
 					if e.hp > 0 and old_pos.distance_to(e.pos) < 100.0:
@@ -4557,7 +4627,7 @@ func _activate_kit(kit_id: String) -> void:
 						enemies[ei] = e
 			# Resonance: smoke_blink — spawn smoke at new pos
 			if resonance.get("smoke_blink", false):
-				smoke_zones.append({pos=player_pos, radius=150.0, timer=6.0})
+				_add_smoke_zone({pos=player_pos, radius=150.0, timer=6.0})
 			state.cooldown = 10.0
 			_show_message("Blink!")
 		"chain_kit":
@@ -4630,7 +4700,7 @@ func _activate_kit(kit_id: String) -> void:
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
 					player_pos = dash_end
-					aoe_flashes.append({pos=player_pos, radius=30.0, timer=0.3, color=Color(0.6,0.0,0.9,0.6)})
+					_add_aoe_flash({pos=player_pos, radius=30.0, timer=0.3, color=Color(0.6,0.0,0.9,0.6)})
 				else:
 					var kb_mult: float = 2.0 if (tier >= 3 and t3_choice == "clean") else 1.0
 					for ei in range(enemies.size()):
@@ -4647,7 +4717,7 @@ func _activate_kit(kit_id: String) -> void:
 							enemies[ei] = e
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
-					aoe_flashes.append({pos = player_pos, radius = 150.0, timer = 0.3, color = Color(1.0, 0.8, 0.2, 0.6)})
+					_add_aoe_flash({pos = player_pos, radius = 150.0, timer = 0.3, color = Color(1.0, 0.8, 0.2, 0.6)})
 				state.charging = false
 				state.cooldown = 12.0
 				_show_message("CHARGE!")
@@ -4681,7 +4751,7 @@ func _activate_kit(kit_id: String) -> void:
 				new_smoke["slowing"] = true
 			if tier >= 3 and t3_choice == "void":
 				new_smoke["toxic"] = true
-			smoke_zones.append(new_smoke)
+			_add_smoke_zone(new_smoke)
 			state.cooldown = 14.0
 			_show_message("Smoke!")
 		"anchor_kit":
@@ -4752,7 +4822,7 @@ func _activate_kit(kit_id: String) -> void:
 					enemies[ei] = e
 					if e.hp <= 0:
 						_on_enemy_killed(ei)
-			aoe_flashes.append({pos = player_pos, radius = 200.0, timer = 0.3, color = Color(0.6, 0.0, 0.9, 0.7)})
+			_add_aoe_flash({pos = player_pos, radius = 200.0, timer = 0.3, color = Color(0.6, 0.0, 0.9, 0.7)})
 			# T2: leave void pool at player pos
 			if tier >= 2:
 				var pool_timer: float = 15.0
@@ -4865,7 +4935,7 @@ func _update_traps(delta: float) -> void:
 				enemies[ei] = e
 				trap.active = false
 				traps[i] = trap
-				aoe_flashes.append({pos = trap.pos, radius = 80.0, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
+				_add_aoe_flash({pos = trap.pos, radius = 80.0, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
 				triggered_indices.append(i)
 				break
 		i -= 1
@@ -4880,7 +4950,7 @@ func _update_traps(delta: float) -> void:
 					continue
 				if traps[tj].get("active", true) and t_pos.distance_to(traps[tj].pos) < 300.0:
 					traps[tj].active = false
-					aoe_flashes.append({pos=traps[tj].pos, radius=80.0, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
+					_add_aoe_flash({pos=traps[tj].pos, radius=80.0, timer=0.3, color=Color(1.0,0.9,0.1,0.5)})
 					for ei in range(enemies.size()):
 						var e: Dictionary = enemies[ei]
 						if e.hp > 0 and e.pos.distance_to(traps[tj].pos) < 80.0:
@@ -4906,7 +4976,7 @@ func _update_decoys(delta: float) -> void:
 			# T2: decoy explodes on death/expire
 			if mirage_tier >= 2:
 				var dpos: Vector2 = decoys[i].pos
-				aoe_flashes.append({pos=dpos, radius=40.0, timer=0.3, color=Color(1.0,0.6,0.2,0.6)})
+				_add_aoe_flash({pos=dpos, radius=40.0, timer=0.3, color=Color(1.0,0.6,0.2,0.6)})
 				for ei in range(enemies.size()):
 					var e: Dictionary = enemies[ei]
 					if e.hp > 0 and dpos.distance_to(e.pos) < 40.0:
@@ -5025,33 +5095,38 @@ func _update_affix_trails(delta: float) -> void:
 func _update_smoke(delta: float) -> void:
 	var smoke_tier: int = kit_tiers.get("smoke_kit", 1)
 	var smoke_t3: String = kit_t3_choices.get("smoke_kit", "")
+	smoke_interact_timer -= delta
+	var run_interactions: bool = smoke_interact_timer <= 0.0
+	if run_interactions:
+		smoke_interact_timer = 0.5
 	var i := smoke_zones.size() - 1
 	while i >= 0:
 		smoke_zones[i].timer -= delta
 		if smoke_zones[i].timer <= 0.0:
 			smoke_zones.remove_at(i)
 		else:
-			var sz: Dictionary = smoke_zones[i]
-			# Enemies inside smoke lose aggro (if not slowing-only zone)
-			if not sz.get("slowing", false):
-				for ei in range(enemies.size()):
-					var e: Dictionary = enemies[ei]
-					if e.hp > 0 and not e.is_aggroed:
-						continue
-					if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
-						e.is_aggroed = false
-						enemies[ei] = e
-			# T3 void: toxic smoke — enemies take 1 dmg/s, player gains corruption
-			if sz.get("toxic", false):
-				for ei in range(enemies.size()):
-					var e: Dictionary = enemies[ei]
-					if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
-						e.hp -= maxi(1, int(delta))
-						enemies[ei] = e
-						if e.hp <= 0:
-							_on_enemy_killed(ei)
-				if player_pos.distance_to(sz.pos) < sz.radius:
-					corruption += 3.0 * delta
+			if run_interactions:
+				var sz: Dictionary = smoke_zones[i]
+				# Enemies inside smoke lose aggro (if not slowing-only zone)
+				if not sz.get("slowing", false):
+					for ei in range(enemies.size()):
+						var e: Dictionary = enemies[ei]
+						if e.hp > 0 and not e.is_aggroed:
+							continue
+						if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
+							e.is_aggroed = false
+							enemies[ei] = e
+				# T3 void: toxic smoke — enemies take 1 dmg/s, player gains corruption
+				if sz.get("toxic", false):
+					for ei in range(enemies.size()):
+						var e: Dictionary = enemies[ei]
+						if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
+							e.hp -= maxi(1, int(delta))
+							enemies[ei] = e
+							if e.hp <= 0:
+								_on_enemy_killed(ei)
+					if player_pos.distance_to(sz.pos) < sz.radius:
+						corruption += 3.0 * delta
 		i -= 1
 
 func _update_gravity_wells(delta: float) -> void:
@@ -5066,7 +5141,7 @@ func _update_gravity_wells(delta: float) -> void:
 			if gw_end.get("explode_on_end", false):
 				var count: int = gw_end.get("enemies_inside", 0)
 				var explode_dmg: int = 3 * maxi(1, count)
-				aoe_flashes.append({pos=gw_end.pos, radius=gw_end.radius * 0.5, timer=0.3, color=Color(0.6,0.0,0.9,0.7)})
+				_add_aoe_flash({pos=gw_end.pos, radius=gw_end.radius * 0.5, timer=0.3, color=Color(0.6,0.0,0.9,0.7)})
 				for ei in range(enemies.size()):
 					var e: Dictionary = enemies[ei]
 					if e.hp > 0 and e.pos.distance_to(gw_end.pos) < gw_end.radius * 0.5:
@@ -5167,7 +5242,7 @@ func _update_drone(delta: float) -> void:
 			var e: Dictionary = enemies[best_idx]
 			e.hp -= 2
 			enemies[best_idx] = e
-			aoe_flashes.append({pos=drone_pos, radius=8.0, timer=0.1, color=Color(0.3,0.9,1.0,0.8)})
+			_add_aoe_flash({pos=drone_pos, radius=8.0, timer=0.1, color=Color(0.3,0.9,1.0,0.8)})
 			if e.hp <= 0:
 				_on_enemy_killed(best_idx)
 
