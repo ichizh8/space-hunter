@@ -17,10 +17,10 @@ const WEAPON_DEFS: Dictionary = {
 	"baton": {name="Baton", desc="Melee AOE. High risk, scales with corruption.", fire_rate=1.0, damage=3, bullet_speed=0.0, bullet_radius=90.0, color=Color(0.1,0.8,1.0), range=90.0, pattern="melee_aoe"},
 	# Dart: homing, auto-aim — lowest damage but never misses
 	"dart": {name="Dart", desc="Homing. Tracks enemies. Low damage.", fire_rate=1.1, damage=2, bullet_speed=180.0, bullet_radius=5.0, color=Color(0.2,1.0,0.5), range=400.0, pattern="homing"},
-	# Pulse: slow AOE melee knockback — crowd control, not burst damage
-	"pulse_cannon": {name="Pulse", desc="AOE knockback. Pushes crowds. Weak solo.", fire_rate=1.8, damage=3, bullet_speed=0.0, bullet_radius=110.0, color=Color(0.3,0.8,1.0), range=110.0, pattern="pulse"},
-	# Chain: chaining shots — strong when enemies cluster, weak vs single targets
-	"chain_rifle": {name="Chain", desc="Arcs between enemies. Scales with packs.", fire_rate=0.7, damage=2, bullet_speed=380.0, bullet_radius=6.0, color=Color(0.2,1.0,0.4), range=380.0, pattern="chain_shot"},
+	# Flamethrower: continuous fire cone, short range, high DPS
+	"flamethrower": {name="Flamer", desc="Continuous fire cone. Short range, high DPS.", fire_rate=0.12, damage=1, bullet_speed=180.0, bullet_radius=5.0, color=Color(1.0,0.4,0.0), range=140.0, pattern="cone_stream"},
+	# Grenade Launcher: lobbed explosive, big AOE, slow reload
+	"grenade_launcher": {name="Grenade", desc="Lobbed explosive. Big AOE, slow reload.", fire_rate=2.5, damage=8, bullet_speed=220.0, bullet_radius=8.0, color=Color(0.4,0.9,0.2), range=300.0, pattern="arc_aoe"},
 }
 
 # Per-weapon level-up perks: each level 2-5 has a named perk with icon + description
@@ -56,17 +56,17 @@ const WEAPON_LEVEL_PERKS: Dictionary = {
 		4: {icon="🐍", name="Swarm", desc="Fires 2 darts simultaneously", effect="dual", value=true},
 		5: {icon="💀", name="Voidseeker", desc="On kill: splits into 2 new darts", effect="split_on_kill", value=true},
 	},
-	"pulse_cannon": {
-		2: {icon="W", name="Wide Pulse", desc="Blast radius +40px", effect="radius", value=40.0},
-		3: {icon="D", name="Damage Core", desc="+3 damage", effect="damage", value=3},
-		4: {icon="S", name="Stun Pulse", desc="Enemies hit are stunned 1s", effect="stun_pulse", value=true},
-		5: {icon="C", name="Charge Ready", desc="Charge time -30%", effect="fire_rate", value=-0.42},
+	"flamethrower": {
+		2: {icon="F", name="Fuel Tank", desc="Range +30px", effect="range_bonus", value=30.0},
+		3: {icon="N", name="Napalm", desc="Burning: +1 dmg/s for 3s on hit", effect="burning", value=true},
+		4: {icon="P", name="Pressurized", desc="Fire rate +30%", effect="fire_rate", value=-0.036},
+		5: {icon="T", name="Fork", desc="Clean: Cryo Flamer (freeze, no dmg, 2s stun) | Void: Corruption Spray (+5 corr/s, 3x dmg)", effect="flamer_fork", value=true},
 	},
-	"chain_rifle": {
-		2: {icon="B", name="Extra Arc", desc="+1 bounce", effect="chain_bounces", value=1},
-		3: {icon="D", name="Charged Arcs", desc="+2 damage", effect="damage", value=2},
-		4: {icon="A", name="Arc Damage", desc="+30% damage per bounce", effect="arc_damage_ramp", value=true},
-		5: {icon="F", name="Full Chain", desc="+1 bounce, fire rate +20%", effect="chain_final", value=0.0},
+	"grenade_launcher": {
+		2: {icon="H", name="Heavy Ordinance", desc="+3 AOE damage", effect="damage", value=3},
+		3: {icon="C", name="Cluster Bomb", desc="Explosion spawns 3 mini grenades", effect="cluster", value=true},
+		4: {icon="S", name="Stagger", desc="Explosion knocks enemies back 80px", effect="grenade_knockback", value=true},
+		5: {icon="A", name="Fork", desc="Clean: Airburst (explodes at max range, hits all) | Void: Void Grenade (corruption zone 5s)", effect="grenade_fork", value=true},
 	},
 }
 
@@ -117,13 +117,13 @@ const WEAPON_MUTATIONS: Dictionary = {
 		"clean": {icon="G", name="Smart Missile",  desc="Single large slow missile. Massive damage, perfect tracking."},
 		"void":  {icon="V", name="Parasite Swarm", desc="Darts latch on, drain HP 4s. Spreads to 1 nearby enemy on death."},
 	},
-	"pulse_cannon": {
-		"clean": {icon="R", name="Repulsor Field", desc="Release creates a 400px force wall lasting 2s. Nothing passes it."},
-		"void":  {icon="I", name="Collapse Shot",  desc="Implosion: sucks enemies 200px inward 1.5s, then burst."},
+	"flamethrower": {
+		"clean": {icon="C", name="Cryo Flamer",      desc="Freezes enemies. No damage, 2s stun per hit."},
+		"void":  {icon="V", name="Corruption Spray",  desc="+5 corruption/s to player while firing, triple damage."},
 	},
-	"chain_rifle": {
-		"clean": {icon="C", name="Arc Conductor",  desc="Each bounce increases damage 30%. Max 5 bounces."},
-		"void":  {icon="P", name="Plague Round",   desc="Bullet spreads corruption debuff each bounce. Enemies take +20% dmg and emit void aura."},
+	"grenade_launcher": {
+		"clean": {icon="A", name="Airburst",        desc="Explodes at max range regardless. Hits everything in 80px."},
+		"void":  {icon="V", name="Void Grenade",     desc="Explosion leaves a corruption zone for 5s."},
 	},
 }
 
@@ -218,32 +218,32 @@ const WEAPON_MASTERY: Dictionary = {
 			{id="void_latch", icon="V", name="Void Latch", desc="Parasitized enemies deal 20% less damage."},
 		],
 	},
-	"pulse_cannon": {
+	"flamethrower": {
 		"clean": [
-			{id="wall_persist", icon="W", name="Wall Persist", desc="Repulsor wall lasts 4s (was 2s)."},
-			{id="wall_damage", icon="D", name="Wall Damage", desc="Enemies touching wall take 1 dmg/s."},
-			{id="bounce_back", icon="B", name="Bounce Back", desc="Wall reflects enemy bullets."},
-			{id="double_wall", icon="X", name="Double Wall", desc="Fire creates 2 perpendicular walls."},
+			{id="cryo_range", icon="R", name="Cryo Range", desc="Freeze cone range +40px."},
+			{id="deep_freeze", icon="D", name="Deep Freeze", desc="Stun duration 3s (was 2s)."},
+			{id="shatter", icon="S", name="Shatter", desc="Frozen enemies take +50% damage from other sources."},
+			{id="cryo_aura", icon="A", name="Cryo Aura", desc="Enemies near frozen targets are slowed 30%."},
 		],
 		"void": [
-			{id="deep_collapse", icon="D", name="Deep Collapse", desc="Implosion range +80px."},
-			{id="burst_chain", icon="C", name="Burst Chain", desc="Burst after implosion chains to 3 enemies."},
-			{id="void_vortex", icon="V", name="Void Vortex", desc="Implosion creates a gravity well."},
-			{id="collapse_amp", icon="A", name="Collapse Amp", desc="+2 damage per enemy pulled in."},
+			{id="corr_efficiency", icon="E", name="Corruption Efficiency", desc="Corruption cost reduced to +3/s."},
+			{id="void_flames", icon="V", name="Void Flames", desc="Flame projectiles pierce 1 enemy."},
+			{id="corruption_burst", icon="B", name="Corruption Burst", desc="At 80 corruption: next flame burst deals 5x."},
+			{id="siphon", icon="S", name="Siphon", desc="Kill with flames restores 1 HP."},
 		],
 	},
-	"chain_rifle": {
+	"grenade_launcher": {
 		"clean": [
-			{id="arc_persist", icon="P", name="Arc Persist", desc="+2 max bounces."},
-			{id="arc_stun", icon="S", name="Arc Stun", desc="Final bounce stuns 0.8s."},
-			{id="conductor", icon="C", name="Conductor", desc="+50% damage on last bounce."},
-			{id="chain_reload", icon="R", name="Chain Reload", desc="5-bounce kill: instant reload."},
+			{id="wide_burst", icon="W", name="Wide Burst", desc="Airburst radius +30px."},
+			{id="carpet_bomb", icon="C", name="Carpet Bomb", desc="Fire 2 grenades side-by-side."},
+			{id="concussion", icon="X", name="Concussion", desc="Airburst stuns 1s."},
+			{id="barrage", icon="B", name="Barrage", desc="Fire rate +25%."},
 		],
 		"void": [
-			{id="plague_persist", icon="P", name="Plague Persist", desc="Corruption debuff lasts 6s (was 3s)."},
-			{id="plague_spread", icon="S", name="Plague Spread", desc="Debuffed enemies spread to 1 nearby."},
-			{id="plague_burst", icon="B", name="Plague Burst", desc="Debuffed enemy death: small void AOE."},
-			{id="void_charge", icon="V", name="Void Charge", desc="+15% corruption gain from plague rounds."},
+			{id="corr_zone_expand", icon="E", name="Zone Expand", desc="Corruption zone radius +40px."},
+			{id="zone_damage", icon="D", name="Zone Damage", desc="Corruption zone deals 2 dmg/s."},
+			{id="void_pull", icon="P", name="Void Pull", desc="Corruption zone pulls enemies inward."},
+			{id="cascade_void", icon="V", name="Cascade", desc="Enemies killed in zone spawn mini zone."},
 		],
 	},
 }
@@ -529,7 +529,7 @@ func _ready() -> void:
 	# Starting weapon from loadout
 	var wid: String = GameData.starting_weapon
 	if wid.is_empty() or not WEAPON_DEFS.has(wid): wid = "sidearm"
-	var is_melee_type: bool = wid == "baton" or wid == "pulse_cannon"
+	var is_melee_type: bool = wid == "baton"
 	var base_mag: int = 999 if is_melee_type else 12
 	main_weapon = {id=wid, level=1, cooldown_timer=0.0, mag_ammo=base_mag+mag_bonus, mag_size=base_mag+mag_bonus, reload_timer=0.0, mutated=false, mutation_type=""}
 
@@ -1592,60 +1592,60 @@ func _update_weapons(delta: float) -> void:
 								enemies[ei] = e_sc
 								if e_sc.hp <= 0:
 									_on_enemy_killed(ei)
-			"pulse":
-				# Pulse cannon: AOE blast with knockback
-				var pulse_range: float = def.range + mods_w.get("radius_bonus", 0.0)
-				for ei in range(enemies.size()):
-					var e: Dictionary = enemies[ei]
-					if e.hp <= 0:
-						continue
-					if player_pos.distance_to(e.pos) < pulse_range:
-						e.hp -= fire_damage
-						var push_dir: Vector2 = (e.pos - player_pos).normalized()
-						e.pos += push_dir * 120.0
-						# Stun pulse perk
-						if mods_w.get("stun_pulse", false):
-							e.stunned_timer = 1.0
-						enemies[ei] = e
-						if e.hp <= 0:
-							_on_enemy_killed(ei)
-				aoe_flashes.append({pos=player_pos, radius=pulse_range, timer=0.3, color=Color(0.3,0.8,1.0,0.6)})
-				w.mag_ammo = 999  # pulse cannon does not use ammo
-				# Pulse cannon clean mutation: repulsor wall
-				if mods_w.get("repulsor_field", false):
-					var wall_dir: Vector2 = dir
-					var wall_perp: Vector2 = Vector2(-wall_dir.y, wall_dir.x)
-					var wall_dur: float = 2.0
-					if mods_w.get("wall_persist", false):
-						wall_dur = 4.0
-					walls.append({pos=player_pos + dir * pulse_range, dir_perp=wall_perp, length=400.0, timer=wall_dur})
-					if mods_w.get("double_wall", false):
-						walls.append({pos=player_pos + dir * pulse_range, dir_perp=wall_dir, length=400.0, timer=wall_dur})
-				# Pulse cannon void mutation: collapse shot
-				if mods_w.get("collapse_shot", false):
-					var collapse_radius: float = 200.0 + mods_w.get("collapse_range_bonus", 0.0)
-					gravity_wells.append({pos=nearest_pos, radius=collapse_radius, timer=1.5, implode=true})
-			"chain_shot":
+			"cone_stream":
+				# Flamethrower: fire 4 projectiles in a ±25 degree forward cone
 				w.mag_ammo -= 1
-				var chain_bounces: int = 2 + mods_w.get("chain_bounces_bonus", 0)
-				var chain_b: Dictionary = {
+				var cone_half_deg: float = 25.0
+				var cone_range: float = w_range + mods_w.get("range_bonus_flat", 0.0)
+				var is_cryo: bool = mods_w.get("cryo_flamer", false)
+				var is_corr_spray: bool = mods_w.get("corruption_spray", false)
+				var cone_dmg: int = fire_damage
+				if is_corr_spray:
+					cone_dmg = fire_damage * 3
+					corruption += 5.0 * w_fire_rate  # +5 corruption/s scaled by fire rate
+				var base_angle: float = dir.angle()
+				for _fp in range(4):
+					var offset_deg: float = randf_range(-cone_half_deg, cone_half_deg)
+					var angle: float = base_angle + deg_to_rad(offset_deg)
+					var flame_dir := Vector2(cos(angle), sin(angle))
+					var flame_b: Dictionary = {
+						pos = player_pos + flame_dir * (PLAYER_RADIUS + 6.0),
+						vel = flame_dir * w_bullet_speed,
+						radius = def.bullet_radius,
+						color = Color(1.0, 0.3, 0.0) if not is_cryo else Color(0.3, 0.8, 1.0),
+						damage = 0 if is_cryo else cone_dmg,
+						lifetime = cone_range / maxf(1.0, w_bullet_speed),
+						from_player = true,
+						weapon_id = w.id,
+						flame = true,
+					}
+					if is_cryo:
+						flame_b["cryo_stun"] = 2.0
+					if mods_w.get("burning", false) and not is_cryo:
+						flame_b["apply_burning"] = true
+					if mods_w.get("cone_slow", false):
+						flame_b["slow_on_hit"] = true
+					bullets.append(flame_b)
+				# Brief cone flash
+				aoe_flashes.append({pos=player_pos + dir * 40.0, radius=30.0, timer=0.1, color=Color(1.0, 0.4, 0.0, 0.5) if not is_cryo else Color(0.3, 0.8, 1.0, 0.5)})
+			"arc_aoe":
+				# Grenade launcher: single slow projectile that explodes at range or on hit
+				w.mag_ammo -= 1
+				var grenade_b: Dictionary = {
 					pos = player_pos + dir * (PLAYER_RADIUS + 6.0),
 					vel = dir * w_bullet_speed,
-					radius = def.bullet_radius,
-					color = def.color,
+					radius = 10.0,
+					color = Color(0.4, 0.9, 0.2),
 					damage = fire_damage,
 					lifetime = w_range / maxf(1.0, w_bullet_speed),
 					from_player = true,
 					weapon_id = w.id,
-					chain_shot = true,
-					bounces_left = chain_bounces,
-					hit_ids = [],
+					grenade = true,
+					exploded = false,
 				}
-				if mods_w.get("arc_damage_ramp", false):
-					chain_b["arc_ramp"] = true
-				if mods_w.get("plague", false):
-					chain_b["plague"] = true
-				bullets.append(chain_b)
+				if mods_w.get("sticky", false):
+					grenade_b["sticky"] = true
+				bullets.append(grenade_b)
 
 		# Resonance: sympathetic_fire — drone fires when player fires
 		if weapon_mods.get("_resonance", {}).get("sympathetic_fire", false) and drone_active:
@@ -1699,6 +1699,15 @@ func _update_enemies(delta: float) -> void:
 					se.parasite_timer = 4.0
 					se.parasite_dmg = 1.0
 					enemies[nearest_spread_idx] = se
+				continue
+
+		# Burn tick (flamethrower napalm)
+		if e.get("burn_timer", 0.0) > 0.0:
+			e["burn_timer"] = e.burn_timer - delta
+			e.hp -= maxi(1, int(e.get("burn_dmg", 1.0) * delta + 0.5))
+			if e.hp <= 0:
+				enemies[i] = e
+				_on_enemy_killed(i)
 				continue
 
 		# Marked timer tick
@@ -2120,6 +2129,10 @@ func _update_bullets(delta: float) -> void:
 		b.lifetime -= delta
 
 		if b.lifetime <= 0.0:
+			# Grenade explosion on expiry
+			if b.get("grenade", false) and not b.get("exploded", false):
+				b["exploded"] = true
+				_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""))
 			# Slow field on land (lance clean mutation)
 			if b.get("slow_field_on_land", false) and b.from_player:
 				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
@@ -2251,7 +2264,30 @@ func _update_bullets(delta: float) -> void:
 								to_remove.append(i)
 								break
 					else:
+						# Grenade: explode on hit instead of direct damage
+						if b.get("grenade", false) and not b.get("exploded", false):
+							b["exploded"] = true
+							_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""))
+							to_remove.append(i)
+							bullets[i] = b
+							break
+						# Cryo flamer: stun instead of damage
+						if b.get("cryo_stun", 0.0) > 0.0:
+							var stun_dur: float = weapon_mods.get(b.get("weapon_id", ""), {}).get("cryo_stun_duration", b.get("cryo_stun", 2.0))
+							e.stunned_timer = stun_dur
+							# Shatter mastery: frozen enemies take +50% from other sources
+							if weapon_mods.get(b.get("weapon_id", ""), {}).get("shatter", false):
+								e["marked_timer"] = stun_dur
+								e["marked_dmg_bonus"] = 1.5
+							enemies[ei] = e
+							to_remove.append(i)
+							bullets[i] = b
+							break
 						e.hp -= hit_dmg
+						# Burning (flamethrower napalm perk)
+						if b.get("apply_burning", false):
+							e["burn_timer"] = 3.0
+							e["burn_dmg"] = 1.0
 						if b.get("slow_on_hit", false):
 							e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
 						if b.get("parasite", false):
@@ -2262,41 +2298,7 @@ func _update_bullets(delta: float) -> void:
 						if weapon_mods.get(b.get("weapon_id", ""), {}).get("stagger_chance", 0.0) > 0.0:
 							if randf() < weapon_mods.get(b.get("weapon_id", ""), {}).get("stagger_chance", 0.0):
 								e.stunned_timer = 0.5
-						# Plague on hit (chain rifle void)
-						if b.get("plague", false):
-							var plague_dur: float = weapon_mods.get(b.get("weapon_id", ""), {}).get("plague_duration", 3.0)
-							e["plagued_timer"] = plague_dur
-							e["plagued"] = true
 						enemies[ei] = e
-						# Chain shot bounce (chain rifle)
-						if b.get("chain_shot", false) and b.get("bounces_left", 0) > 0:
-							var hit_ids: Array = b.get("hit_ids", [])
-							hit_ids.append(ei)
-							b["hit_ids"] = hit_ids
-							b["bounces_left"] = b.bounces_left - 1
-							# Arc damage ramp
-							if b.get("arc_ramp", false):
-								b.damage = int(float(b.damage) * 1.3)
-							# Find nearest OTHER enemy
-							var next_dist: float = 200.0
-							var next_idx: int = -1
-							for nei in range(enemies.size()):
-								if hit_ids.has(nei) or enemies[nei].hp <= 0:
-									continue
-								var nd: float = b.pos.distance_to(enemies[nei].pos)
-								if nd < next_dist:
-									next_dist = nd
-									next_idx = nei
-							if next_idx >= 0:
-								var ndir: Vector2 = (enemies[next_idx].pos - b.pos).normalized()
-								b.vel = ndir * b.vel.length()
-								b.lifetime = 1.0
-								bullets[i] = b
-							else:
-								to_remove.append(i)
-							if e.hp <= 0:
-								_on_enemy_killed(ei, b.get("weapon_id", ""))
-							break
 						# Fragment on hit (sidearm void mutation)
 						if b.get("fragment_on_hit", false) and not b.get("is_fragment", false):
 							var frag_dmg: int = maxi(1, int(hit_dmg * 0.5))
@@ -2313,6 +2315,9 @@ func _update_bullets(delta: float) -> void:
 									weapon_id = b.get("weapon_id", ""),
 									is_fragment = true,
 								})
+						# Flame siphon: kill with flames restores 1 HP
+						if b.get("flame", false) and weapon_mods.get(b.get("weapon_id", ""), {}).get("flame_siphon", false) and e.hp <= 0:
+							player_hp = mini(player_hp + 1, player_max_hp)
 						to_remove.append(i)
 						if b.get("explode", false):
 							_bullet_explode(b.pos, hit_dmg)
@@ -2973,15 +2978,20 @@ func _apply_weapon_perk(wid: String, perk: Dictionary) -> void:
 			mods["dual_dart"] = true
 		"split_on_kill":
 			mods["split_on_kill"] = true
-		"stun_pulse":
-			mods["stun_pulse"] = true
-		"chain_bounces":
-			mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + int(perk.value)
-		"arc_damage_ramp":
-			mods["arc_damage_ramp"] = true
-		"chain_final":
-			mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 1
-			mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.12
+		"range_bonus":
+			mods["range_bonus_flat"] = mods.get("range_bonus_flat", 0.0) + perk.value
+		"burning":
+			mods["burning"] = true
+		"cone_slow":
+			mods["cone_slow"] = true
+		"flamer_fork":
+			pass  # handled via mutation system at level 5
+		"cluster":
+			mods["cluster"] = true
+		"grenade_knockback":
+			mods["grenade_knockback"] = true
+		"grenade_fork":
+			pass  # handled via mutation system at level 5
 	weapon_mods[wid] = mods
 
 # =========================================================
@@ -3039,6 +3049,49 @@ func _bullet_explode(impact_pos: Vector2, dmg: int) -> void:
 			enemies[ei2] = ae
 			if ae.hp <= 0:
 				_on_enemy_killed(ei2)
+
+func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String) -> void:
+	var mods_g: Dictionary = weapon_mods.get(wid, {})
+	var aoe_radius: float = 80.0 + mods_g.get("aoe_radius_bonus", 0.0)
+	aoe_flashes.append({pos = impact_pos, radius = aoe_radius, timer = 0.3, color = Color(0.4, 0.9, 0.2, 0.7)})
+	for ei2 in range(enemies.size()):
+		var ae: Dictionary = enemies[ei2]
+		if ae.hp <= 0:
+			continue
+		if impact_pos.distance_to(ae.pos) < aoe_radius:
+			ae.hp -= dmg
+			# Stagger perk: knockback 80px
+			if mods_g.get("grenade_knockback", false):
+				var kb_dir: Vector2 = (ae.pos - impact_pos).normalized()
+				ae.pos += kb_dir * 80.0
+			# Concussion mastery: stun 1s
+			if mods_g.get("concussion_stun", false):
+				ae.stunned_timer = 1.0
+			enemies[ei2] = ae
+			if ae.hp <= 0:
+				_on_enemy_killed(ei2)
+	# Cluster bomb perk: spawn 3 mini grenades
+	if mods_g.get("cluster", false):
+		for _ci in range(3):
+			var cluster_angle: float = randf() * TAU
+			var cluster_dir: Vector2 = Vector2(cos(cluster_angle), sin(cluster_angle))
+			bullets.append({
+				pos = impact_pos,
+				vel = cluster_dir * 150.0,
+				radius = 6.0,
+				color = Color(0.5, 1.0, 0.3),
+				damage = maxi(1, int(dmg * 0.4)),
+				lifetime = 0.5,
+				from_player = true,
+				weapon_id = wid,
+				grenade = true,
+				exploded = false,
+				mini_grenade = true,
+			})
+	# Void grenade mutation: leave corruption zone
+	if mods_g.get("void_grenade", false):
+		var zone_radius: float = 80.0 + mods_g.get("corr_zone_radius_bonus", 0.0)
+		smoke_zones.append({pos=impact_pos, radius=zone_radius, timer=5.0, toxic=true, slowing=false})
 
 func _get_effective_player_stats() -> Dictionary:
 	var move_speed_mult: float = 1.0
@@ -3567,6 +3620,39 @@ func _draw_contract_ui(vp_size: Vector2) -> void:
 				draw_arc(rift_sp, 30.0, 0.0, TAU, 32, Color(0.7, 0.2, 1.0, 0.8), 2.5)
 				# Hold radius
 				draw_arc(rift_sp, rift_radius, 0.0, TAU, 64, Color(0.5, 0.0, 0.8, 0.2), 1.5)
+				# Compass arrow when rift is off-screen
+				var rift_on_screen: bool = (rift_sp.x >= 0.0 and rift_sp.x <= vp_size.x and rift_sp.y >= 0.0 and rift_sp.y <= vp_size.y)
+				if not rift_on_screen:
+					var rift_screen_center: Vector2 = vp_size * 0.5
+					var dir_to_rift: Vector2 = (rift_pos - player_pos).normalized()
+					var rift_margin := 28.0
+					var rift_arrow_pos: Vector2
+					var rift_tx: float = 999999.0
+					var rift_ty: float = 999999.0
+					if dir_to_rift.x > 0.001:
+						rift_tx = (vp_size.x - rift_margin - rift_screen_center.x) / dir_to_rift.x
+					elif dir_to_rift.x < -0.001:
+						rift_tx = (rift_margin - rift_screen_center.x) / dir_to_rift.x
+					if dir_to_rift.y > 0.001:
+						rift_ty = (vp_size.y - rift_margin - rift_screen_center.y) / dir_to_rift.y
+					elif dir_to_rift.y < -0.001:
+						rift_ty = (rift_margin - rift_screen_center.y) / dir_to_rift.y
+					var rift_t: float = minf(rift_tx, rift_ty)
+					rift_arrow_pos = rift_screen_center + dir_to_rift * rift_t
+					var rift_dist: float = player_pos.distance_to(rift_pos)
+					var rift_pulse_spd: float = remap(rift_dist, 100.0, 1200.0, 8.0, 2.0)
+					var rift_p: float = 0.5 + 0.5 * sin(hunt_elapsed * rift_pulse_spd)
+					var rift_arrow_color := Color(0.6, 0.1, 0.9, 0.6 + 0.4 * rift_p)
+					var rift_arrow_sz := 14.0
+					var rift_fwd: Vector2 = dir_to_rift * rift_arrow_sz
+					var rift_perp: Vector2 = Vector2(-dir_to_rift.y, dir_to_rift.x) * (rift_arrow_sz * 0.5)
+					var rift_tip: Vector2 = rift_arrow_pos + rift_fwd
+					var rift_left: Vector2 = rift_arrow_pos - rift_perp
+					var rift_right: Vector2 = rift_arrow_pos + rift_perp
+					draw_colored_polygon(PackedVector2Array([rift_tip, rift_left, rift_right]), rift_arrow_color)
+					draw_polyline(PackedVector2Array([rift_tip, rift_left, rift_right, rift_tip]), Color(0.7, 0.3, 1.0, 0.9 * rift_p), 1.5)
+					var rift_dist_m: int = int(rift_dist / 50.0)
+					_draw_text(rift_arrow_pos + Vector2(-12.0, 10.0), "%dm" % rift_dist_m, Color(0.7, 0.3, 1.0, 0.8 * rift_p), 10)
 				# HUD: hold timer
 				var hold_text: String = "Hold: %.1fs / %.0fs" % [rift_time_held, rift_hold_time]
 				_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 34.0), hold_text, Color(0.7, 0.3, 1.0), 12)
@@ -3629,7 +3715,7 @@ func _init_kit_state(kit_id: String) -> Dictionary:
 		"chain_kit": return {cooldown = 0.0, max_cooldown = 12.0}
 		"charge_kit": return {cooldown = 0.0, max_cooldown = 12.0, charging = false}
 		"mirage_kit": return {cooldown = 0.0, max_cooldown = 18.0}
-		"turret_kit": return {charges = 1}
+		"turret_kit": return {charges = 1, max_charges = 2, recharge_timer = 0.0}
 		"smoke_kit": return {cooldown = 0.0, max_cooldown = 14.0}
 		"anchor_kit": return {cooldown = 0.0, max_cooldown = 20.0}
 		"drone_kit": return {active = true}
@@ -4087,6 +4173,18 @@ func _update_decoys(delta: float) -> void:
 		i -= 1
 
 func _update_turrets(delta: float) -> void:
+	# Turret charge recharge
+	if kit_states.has("turret_kit"):
+		var ts: Dictionary = kit_states["turret_kit"]
+		var max_ch: int = ts.get("max_charges", 2)
+		var cur_ch: int = ts.get("charges", 0)
+		if cur_ch < max_ch:
+			ts["recharge_timer"] = ts.get("recharge_timer", 0.0) + delta
+			if ts.recharge_timer >= 30.0:
+				ts["charges"] = cur_ch + 1
+				ts["recharge_timer"] = 0.0
+				_show_message("Turret recharged!")
+			kit_states["turret_kit"] = ts
 	var turret_tier: int = kit_tiers.get("turret_kit", 1)
 	var resonance: Dictionary = weapon_mods.get("_resonance", {})
 	var i := turrets.size() - 1
@@ -4273,31 +4371,35 @@ func _update_drone(delta: float) -> void:
 				e.pos += push * 60.0
 				enemies[ei] = e
 
-	# T2: attack path — fire at nearest enemy every 2s
+	# Drone basic attack — fires at nearest enemy every 2.5s (T1), enhanced at T2+ attack path
+	drone_fire_timer -= delta
+	var drone_fire_interval: float = 2.5
 	if drone_tier >= 2 and drone_path == "attack":
-		drone_fire_timer -= delta
-		var fire_interval: float = 2.0
-		if overcharge_timer > 0.0:
-			fire_interval = 1.0
-		if drone_fire_timer <= 0.0:
-			drone_fire_timer = fire_interval
-			var best_dist: float = 300.0
-			var best_idx: int = -1
-			for ei in range(enemies.size()):
-				var e: Dictionary = enemies[ei]
-				if e.hp <= 0:
-					continue
-				var d: float = drone_pos.distance_to(e.pos)
-				if d < best_dist:
-					best_dist = d
-					best_idx = ei
-			if best_idx >= 0:
-				var e: Dictionary = enemies[best_idx]
-				e.hp -= 2
-				enemies[best_idx] = e
-				aoe_flashes.append({pos=drone_pos, radius=8.0, timer=0.1, color=Color(0.3,0.9,1.0,0.8)})
-				if e.hp <= 0:
-					_on_enemy_killed(best_idx)
+		drone_fire_interval = 2.0
+	if overcharge_timer > 0.0:
+		drone_fire_interval *= 0.5
+	if drone_fire_timer <= 0.0:
+		drone_fire_timer = drone_fire_interval
+		var drone_attack_range: float = 200.0
+		if drone_tier >= 2 and drone_path == "attack":
+			drone_attack_range = 300.0
+		var best_dist: float = drone_attack_range
+		var best_idx: int = -1
+		for ei in range(enemies.size()):
+			var e: Dictionary = enemies[ei]
+			if e.hp <= 0:
+				continue
+			var d: float = drone_pos.distance_to(e.pos)
+			if d < best_dist:
+				best_dist = d
+				best_idx = ei
+		if best_idx >= 0:
+			var e: Dictionary = enemies[best_idx]
+			e.hp -= 2
+			enemies[best_idx] = e
+			aoe_flashes.append({pos=drone_pos, radius=8.0, timer=0.1, color=Color(0.3,0.9,1.0,0.8)})
+			if e.hp <= 0:
+				_on_enemy_killed(best_idx)
 
 	# T2: harvest path — auto-collect nearby essence/ingredients
 	if drone_tier >= 2 and drone_path == "harvest":
@@ -4327,13 +4429,13 @@ func _update_familiar(delta: float) -> void:
 	var fam_t3: String = kit_t3_choices.get("familiar_kit", "")
 	# Orbit player
 	var orbit_angle: float = fmod(hunt_elapsed * 1.5 + PI, TAU)
-	familiar_pos = player_pos + Vector2(cos(orbit_angle), sin(orbit_angle)) * 60.0
+	familiar_pos = player_pos + Vector2(cos(orbit_angle), sin(orbit_angle)) * 55.0
 	# T3 void: at corruption >= 60, familiar splits into 2
 	if fam_tier >= 3 and fam_t3 == "void" and corruption >= 60.0 and not familiar2_active:
 		familiar2_active = true
 	if familiar2_active:
 		var orbit2: float = fmod(hunt_elapsed * 1.5 + PI + PI, TAU)
-		familiar2_pos = player_pos + Vector2(cos(orbit2), sin(orbit2)) * 60.0
+		familiar2_pos = player_pos + Vector2(cos(orbit2), sin(orbit2)) * 55.0
 	# Corruption cost
 	familiar_corruption_timer -= delta
 	var corr_interval: float = 8.0 if fam_tier < 2 else 6.0
@@ -4349,7 +4451,7 @@ func _update_familiar(delta: float) -> void:
 		if familiar2_active:
 			positions.append(familiar2_pos)
 		for fpos in positions:
-			var best_dist: float = 120.0
+			var best_dist: float = 150.0
 			var best_idx: int = -1
 			for ei in range(enemies.size()):
 				var e: Dictionary = enemies[ei]
@@ -4441,17 +4543,16 @@ func _apply_mutation(wid: String, mtype: String) -> void:
 				mods["smart_missile"] = true
 			elif mtype == "void":
 				mods["parasite"] = true
-		"pulse_cannon":
+		"flamethrower":
 			if mtype == "clean":
-				mods["repulsor_field"] = true
+				mods["cryo_flamer"] = true
 			elif mtype == "void":
-				mods["collapse_shot"] = true
-		"chain_rifle":
+				mods["corruption_spray"] = true
+		"grenade_launcher":
 			if mtype == "clean":
-				mods["arc_damage_ramp"] = true
-				mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 3  # max 5 bounces
+				mods["airburst"] = true
 			elif mtype == "void":
-				mods["plague"] = true
+				mods["void_grenade"] = true
 	weapon_mods[wid] = mods
 
 func _apply_mastery_perk(perk_id: String) -> void:
@@ -4519,25 +4620,25 @@ func _apply_mastery_perk(perk_id: String) -> void:
 		"toxic_cloud": mods["toxic_cloud"] = true
 		"deep_parasite": mods["parasite_duration"] = 6.0
 		"void_latch": mods["void_latch"] = true
-		# Pulse cannon clean
-		"wall_persist": mods["wall_persist"] = true
-		"wall_damage": mods["wall_damage"] = true
-		"bounce_back": mods["bounce_back"] = true
-		"double_wall": mods["double_wall"] = true
-		# Pulse cannon void
-		"deep_collapse": mods["collapse_range_bonus"] = mods.get("collapse_range_bonus", 0.0) + 80.0
-		"burst_chain": mods["burst_chain"] = true
-		"void_vortex": mods["void_vortex"] = true
-		"collapse_amp": mods["collapse_amp"] = true
-		# Chain rifle clean
-		"arc_persist": mods["chain_bounces_bonus"] = mods.get("chain_bounces_bonus", 0) + 2
-		"arc_stun": mods["arc_stun"] = true
-		"conductor": mods["conductor"] = true
-		"chain_reload": mods["chain_reload"] = true
-		# Chain rifle void
-		"plague_persist": mods["plague_duration"] = 6.0
-		"plague_spread": mods["plague_spread"] = true
-		"plague_burst": mods["plague_burst"] = true
-		"void_charge": mods["void_charge"] = true
+		# Flamethrower clean
+		"cryo_range": mods["range_bonus_flat"] = mods.get("range_bonus_flat", 0.0) + 40.0
+		"deep_freeze": mods["cryo_stun_duration"] = 3.0
+		"shatter": mods["shatter"] = true
+		"cryo_aura": mods["cryo_aura"] = true
+		# Flamethrower void
+		"corr_efficiency": mods["corr_cost_mult"] = 0.6
+		"void_flames": mods["flame_pierce"] = true
+		"corruption_burst": mods["corruption_burst"] = true
+		"siphon": mods["flame_siphon"] = true
+		# Grenade launcher clean
+		"wide_burst": mods["aoe_radius_bonus"] = mods.get("aoe_radius_bonus", 0.0) + 30.0
+		"carpet_bomb": mods["carpet_bomb"] = true
+		"concussion": mods["concussion_stun"] = true
+		"barrage": mods["fire_rate_add"] = mods.get("fire_rate_add", 0.0) - 0.625
+		# Grenade launcher void
+		"corr_zone_expand": mods["corr_zone_radius_bonus"] = 40.0
+		"zone_damage": mods["corr_zone_damage"] = true
+		"void_pull": mods["corr_zone_pull"] = true
+		"cascade_void": mods["cascade_void"] = true
 	weapon_mods[wid] = mods
 	_show_message("Mastery: " + perk_id.replace("_", " ").capitalize())

@@ -10,12 +10,12 @@ const WEAPON_DISPLAY_NAMES: Dictionary = {
 	"baton": "Baton",
 	"dart": "Dart",
 	"entropy_cannon": "Entropy",
-	"pulse_cannon": "Pulse",
+	"flamethrower": "Flamer",
 	"sniper_carbine": "Sniper",
-	"chain_rifle": "Chain",
+	"grenade_launcher": "Grenade",
 }
 
-const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
+const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]
 
 func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract

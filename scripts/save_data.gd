@@ -18,7 +18,7 @@ var ship_upgrades: Dictionary = {
 	"xp_rate": 0,       # levels 0-3, each +10% essence gain
 	"loadout_slots": 0, # levels 0-2, each +1 slot (start 4, max 6)
 }
-var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]
+var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]
 var loadout: Array = []
 var stock: Dictionary = {
 	"field_stim": 3,
@@ -108,7 +108,7 @@ func from_dict(data: Dictionary) -> void:
 		for w in raw_weapons:
 			unlocked_weapons.append(str(w))
 		# Always ensure all weapons are unlocked for testing
-		for _test_wep in ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "pulse_cannon", "sniper_carbine", "chain_rifle"]:
+		for _test_wep in ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher"]:
 			if not unlocked_weapons.has(_test_wep):
 				unlocked_weapons.append(_test_wep)
 	var raw_loadout: Variant = data.get("loadout", [])

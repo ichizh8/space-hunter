@@ -25,9 +25,9 @@ const DEBUG_UNLOCK_ALL_WEAPONS: bool = true
 # Weapon unlock requirements: {weapon_id: {track: String, level: int}}
 const WEAPON_UNLOCK_REQS: Dictionary = {
 	"entropy_cannon": {"track": "void_walker", "level": 2},
-	"pulse_cannon": {"track": "tactician", "level": 2},
+	"flamethrower": {"track": "tactician", "level": 2},
 	"sniper_carbine": {"track": "contractor", "level": 3},
-	"chain_rifle": {"track": "scrapper", "level": 2},
+	"grenade_launcher": {"track": "scrapper", "level": 2},
 }
 
 # Rep track display names

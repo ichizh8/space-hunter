@@ -79,8 +79,8 @@ const WEAPON_UNLOCK_DEFS: Array = [
 	{id="lance", name="Unlock Void Lance", desc="Starting weapon", cost=150},
 	{id="baton", name="Unlock Shock Baton", desc="Starting weapon", cost=130},
 	{id="dart", name="Unlock Homing Dart", desc="Starting weapon", cost=80},
-	{id="pulse_cannon", name="Unlock Pulse Cannon", desc="Starting weapon", cost=180},
-	{id="chain_rifle", name="Unlock Chain Rifle", desc="Starting weapon", cost=160},
+	{id="flamethrower", name="Unlock Flamethrower", desc="Starting weapon", cost=180},
+	{id="grenade_launcher", name="Unlock Grenade Launcher", desc="Starting weapon", cost=160},
 ]
 
 const KIT_NAMES: Dictionary = {
