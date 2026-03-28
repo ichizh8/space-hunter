@@ -2682,7 +2682,7 @@ func _update_bullets(delta: float) -> void:
 			# Grenade explosion on expiry
 			if b.get("grenade", false) and not b.get("exploded", false):
 				b["exploded"] = true
-				_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""))
+				_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""), b.get("mini_grenade", false))
 			# Slow field on land (lance clean mutation)
 			if b.get("slow_field_on_land", false) and b.from_player:
 				smoke_zones.append({pos=b.pos, radius=80.0, timer=3.0, slowing=true})
@@ -2818,7 +2818,7 @@ func _update_bullets(delta: float) -> void:
 						# Grenade: explode on hit instead of direct damage
 						if b.get("grenade", false) and not b.get("exploded", false):
 							b["exploded"] = true
-							_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""))
+							_grenade_explode(b.pos, b.damage, b.get("weapon_id", ""), b.get("mini_grenade", false))
 							to_remove.append(i)
 							bullets[i] = b
 							break
@@ -3740,7 +3740,7 @@ func _apply_affix_damage(e: Dictionary, dmg: int, is_ranged: bool = true) -> int
 		corruption += 5.0
 	return actual_dmg
 
-func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String) -> void:
+func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String, is_mini: bool = false) -> void:
 	var mods_g: Dictionary = weapon_mods.get(wid, {})
 	var aoe_radius: float = 80.0 + mods_g.get("aoe_radius_bonus", 0.0)
 	aoe_flashes.append({pos = impact_pos, radius = aoe_radius, timer = 0.3, color = Color(0.4, 0.9, 0.2, 0.7)})
@@ -3760,8 +3760,8 @@ func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String) -> void:
 			enemies[ei2] = ae
 			if ae.hp <= 0:
 				_on_enemy_killed(ei2)
-	# Cluster bomb perk: spawn 3 mini grenades
-	if mods_g.get("cluster", false):
+	# Cluster bomb perk: spawn 3 mini grenades (only from parent grenade, not from minis)
+	if mods_g.get("cluster", false) and not is_mini:
 		for _ci in range(3):
 			var cluster_angle: float = randf() * TAU
 			var cluster_dir: Vector2 = Vector2(cos(cluster_angle), sin(cluster_angle))
