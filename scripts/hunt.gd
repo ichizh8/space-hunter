@@ -1684,17 +1684,19 @@ func _update_enemies(delta: float) -> void:
 						e.phase_timer -= delta
 						e.ranged_cooldown_timer -= delta
 						if e.phase_timer <= 0.0:
-							e.phase_timer = 4.0
+							e.phase_timer = randf_range(7.0, 10.0)
 							var rng2 := RandomNumberGenerator.new()
 							rng2.randomize()
-							# Teleport to a random position 200-350px from player (flanking range)
+							# Teleport 350-550px from player — far enough to react
 							var angle: float = rng2.randf() * TAU
-							var dist: float = rng2.randf_range(200.0, 350.0)
-							var new_p := player_pos + Vector2(cos(angle), sin(angle)) * dist
+							var tdist: float = rng2.randf_range(350.0, 550.0)
+							var new_p := player_pos + Vector2(cos(angle), sin(angle)) * tdist
 							new_p.x = clampf(new_p.x, 80.0, WORLD_W - 80.0)
 							new_p.y = clampf(new_p.y, 80.0, WORLD_H - 80.0)
 							e.pos = new_p
-							aoe_flashes.append({pos = e.pos, radius = 40.0, timer = 0.2, color = Color(0.5, 0.1, 1.0, 0.8)})
+							# Warning flash at destination before appearing
+							aoe_flashes.append({pos = new_p, radius = 50.0, timer = 0.5, color = Color(0.5, 0.1, 1.0, 0.6)})
+							aoe_flashes.append({pos = new_p, radius = 25.0, timer = 0.3, color = Color(0.8, 0.3, 1.0, 0.9)})
 						if e.ranged_cooldown_timer <= 0.0:
 							e.ranged_cooldown_timer = 1.2
 							var shoot_dir: Vector2 = (player_pos - e.pos).normalized()
