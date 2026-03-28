@@ -304,6 +304,7 @@ var contract_type := ""
 var wave_current := 0
 var wave_timer := 0.0
 var hunt_elapsed := 0.0   # total seconds in hunt
+var purge_timer := 0.0    # timer for dead enemy cleanup
 const WAVE_INTERVAL_START := 20.0
 const WAVE_INTERVAL_MIN   := 8.0
 
@@ -1805,6 +1806,16 @@ func _update_enemies(delta: float) -> void:
 			continue
 		if player_pos.distance_to(e.pos) < 160.0:
 			corruption += 2.0 * delta * (1.0 - corr_resist)
+
+	# Purge dead enemies every 5s to keep array lean
+	purge_timer -= delta
+	if purge_timer <= 0.0:
+		purge_timer = 5.0
+		var alive: Array = []
+		for e in enemies:
+			if e.hp > 0:
+				alive.append(e)
+		enemies = alive
 
 func _segment_intersects_circle(a: Vector2, b: Vector2, center: Vector2, radius: float) -> bool:
 	var ab: Vector2 = b - a
