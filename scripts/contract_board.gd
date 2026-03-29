@@ -64,9 +64,9 @@ func _draw() -> void:
 		# Difficulty stars
 		var difficulty: int = contract.get("difficulty", 1)
 		var stars: String = ""
-		for _s in difficulty:
-			stars += "* "
-		_dt(Vector2(left + 48.0, y + 56.0), "Difficulty: %s" % stars.strip_edges(), Color(0.9, 0.8, 0.2), 11)
+		for si in range(5):
+			stars += "★" if si < difficulty else "☆"
+		_dt(Vector2(left + 48.0, y + 56.0), stars, Color(0.9, 0.8, 0.2), 13)
 
 		# Reward
 		_dt(Vector2(left + 48.0, y + 72.0), "Reward: %d cr" % contract.get("reward", 0), Color(0.9, 0.8, 0.2), 12)

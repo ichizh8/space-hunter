@@ -7,6 +7,7 @@ var upgrades_tab_content: VBoxContainer
 var kits_tab_content: VBoxContainer
 var stats_label: Label
 var pantry_label: Label
+var pantry_container: HBoxContainer   # colored ingredient dots
 var cook_status_label: Label
 var credits_label: Label
 var kits_credits_label: Label
@@ -14,6 +15,10 @@ var kits_equipped_label: Label
 var kits_scroll_vbox: VBoxContainer
 var kitchen_scroll_vbox: VBoxContainer
 var rep_label: Label
+var rep_bars_container: VBoxContainer  # visual rep bars
+var hunt_summary_panel: PanelContainer
+var hunt_summary_label: Label
+var onboarding_label: Label
 
 const RECIPES: Dictionary = {
 	"field_ration":     {tier = 1, track = "contractor",  cost = {"rift_dust": 1},                   rep = 10, bonus = ""},
@@ -189,8 +194,27 @@ func _ready() -> void:
 	ship_tab_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(ship_tab_content)
 
+	# --- Onboarding hint (first visit) ---
+	onboarding_label = Label.new()
+	onboarding_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	onboarding_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	onboarding_label.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	onboarding_label.visible = SaveManager.data.contracts_completed == 0
+	onboarding_label.text = "★  Hunt → kill elites → collect ingredients → cook → gain rep → unlock weapons & kits\n   Tap Contract Board to start your first hunt."
+	ship_tab_content.add_child(onboarding_label)
+
+	# --- Hunt summary banner ---
+	hunt_summary_panel = PanelContainer.new()
+	hunt_summary_panel.visible = false
+	ship_tab_content.add_child(hunt_summary_panel)
+
+	hunt_summary_label = Label.new()
+	hunt_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hunt_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hunt_summary_panel.add_child(hunt_summary_label)
+
 	var contract_button := Button.new()
-	contract_button.text = "Contract Board"
+	contract_button.text = "▶  Contract Board"
 	contract_button.custom_minimum_size = Vector2(0, 50)
 	contract_button.pressed.connect(_on_contract_board)
 	ship_tab_content.add_child(contract_button)
@@ -201,14 +225,28 @@ func _ready() -> void:
 	pantry_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ship_tab_content.add_child(pantry_title)
 
+	pantry_container = HBoxContainer.new()
+	pantry_container.add_theme_constant_override("separation", 10)
+	ship_tab_content.add_child(pantry_container)
+
 	pantry_label = Label.new()
 	pantry_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	pantry_label.visible = false  # fallback only
 	ship_tab_content.add_child(pantry_label)
 
-	# --- Rep tracks ---
+	# --- Rep tracks with progress bars ---
+	var rep_title := Label.new()
+	rep_title.text = "REPUTATION"
+	rep_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ship_tab_content.add_child(rep_title)
+
+	rep_bars_container = VBoxContainer.new()
+	rep_bars_container.add_theme_constant_override("separation", 4)
+	ship_tab_content.add_child(rep_bars_container)
+
 	rep_label = Label.new()
 	rep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	ship_tab_content.add_child(rep_label)
+	rep_label.visible = false  # fallback
 
 	var sep2 := HSeparator.new()
 	ship_tab_content.add_child(sep2)
@@ -529,8 +567,9 @@ func _show_ship_tab() -> void:
 	ship_tab_btn.disabled = true
 	upgrades_tab_btn.disabled = false
 	kits_tab_btn.disabled = false
-	_update_pantry()
-	_update_rep_display()
+	_show_hunt_summary()
+	_update_pantry_visual()
+	_update_rep_bars()
 	_build_kitchen()
 
 func _show_upgrades_tab() -> void:
@@ -553,9 +592,11 @@ func _show_kits_tab() -> void:
 
 func _update_stats() -> void:
 	var d := SaveManager.data
-	stats_label.text = "Credits: %d | Corruption: %d | Contracts: %d" % [
-		d.total_credits, d.total_corruption, d.contracts_completed
+	stats_label.text = "Credits: %d  ·  Contracts: %d  ·  Corruption: %d" % [
+		d.total_credits, d.contracts_completed, d.total_corruption
 	]
+	if is_instance_valid(onboarding_label):
+		onboarding_label.visible = d.contracts_completed == 0 and GameData.hunt_result.is_empty()
 
 const PANTRY_COLORS: Dictionary = {
 	"rift_dust": Color(0.9, 0.8, 0.3),
@@ -566,40 +607,163 @@ const PANTRY_COLORS: Dictionary = {
 }
 
 func _update_pantry() -> void:
+	_update_pantry_visual()
+
+func _update_pantry_visual() -> void:
+	# Clear and rebuild colored ingredient display
+	for child in pantry_container.get_children():
+		child.queue_free()
+
 	var pantry: Dictionary = SaveManager.data.pantry
 	var has_any: bool = false
 	for key in pantry:
 		if pantry[key] > 0:
 			has_any = true
 			break
-	var text := ""
-	if not has_any:
-		text = "  (empty — kill elites to collect ingredients)"
-	else:
-		for ing_id in pantry:
-			var count: int = pantry.get(ing_id, 0)
-			var display_name: String = ing_id.replace("_", " ").capitalize()
-			var count_str: String = "%d" % count if count > 0 else "0"
-			text += "  %s: %s\n" % [display_name, count_str]
-	pantry_label.text = text.strip_edges()
 
-func _update_rep_display() -> void:
+	if not has_any:
+		var empty_lbl := Label.new()
+		empty_lbl.text = "(empty — kill elites to collect ingredients)"
+		empty_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		pantry_container.add_child(empty_lbl)
+		return
+
+	const ING_ORDER: Array = ["rift_dust", "void_crystal", "cave_moss", "river_silt", "elite_core"]
+	for ing_id in ING_ORDER:
+		var count: int = pantry.get(ing_id, 0)
+		var color: Color = PANTRY_COLORS.get(ing_id, Color.WHITE)
+		var vbox := VBoxContainer.new()
+		vbox.add_theme_constant_override("separation", 2)
+
+		# Colored square as a ColorRect inside a small container
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(28, 28)
+		dot.color = color if count > 0 else Color(color.r * 0.3, color.g * 0.3, color.b * 0.3, 0.5)
+		vbox.add_child(dot)
+
+		var count_lbl := Label.new()
+		count_lbl.text = str(count)
+		count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count_lbl.add_theme_color_override("font_color", color if count > 0 else Color(0.4, 0.4, 0.4))
+		count_lbl.add_theme_font_size_override("font_size", 13)
+		vbox.add_child(count_lbl)
+
+		var name_lbl := Label.new()
+		name_lbl.text = ing_id.replace("_", " ").capitalize().left(8)
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.add_theme_font_size_override("font_size", 9)
+		name_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		vbox.add_child(name_lbl)
+
+		pantry_container.add_child(vbox)
+
+func _show_hunt_summary() -> void:
+	var result: Dictionary = GameData.hunt_result
+	if result.is_empty():
+		hunt_summary_panel.visible = false
+		return
+
+	hunt_summary_panel.visible = true
+	onboarding_label.visible = false  # hide onboarding once a hunt is done
+
+	var lines: Array = ["— Last Hunt —"]
+
+	var credits: int = result.get("credits", 0)
+	if credits > 0:
+		lines.append("+%d credits" % credits)
+
+	var ings: Array = result.get("ingredients", [])
+	if ings.size() > 0:
+		# Count by id
+		var ing_counts: Dictionary = {}
+		for ing in ings:
+			var iid: String = ing.get("id", "?")
+			ing_counts[iid] = ing_counts.get(iid, 0) + 1
+		var ing_str: String = ""
+		for iid in ing_counts:
+			if not ing_str.is_empty():
+				ing_str += "  "
+			ing_str += "+%d %s" % [ing_counts[iid], iid.replace("_", " ").capitalize()]
+		lines.append(ing_str)
+
+	var corr: int = result.get("corruption", 0)
+	if corr > 0:
+		lines.append("+%d corruption absorbed" % corr)
+
+	hunt_summary_label.text = "\n".join(lines)
+	hunt_summary_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
+	hunt_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+func _update_rep_bars() -> void:
+	for child in rep_bars_container.get_children():
+		child.queue_free()
+
 	var rep: Dictionary = SaveManager.data.reputation
-	var text := ""
 	for track in TRACK_ORDER:
 		var pts: int = rep.get(track, 0)
 		var level: int = SaveData.get_rep_level(track, rep)
+		var color: Color = TRACK_COLORS.get(track, Color.WHITE)
 		var display_name: String = track.replace("_", " ").capitalize()
-		var next_threshold: int = 0
-		if level < SaveData.REP_THRESHOLDS.size() - 1:
-			next_threshold = SaveData.REP_THRESHOLDS[level + 1]
-		var progress_str: String = ""
-		if next_threshold > 0:
-			progress_str = " (%d/%d)" % [pts, next_threshold]
+
+		# Calculate progress to next level
+		var thresholds: Array = SaveData.REP_THRESHOLDS
+		var bar_frac: float = 1.0
+		var next_pts: int = 0
+		var prev_pts: int = 0
+		if level < thresholds.size() - 1:
+			next_pts = thresholds[level + 1]
+			prev_pts = thresholds[level]
+			bar_frac = clampf(float(pts - prev_pts) / float(next_pts - prev_pts), 0.0, 1.0)
+
+		var row := VBoxContainer.new()
+		row.add_theme_constant_override("separation", 1)
+
+		# Label row
+		var label_row := HBoxContainer.new()
+		var name_lbl := Label.new()
+		name_lbl.text = "%s  Lv%d" % [display_name, level]
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.add_theme_color_override("font_color", color)
+		name_lbl.add_theme_font_size_override("font_size", 13)
+		label_row.add_child(name_lbl)
+
+		var pts_lbl := Label.new()
+		if level >= thresholds.size() - 1:
+			pts_lbl.text = "MAX"
 		else:
-			progress_str = " (MAX)"
-		text += "  %s: Lv%d%s\n" % [display_name, level, progress_str]
-	rep_label.text = text.strip_edges()
+			pts_lbl.text = "%d / %d" % [pts, next_pts]
+		pts_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		pts_lbl.add_theme_font_size_override("font_size", 11)
+		label_row.add_child(pts_lbl)
+		row.add_child(label_row)
+
+		# Progress bar (HBoxContainer with two ColorRects)
+		var bar_bg := PanelContainer.new()
+		bar_bg.custom_minimum_size = Vector2(0, 6)
+		bar_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(bar_bg)
+
+		var bar_hbox := HBoxContainer.new()
+		bar_hbox.add_theme_constant_override("separation", 0)
+		bar_bg.add_child(bar_hbox)
+
+		var bar_fill := ColorRect.new()
+		bar_fill.color = color
+		bar_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_fill.size_flags_stretch_ratio = bar_frac
+		bar_hbox.add_child(bar_fill)
+
+		if bar_frac < 1.0:
+			var bar_empty := ColorRect.new()
+			bar_empty.color = Color(0.15, 0.15, 0.2)
+			bar_empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar_empty.size_flags_stretch_ratio = 1.0 - bar_frac
+			bar_hbox.add_child(bar_empty)
+
+		rep_bars_container.add_child(row)
+
+func _update_rep_display() -> void:
+	_update_rep_bars()
 
 func _check_tier2_unlocks() -> void:
 	var rep: Dictionary = SaveManager.data.reputation
@@ -648,10 +812,16 @@ func _build_kitchen() -> void:
 		track_label.add_theme_color_override("font_color", TRACK_COLORS.get(track, Color.WHITE))
 		kitchen_scroll_vbox.add_child(track_label)
 
+		var locked_count: int = 0
 		for recipe_id in RECIPES:
 			var recipe: Dictionary = RECIPES[recipe_id]
 			if recipe.track != track:
 				continue
+			var unlocked: bool = _is_recipe_unlocked(recipe_id)
+			if not unlocked:
+				locked_count += 1
+				continue
+
 			var row := HBoxContainer.new()
 			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -664,31 +834,34 @@ func _build_kitchen() -> void:
 				cost_str += "%s x%d" % [ing_id.replace("_", " ").capitalize(), recipe.cost[ing_id]]
 			var bonus_str: String = BONUS_DESCS.get(recipe.bonus, "")
 			var rep_str: String = "+%d rep" % recipe.rep
-			info.text = "%s [%s] %s" % [display_name, cost_str, rep_str]
+			info.text = "%s  [%s]  %s" % [display_name, cost_str, rep_str]
 			if not bonus_str.is_empty():
-				info.text += " | %s" % bonus_str
+				info.text += "  ·  %s" % bonus_str
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
-			var unlocked: bool = _is_recipe_unlocked(recipe_id)
 			var can_afford: bool = _can_afford_recipe(recipe_id)
-
-			if not unlocked:
-				info.text = "%s — Contract reward required" % display_name
+			if not can_afford:
 				info.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-			elif not can_afford:
-				info.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 
 			row.add_child(info)
 
 			var btn := Button.new()
 			btn.text = "Cook"
 			btn.custom_minimum_size = Vector2(60, 36)
-			btn.disabled = not unlocked or not can_afford
+			btn.disabled = not can_afford
 			btn.pressed.connect(_on_cook_recipe.bind(recipe_id))
 			row.add_child(btn)
 
 			kitchen_scroll_vbox.add_child(row)
+
+		# Show locked teaser
+		if locked_count > 0:
+			var locked_lbl := Label.new()
+			locked_lbl.text = "  + %d recipe%s locked — complete contracts to unlock" % [locked_count, "s" if locked_count > 1 else ""]
+			locked_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
+			locked_lbl.add_theme_font_size_override("font_size", 11)
+			kitchen_scroll_vbox.add_child(locked_lbl)
 
 		var track_sep := HSeparator.new()
 		kitchen_scroll_vbox.add_child(track_sep)
@@ -726,8 +899,8 @@ func _on_cook_recipe(recipe_id: String) -> void:
 		cook_status_label.text += " — %s Level Up! -> Level %d" % [track.replace("_", " ").capitalize(), new_level]
 
 	# Refresh UI
-	_update_pantry()
-	_update_rep_display()
+	_update_pantry_visual()
+	_update_rep_bars()
 	_build_kitchen()
 	_update_stats()
 
