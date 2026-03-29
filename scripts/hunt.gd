@@ -560,6 +560,12 @@ var caches_collected: int = 0
 var cache_total: int = 3
 var cache_channel_time: float = 2.0
 
+# === DEBUG OVERLAY ===
+const DEBUG_OVERLAY_ENABLED: bool = true   # master switch — set false for release builds
+var debug_overlay_visible: bool = false
+var debug_log: Array = []                  # rolling event log
+const DEBUG_LOG_MAX: int = 10
+
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
 	# charge: runs straight at player — dumb, fast, cannon fodder
@@ -1255,6 +1261,7 @@ func _spawn_elite(depth: int) -> void:
 	_roll_affixes(elite, affix_count, rng)
 
 	enemies.append(elite)
+	debug_log_push("Elite spawned: %s [%s]" % [elite_type, ",".join(elite.get("affixes", []))])
 
 func _spawn_apex_elite(depth: int) -> void:
 	apex_spawned_count += 1
@@ -1304,6 +1311,7 @@ func _spawn_apex_elite(depth: int) -> void:
 	_roll_affixes(elite, affix_count, rng, true)
 
 	enemies.append(elite)
+	debug_log_push("APEX spawned: %s [%s]" % [apex_type, ",".join(elite.get("affixes", []))])
 
 	# Screen flash
 	_add_aoe_flash({pos = player_pos, radius = 400.0, timer = 0.5, color = Color(1.0, 0.85, 0.0, 0.3)})
@@ -1450,6 +1458,13 @@ func _input(event: InputEvent) -> void:
 			if diff.length() > JOY_MAX_DIST:
 				diff = diff.normalized() * JOY_MAX_DIST
 			joy_knob = joy_base + diff
+
+	# Debug overlay toggle (F1)
+	if DEBUG_OVERLAY_ENABLED and event is InputEventKey:
+		var ke: InputEventKey = event
+		if ke.pressed and ke.keycode == KEY_F1:
+			debug_overlay_visible = !debug_overlay_visible
+			return
 
 	# Keyboard fallback for testing
 	# Handled in _process via Input.get_vector
@@ -3186,13 +3201,13 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			"elite_core": Color(1.0, 0.85, 0.0),
 		}
 		# Drop biome ingredient
-		ingredient__add_pickup({
+		ingredient_pickups.append({
 			pos = death_pos,
 			data = {id = ing_id, name = ing_id.replace("_", " ").capitalize(), is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get(ing_id, Color.GOLD),
 		})
 		# Always also drop 1 elite_core
-		ingredient__add_pickup({
+		ingredient_pickups.append({
 			pos = death_pos + Vector2(15, 0),
 			data = {id = "elite_core", name = "Elite Core", is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get("elite_core", Color.GOLD),
@@ -3243,7 +3258,7 @@ func _drop_ingredient(enemy: Dictionary) -> void:
 		uses = 1,
 	}
 
-	ingredient__add_pickup({
+	ingredient_pickups.append({
 		pos = enemy.pos,
 		data = drop,
 		collected = false,
@@ -3697,6 +3712,7 @@ func _die() -> void:
 	dead_timer = 2.0
 	player_hp = 0
 	_show_message("DEAD")
+	debug_log_push("Player DIED | corr %.0f%% | wave %d | kills %d/%d" % [corruption, wave_current, target_kills, target_total])
 
 func _complete_hunt() -> void:
 	var contract: Dictionary = GameData.current_contract
@@ -4376,6 +4392,8 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, vp_size), Color(0, 0, 0, 0.6))
 		_draw_text(Vector2(vp_size.x * 0.5 - 40.0, vp_size.y * 0.5 - 20.0), "DEAD", Color(1, 0.2, 0.2), 32)
 
+	_draw_debug_overlay()
+
 func _draw_contract_ui(vp_size: Vector2) -> void:
 	match contract_mode:
 		"payload_escort":
@@ -4551,6 +4569,7 @@ func _activate_kit(kit_id: String) -> void:
 	if charges == 0:
 		return
 
+	debug_log_push("Kit: %s" % kit_id)
 	var tier: int = kit_tiers.get(kit_id, 1)
 	var t3_choice: String = kit_t3_choices.get(kit_id, "")
 	var resonance: Dictionary = weapon_mods.get("_resonance", {})
@@ -5487,3 +5506,75 @@ func _apply_mastery_perk(perk_id: String) -> void:
 		"cascade_void": mods["cascade_void"] = true
 	weapon_mods[wid] = mods
 	_show_message("Mastery: " + perk_id.replace("_", " ").capitalize())
+
+# =========================================================
+# DEBUG OVERLAY
+# =========================================================
+
+func debug_log_push(msg: String) -> void:
+	if not DEBUG_OVERLAY_ENABLED:
+		return
+	var mins: int = int(hunt_elapsed) / 60
+	var secs: int = int(hunt_elapsed) % 60
+	debug_log.append("[%d:%02d] %s" % [mins, secs, msg])
+	if debug_log.size() > DEBUG_LOG_MAX:
+		debug_log.pop_front()
+
+func _draw_debug_overlay() -> void:
+	if not DEBUG_OVERLAY_ENABLED or not debug_overlay_visible:
+		return
+
+	var vp_size := get_viewport_rect().size
+	var font: Font = ThemeDB.fallback_font
+	var pad: float = 8.0
+	var line_h: float = 14.0
+	var fs: int = 11
+
+	# --- HUD panel (top-right) ---
+	var active_elites: Array = []
+	for e in enemies:
+		if e.get("is_elite", false):
+			var ename: String = e.get("elite_type", "?")
+			var affixes: Array = e.get("affixes", [])
+			active_elites.append(ename + (" [" + ",".join(affixes) + "]" if affixes.size() > 0 else ""))
+
+	var apex_str: String = ""
+	if apex_active:
+		apex_str = "  APEX ACTIVE"
+
+	var lines: Array = [
+		"--- DEBUG (F1 toggle) ---",
+		"FPS: %d | T: %d:%02d" % [Engine.get_frames_per_second(), int(hunt_elapsed) / 60, int(hunt_elapsed) % 60],
+		"Enemies: %d | Bullets: %d | Pickups: %d" % [enemies.size(), bullets.size(), pickups.size() + ingredient_pickups.size()],
+		"AOEflashes: %d/30 | Smoke: %d/20" % [aoe_flashes.size(), smoke_zones.size()],
+		"VoidPools: %d | Turrets: %d | Traps: %d" % [void_pools.size(), turrets.size(), traps.size()],
+		"Player: (%d,%d) | HP: %d/%d" % [int(player_pos.x), int(player_pos.y), player_hp, player_max_hp],
+		"Corruption: %.1f%% | Biome: %s" % [corruption, _get_biome_at(player_pos)],
+		"Weapon: %s Lv%d | Ammo: %d/%d" % [WEAPON_DEFS.get(main_weapon.get("id","?"), {}).get("name","?"), main_weapon.get("level",1), main_weapon.get("mag_ammo",0), main_weapon.get("mag_size",0)],
+		"Wave: %d | Kills: %d/%d | XP: %d/%d" % [wave_current, target_kills, target_total, essence_collected, xp_threshold],
+		"Elites: %d spawned | %s%s" % [elite_spawned_count, (", ".join(active_elites) if active_elites.size() > 0 else "none active"), apex_str],
+	]
+
+	# Background rect
+	var panel_w: float = 320.0
+	var panel_h: float = float(lines.size()) * line_h + pad * 2.0
+	var panel_x: float = vp_size.x - panel_w - pad
+	var panel_y: float = pad
+	draw_rect(Rect2(panel_x, panel_y, panel_w, panel_h), Color(0, 0, 0, 0.72))
+
+	for i in range(lines.size()):
+		var col: Color = Color(0.4, 1.0, 0.4) if i == 0 else Color(0.9, 0.9, 0.9)
+		draw_string(font, Vector2(panel_x + pad, panel_y + pad + float(i) * line_h + line_h), lines[i],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+	# --- Event log (bottom-left) ---
+	if debug_log.size() > 0:
+		var log_x: float = pad
+		var log_y: float = vp_size.y - float(debug_log.size()) * line_h - pad * 2.0
+		var log_w: float = 360.0
+		var log_h: float = float(debug_log.size()) * line_h + pad * 2.0
+		draw_rect(Rect2(log_x, log_y, log_w, log_h), Color(0, 0, 0, 0.65))
+		for i in range(debug_log.size()):
+			var alpha: float = 0.5 + 0.5 * (float(i + 1) / float(debug_log.size()))
+			draw_string(font, Vector2(log_x + pad, log_y + pad + float(i) * line_h + line_h),
+				debug_log[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.85, 0.4, alpha))
