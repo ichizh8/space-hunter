@@ -2112,9 +2112,18 @@ func _update_enemies(delta: float) -> void:
 					nearest_dist = d
 					nearest_pos = oe.pos
 					found = true
+			var move_dir: Vector2 = Vector2.ZERO
 			if found and nearest_dist > e.radius + 4.0:
-				var dir: Vector2 = (nearest_pos - e.pos).normalized()
-				e.pos += dir * e.speed * delta
+				move_dir = (nearest_pos - e.pos).normalized()
+			# Separation: push away from other allies to avoid clumping
+			for oe2 in enemies:
+				if not oe2.get("is_ally", false) or oe2.hp <= 0:
+					continue
+				var sep_dist: float = e.pos.distance_to(oe2.pos)
+				if sep_dist > 0.1 and sep_dist < 40.0:
+					move_dir += (e.pos - oe2.pos).normalized() * (1.0 - sep_dist / 40.0) * 1.5
+			if move_dir != Vector2.ZERO:
+				e.pos += move_dir.normalized() * e.speed * delta
 			# Ally melee attack on nearby enemy
 			if found and nearest_dist < e.radius + 16.0:
 				var acd: float = enemy_melee_cooldowns.get(-(i+1), 0.0)
@@ -3876,7 +3885,7 @@ func _bullet_explode(impact_pos: Vector2, dmg: int) -> void:
 	_add_aoe_flash({pos = impact_pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.6, 0.1, 0.7)})
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
-		if ae.hp <= 0:
+		if ae.hp <= 0 or ae.get("is_ally", false):
 			continue
 		if impact_pos.distance_to(ae.pos) < 60.0:
 			ae.hp -= dmg
@@ -3915,6 +3924,8 @@ func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String, is_mini: bool 
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
 		if ae.hp <= 0:
+			continue
+		if ae.get("is_ally", false):
 			continue
 		if impact_pos.distance_to(ae.pos) < aoe_radius:
 			ae.hp -= dmg
@@ -4162,6 +4173,15 @@ func _draw() -> void:
 			continue
 		var sp: Vector2 = _w2s(e.pos)
 		var is_elite: bool = e.get("is_elite", false)
+		# Allies: draw green with HP bar, skip normal rendering path below
+		if e.get("is_ally", false):
+			draw_circle(sp, e.radius, Color(0.2, 0.85, 0.3))
+			draw_arc(sp, e.radius, 0.0, TAU, 16, Color(0.5, 1.0, 0.5), 1.5)
+			# Small HP bar above
+			var ally_hp_frac: float = clampf(float(e.hp) / float(e.get("max_hp", e.hp + 1)), 0.0, 1.0)
+			draw_rect(Rect2(sp + Vector2(-8, -e.radius - 6.0), Vector2(16, 3)), Color(0.1, 0.1, 0.1, 0.7))
+			draw_rect(Rect2(sp + Vector2(-8, -e.radius - 6.0), Vector2(16.0 * ally_hp_frac, 3)), Color(0.3, 1.0, 0.4))
+			continue
 		var draw_color: Color = e.color
 		# Dormant lurkers draw at 50% alpha
 		if e.get("dormant", false):
@@ -4436,6 +4456,13 @@ func _draw() -> void:
 		var kit_label: String = kdef.get("name", kit_id)
 		if charges >= 0:
 			kit_label += " (%d)" % charges
+		# Show alive ally count on pack kit button
+		if kit_id == "pack_kit":
+			var alive_allies: int = 0
+			for pa_idx in pack_allies:
+				if pa_idx < enemies.size() and enemies[pa_idx].get("is_ally", false) and enemies[pa_idx].hp > 0:
+					alive_allies += 1
+			kit_label += " %d" % alive_allies
 		_draw_text(btn_pos + Vector2(4.0, 6.0), kit_label, Color.WHITE, 11)
 		# Cooldown bar
 		if cd > 0.0:
@@ -4970,14 +4997,23 @@ func _activate_kit(kit_id: String) -> void:
 				var rng := RandomNumberGenerator.new()
 				rng.randomize()
 				var ally_count: int = 2 if tier < 2 else 4
+				# Kill any existing allies before summoning new ones
+				for old_idx in pack_allies:
+					if old_idx < enemies.size() and enemies[old_idx].get("is_ally", false):
+						enemies[old_idx].hp = 0
 				pack_allies.clear()
-				for _a in range(ally_count):
+				for a_i in range(ally_count):
+					# Spread allies in a ring around player, not a clump
+					var spread_angle: float = float(a_i) / float(ally_count) * TAU + randf() * 0.4
+					var spread_dist: float = randf_range(50.0, 90.0)
+					var spawn_offset: Vector2 = Vector2(cos(spread_angle), sin(spread_angle)) * spread_dist
 					_spawn_single_enemy("Rift Parasite", false, rng)
 					var ally_idx: int = enemies.size() - 1
 					enemies[ally_idx].is_aggroed = true
 					enemies[ally_idx].cave_id = -1
-					enemies[ally_idx].pos = player_pos + Vector2(randf_range(-60, 60), randf_range(-60, 60))
+					enemies[ally_idx].pos = player_pos + spawn_offset
 					enemies[ally_idx]["is_ally"] = true
+					enemies[ally_idx]["ally_spread_angle"] = spread_angle  # for separation behavior
 					pack_allies.append(ally_idx)
 				state.cooldown = 25.0
 				_show_message("Allies summoned!")
