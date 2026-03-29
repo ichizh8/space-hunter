@@ -4473,10 +4473,10 @@ func _draw() -> void:
 
 	# Abandon button (bottom-left)
 	var ab_w: float = 64.0
-	var ab_h: float = 28.0
-	abandon_btn_rect = Rect2(4.0, vp_size.y - ab_h - 4.0, ab_w, ab_h)
+	var ab_h: float = 24.0
+	abandon_btn_rect = Rect2(4.0, 4.0, ab_w, ab_h)
 	draw_rect(abandon_btn_rect, Color(0.5, 0.1, 0.1, 0.8))
-	_draw_text(Vector2(8.0, vp_size.y - ab_h + 6.0), "Abandon", Color(1.0, 0.5, 0.5), 11)
+	_draw_text(Vector2(8.0, 6.0), "Abandon", Color(1.0, 0.5, 0.5), 11)
 
 	# XP bar (full width, bottom of screen)
 	var xp_bar_y: float = vp_size.y - 20.0
