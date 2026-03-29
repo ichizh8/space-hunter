@@ -4623,11 +4623,19 @@ func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -
 # XP CURVE
 # =========================================================
 func _xp_needed_for_level(lv: int) -> int:
-	if lv <= 3:   return 8     # very fast — get first perks quickly
-	elif lv <= 6:  return 14   # still quick
-	elif lv <= 10: return 25   # moderate
-	elif lv <= 15: return 40   # harder
-	else:          return 60   # grind
+	# Early: linear 3-kill steps (lv1→2 = 3, lv2→3 = 6, lv3→4 = 9...)
+	# Mid: hyperbolic ramp — meaningful upgrades still available
+	# Late: plateau — upgrades exhausted, only stat bumps remain; very slow grind
+	if lv <= 12:
+		return lv * 3              # 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36
+	elif lv <= 20:
+		# Accelerating curve: starts at ~50, reaches ~140 by lv20
+		var t: float = float(lv - 12) / 8.0   # 0.0 → 1.0
+		return int(50.0 + 90.0 * t * t)
+	else:
+		# Plateau: hyperbolic — each level costs significantly more
+		# lv21=160, lv25=240, lv30=340, lv40=540 — slow but never stops
+		return int(160.0 + float(lv - 20) * 20.0)
 
 # =========================================================
 # KIT SYSTEM
