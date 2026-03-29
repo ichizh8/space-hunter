@@ -1125,10 +1125,12 @@ func _spawn_wave(depth: int) -> void:
 
 	pass  # no wave announcement — elites announce themselves
 
-	# Filler only — no targets in waves. Ramps: +2 per wave, capped at wave 10.
+	# Filler only — no targets in waves. Ramps with wave, time, and corruption.
 	var effective_wave: int = min(wave_current, 10)
+	var time_bonus: int = int(hunt_elapsed / 60.0)                         # +1 per minute
+	var corr_bonus: int = int(corruption / 25.0)                           # +1 per 25% corruption
 	var base_fillers: int = 14 + depth * 4
-	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + rng.randi_range(0, 2)
+	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + time_bonus + corr_bonus + rng.randi_range(0, 2)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
 		# Determine spawn position first, then pick biome-appropriate type
@@ -1142,8 +1144,10 @@ func _spawn_wave(depth: int) -> void:
 			ft = pool[rng.randi_range(0, pool.size() - 1)]
 		_spawn_single_enemy(ft, false, rng)
 
-	# Each wave is 8% faster than previous, capped at wave 8
-	var speed_mult: float = 1.0 + min(effective_wave - 1, 7) * 0.08
+	# Speed ramps with wave, time, and corruption
+	var time_spd: float = minf(hunt_elapsed / 60.0 * 0.03, 0.20)          # up to +20% over ~7 min
+	var corr_spd: float = minf(corruption / 100.0 * 0.15, 0.15)           # up to +15% at full corruption
+	var speed_mult: float = 1.0 + min(effective_wave - 1, 7) * 0.08 + time_spd + corr_spd
 	for i in range(spawn_start, enemies.size()):
 		enemies[i].speed *= speed_mult
 
@@ -2069,6 +2073,36 @@ func _update_enemies(delta: float) -> void:
 		if e.hp <= 0:
 			continue
 
+		# Allies: move toward nearest enemy, skip all player interaction
+		if e.get("is_ally", false):
+			var nearest_dist: float = 9999.0
+			var nearest_pos: Vector2 = Vector2.ZERO
+			var found: bool = false
+			for oe in enemies:
+				if oe.get("is_ally", false) or oe.hp <= 0:
+					continue
+				var d: float = e.pos.distance_to(oe.pos)
+				if d < nearest_dist:
+					nearest_dist = d
+					nearest_pos = oe.pos
+					found = true
+			if found and nearest_dist > e.radius + 4.0:
+				var dir: Vector2 = (nearest_pos - e.pos).normalized()
+				e.pos += dir * e.speed * delta
+			# Ally melee attack on nearby enemy
+			if found and nearest_dist < e.radius + 16.0:
+				var acd: float = enemy_melee_cooldowns.get(-(i+1), 0.0)
+				if acd <= 0.0:
+					for ei2 in range(enemies.size()):
+						if enemies[ei2].get("is_ally", false) or enemies[ei2].hp <= 0:
+							continue
+						if e.pos.distance_to(enemies[ei2].pos) < e.radius + enemies[ei2].radius + 4.0:
+							enemies[ei2].hp -= e.melee_dmg
+							enemy_melee_cooldowns[-(i+1)] = 1.2
+							break
+			enemies[i] = e
+			continue
+
 		# Parasite tick
 		if e.get("parasite_timer", 0.0) > 0.0:
 			e.parasite_timer -= delta
@@ -2824,6 +2858,8 @@ func _update_bullets(delta: float) -> void:
 				var e: Dictionary = enemies[ei]
 				if e.hp <= 0:
 					continue
+				if e.get("is_ally", false):
+					continue
 				if b.pos.distance_to(e.pos) < e.radius + b.radius:
 					var hit_dmg: int = b.damage
 					# Blink empowered (T3 clean)
@@ -3249,8 +3285,15 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			_spawn_exit()
 		return
 
-	# Regular enemies: essence only (no ingredients)
+	# Regular enemies: essence + rare HP/cleanse drops
 	_add_pickup({pos = death_pos + Vector2(-10, 0), type = "essence"})
+	# ~8% chance: health pack (green cross) — only if below max HP, favors clean builds
+	var hp_drop_chance: float = 0.08 if corruption < 35.0 else 0.04
+	if player_hp < player_max_hp and randf() < hp_drop_chance:
+		_add_pickup({pos = death_pos + Vector2(10, 0), type = "health"})
+	# ~6% chance: cleanse shard — reduces corruption by 10, only spawns at >20% corruption
+	if corruption > 20.0 and randf() < 0.06:
+		_add_pickup({pos = death_pos + Vector2(0, 10), type = "cleanse"})
 
 func _drop_ingredient(enemy: Dictionary) -> void:
 	var ing_id: String = enemy.get("ingredient_id", "")
@@ -3338,6 +3381,14 @@ func _check_pickups() -> void:
 					player_level += 1
 					xp_threshold = _xp_needed_for_level(player_level)
 					_level_up()
+			elif p.type == "health":
+				player_hp = mini(player_hp + 2, player_max_hp)
+				_show_message("+2 HP")
+				debug_log_push("Picked up health pack")
+			elif p.type == "cleanse":
+				corruption = maxf(0.0, corruption - 10.0)
+				_show_message("Corruption -10")
+				debug_log_push("Picked up cleanse shard")
 			to_remove.append(i)
 
 	to_remove.sort()
@@ -4017,6 +4068,18 @@ func _draw() -> void:
 			# Glow ring
 			draw_circle(sp, 14.0, Color(0.5, 0.0, 0.8, 0.3))
 			draw_circle(sp, 10.0, Color(0.5, 0.0, 0.8))
+		elif p.type == "health":
+			# Green cross
+			draw_rect(Rect2(sp + Vector2(-6, -2), Vector2(12, 4)), Color(0.2, 0.9, 0.3))
+			draw_rect(Rect2(sp + Vector2(-2, -6), Vector2(4, 12)), Color(0.2, 0.9, 0.3))
+			draw_circle(sp, 9.0, Color(0.2, 0.9, 0.3, 0.25))
+		elif p.type == "cleanse":
+			# Cyan diamond
+			draw_line(sp + Vector2(0, -8), sp + Vector2(8, 0), Color(0.2, 0.9, 1.0), 2.0)
+			draw_line(sp + Vector2(8, 0), sp + Vector2(0, 8), Color(0.2, 0.9, 1.0), 2.0)
+			draw_line(sp + Vector2(0, 8), sp + Vector2(-8, 0), Color(0.2, 0.9, 1.0), 2.0)
+			draw_line(sp + Vector2(-8, 0), sp + Vector2(0, -8), Color(0.2, 0.9, 1.0), 2.0)
+			draw_circle(sp, 9.0, Color(0.2, 0.9, 1.0, 0.2))
 
 	# Ingredient pickups (Phase 3)
 	var time_sec: float = Time.get_ticks_msec() * 0.001
@@ -4560,9 +4623,11 @@ func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -
 # XP CURVE
 # =========================================================
 func _xp_needed_for_level(lv: int) -> int:
-	if lv <= 5: return 20
-	elif lv <= 10: return 35
-	else: return 55
+	if lv <= 3:   return 8     # very fast — get first perks quickly
+	elif lv <= 6:  return 14   # still quick
+	elif lv <= 10: return 25   # moderate
+	elif lv <= 15: return 40   # harder
+	else:          return 60   # grind
 
 # =========================================================
 # KIT SYSTEM
