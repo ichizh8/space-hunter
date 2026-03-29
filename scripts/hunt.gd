@@ -3294,14 +3294,12 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			pos = death_pos,
 			data = {id = ing_id, name = ing_id.replace("_", " ").capitalize(), is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get(ing_id, Color.GOLD),
-			lifetime = 120.0,
 		})
 		# Always also drop 1 elite_core
 		ingredient_pickups.append({
 			pos = death_pos + Vector2(15, 0),
 			data = {id = "elite_core", name = "Elite Core", is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get("elite_core", Color.GOLD),
-			lifetime = 120.0,
 		})
 		# Track contract progress
 		target_kills += 1
@@ -3363,7 +3361,6 @@ func _drop_ingredient(enemy: Dictionary) -> void:
 		collected = false,
 		pulse_phase = randf() * TAU,
 		color = enemy.get("color", Color.WHITE),
-		lifetime = 120.0,
 	})
 
 	_show_message("+ " + display_name)
