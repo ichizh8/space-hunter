@@ -565,6 +565,7 @@ const DEBUG_OVERLAY_ENABLED: bool = true   # master switch — set false for rel
 var debug_overlay_visible: bool = false
 var debug_log: Array = []                  # rolling event log
 const DEBUG_LOG_MAX: int = 10
+var debug_btn_rect: Rect2 = Rect2(0, 0, 44, 24)  # updated each draw
 
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
@@ -1435,6 +1436,10 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var te: InputEventScreenTouch = event
 		if te.pressed:
+			# Debug overlay toggle
+			if DEBUG_OVERLAY_ENABLED and debug_btn_rect.has_point(te.position):
+				debug_overlay_visible = !debug_overlay_visible
+				return
 			# Kit button tap check
 			for ki in range(kit_button_rects.size()):
 				if ki < equipped_kits.size() and kit_button_rects[ki].has_point(te.position):
@@ -5521,10 +5526,24 @@ func debug_log_push(msg: String) -> void:
 		debug_log.pop_front()
 
 func _draw_debug_overlay() -> void:
-	if not DEBUG_OVERLAY_ENABLED or not debug_overlay_visible:
+	if not DEBUG_OVERLAY_ENABLED:
 		return
 
 	var vp_size := get_viewport_rect().size
+
+	# --- DBG toggle button (always visible when overlay enabled) ---
+	var btn_w: float = 44.0
+	var btn_h: float = 24.0
+	var btn_x: float = vp_size.x - btn_w - 4.0
+	var btn_y: float = 4.0
+	debug_btn_rect = Rect2(btn_x, btn_y, btn_w, btn_h)
+	var btn_bg: Color = Color(0.2, 0.7, 0.2, 0.85) if debug_overlay_visible else Color(0.15, 0.15, 0.15, 0.75)
+	draw_rect(debug_btn_rect, btn_bg)
+	draw_string(ThemeDB.fallback_font, Vector2(btn_x + 6.0, btn_y + btn_h - 6.0), "DBG",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+
+	if not debug_overlay_visible:
+		return
 	var font: Font = ThemeDB.fallback_font
 	var pad: float = 8.0
 	var line_h: float = 14.0
@@ -5559,7 +5578,7 @@ func _draw_debug_overlay() -> void:
 	var panel_w: float = 320.0
 	var panel_h: float = float(lines.size()) * line_h + pad * 2.0
 	var panel_x: float = vp_size.x - panel_w - pad
-	var panel_y: float = pad
+	var panel_y: float = 36.0  # below DBG button
 	draw_rect(Rect2(panel_x, panel_y, panel_w, panel_h), Color(0, 0, 0, 0.72))
 
 	for i in range(lines.size()):
