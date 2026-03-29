@@ -1669,12 +1669,12 @@ func _update_camera() -> void:
 func _update_weapons(delta: float) -> void:
 	if main_weapon.is_empty():
 		return
-	# Find nearest living enemy
+	# Find nearest living enemy (skip allies)
 	var nearest_dist := 999999.0
 	var nearest_pos := Vector2.ZERO
 	var nearest_found := false
 	for e in enemies:
-		if e.hp <= 0:
+		if e.hp <= 0 or e.get("is_ally", false):
 			continue
 		var d: float = player_pos.distance_to(e.pos)
 		if d < nearest_dist:
