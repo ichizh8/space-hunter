@@ -1103,7 +1103,7 @@ func _update_waves(delta: float) -> void:
 		var aggro_range: float = 600.0 + minf(hunt_elapsed / 10.0, 800.0) + corruption * 4.0
 		for i in range(enemies.size()):
 			var e: Dictionary = enemies[i]
-			if e.hp > 0 and not e.get("is_ally", false) and not e.is_aggroed:
+			if e.hp > 0 and not e.get("is_ally", false) and not e.is_aggroed and not e.get("smoke_suppressed", false):
 				if e.pos.distance_to(player_pos) < aggro_range:
 					e.is_aggroed = true
 					e.aggro_origin = e.pos
@@ -4278,9 +4278,16 @@ func _draw() -> void:
 		if not _is_on_screen(sz.pos):
 			continue
 		var ssp: Vector2 = _w2s(sz.pos)
-		var s_pulse: float = 0.15 + 0.05 * sin(hunt_elapsed * 3.0)
-		draw_circle(ssp, sz.radius, Color(0.4, 0.5, 0.6, s_pulse))
-		draw_arc(ssp, sz.radius, 0.0, TAU, 32, Color(0.5, 0.6, 0.7, 0.4), 1.5)
+		var s_pulse: float = 0.35 + 0.08 * sin(hunt_elapsed * 2.5)
+		var s_color: Color
+		if sz.get("toxic", false):
+			s_color = Color(0.5, 0.0, 0.6, s_pulse)       # purple — void/toxic
+		elif sz.get("slowing", false):
+			s_color = Color(0.2, 0.6, 0.9, s_pulse)       # blue — T2 slowing
+		else:
+			s_color = Color(0.55, 0.6, 0.65, s_pulse)     # grey — T1 concealment
+		draw_circle(ssp, sz.radius, s_color)
+		draw_arc(ssp, sz.radius, 0.0, TAU, 32, Color(s_color.r + 0.1, s_color.g + 0.1, s_color.b + 0.1, 0.6), 1.5)
 	for gw in gravity_wells:
 		if not _is_on_screen(gw.pos):
 			continue
@@ -5294,14 +5301,27 @@ func _update_smoke(delta: float) -> void:
 		else:
 			if run_interactions:
 				var sz: Dictionary = smoke_zones[i]
-				# Enemies inside smoke lose aggro (if not slowing-only zone)
-				if not sz.get("slowing", false):
-					for ei in range(enemies.size()):
-						var e: Dictionary = enemies[ei]
-						if e.hp > 0 and not e.is_aggroed:
-							continue
-						if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
+				# Enemies inside smoke: de-aggro + suppress re-aggro + optional slow
+				var is_concealment: bool = not sz.get("slowing", false) and not sz.get("toxic", false) and not sz.get("corruption_zone", false)
+				for ei in range(enemies.size()):
+					var e: Dictionary = enemies[ei]
+					if e.hp <= 0 or e.get("is_ally", false):
+						continue
+					var in_smoke: bool = e.pos.distance_to(sz.pos) < sz.radius
+					if in_smoke:
+						# T1+: de-aggro and mark as smoke-suppressed (prevents rage sweep re-aggro)
+						if is_concealment or sz.get("slowing", false):
 							e.is_aggroed = false
+							e["smoke_suppressed"] = true
+						# T2: slow enemies inside
+						if sz.get("slowing", false):
+							e["smoke_slowed"] = true
+						enemies[ei] = e
+					else:
+						# Clear smoke suppression once outside
+						if e.get("smoke_suppressed", false):
+							e["smoke_suppressed"] = false
+							e["smoke_slowed"] = false
 							enemies[ei] = e
 				# T3 void: toxic smoke — enemies take 1 dmg/s, player gains corruption
 				if sz.get("toxic", false):
