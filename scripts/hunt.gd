@@ -1559,7 +1559,7 @@ func _process(delta: float) -> void:
 	_update_weapons(delta)
 	_update_enemies(delta)
 	_update_bullets(delta)
-	_check_pickups()
+	_check_pickups(delta)
 	_update_hud_message(delta)
 	_apply_corruption_effects()
 	_update_aoe_flashes(delta)
@@ -3294,12 +3294,14 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			pos = death_pos,
 			data = {id = ing_id, name = ing_id.replace("_", " ").capitalize(), is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get(ing_id, Color.GOLD),
+			lifetime = 120.0,
 		})
 		# Always also drop 1 elite_core
 		ingredient_pickups.append({
 			pos = death_pos + Vector2(15, 0),
 			data = {id = "elite_core", name = "Elite Core", is_pristine = false, ingredient = true, uses = 1},
 			collected = false, pulse_phase = 0.0, color = biome_ing_colors.get("elite_core", Color.GOLD),
+			lifetime = 120.0,
 		})
 		# Track contract progress
 		target_kills += 1
@@ -3361,6 +3363,7 @@ func _drop_ingredient(enemy: Dictionary) -> void:
 		collected = false,
 		pulse_phase = randf() * TAU,
 		color = enemy.get("color", Color.WHITE),
+		lifetime = 120.0,
 	})
 
 	_show_message("+ " + display_name)
@@ -3388,11 +3391,18 @@ func _spawn_exit() -> void:
 # =========================================================
 # PICKUPS
 # =========================================================
-func _check_pickups() -> void:
+func _check_pickups(delta: float = 0.016) -> void:
 	var to_remove: Array = []
 
 	for i in range(pickups.size()):
 		var p: Dictionary = pickups[i]
+		# Tick lifetime — essence never expires
+		if p.type != "essence" and p.has("lifetime"):
+			p["lifetime"] = p.lifetime - delta
+			pickups[i] = p
+			if p.lifetime <= 0.0:
+				to_remove.append(i)
+				continue
 		var pickup_radius := 20.0
 		if p.type == "essence":
 			pickup_radius = essence_collect_radius
@@ -3423,16 +3433,27 @@ func _check_pickups() -> void:
 		pickups.remove_at(to_remove[idx])
 
 	# Ingredient pickups (Phase 3)
+	var ing_to_remove: Array = []
 	for i in range(ingredient_pickups.size()):
 		var ip: Dictionary = ingredient_pickups[i]
 		if ip.collected:
 			continue
+		# Tick lifetime
+		if ip.has("lifetime"):
+			ip["lifetime"] = ip.lifetime - delta
+			ingredient_pickups[i] = ip
+			if ip.lifetime <= 0.0:
+				ing_to_remove.append(i)
+				continue
 		if player_pos.distance_to(ip.pos) < 30.0:
 			ip.collected = true
 			ingredient_pickups[i] = ip
 			run_ingredients.append(ip.data)
 			var msg_color: Color = Color(0.4, 1.0, 0.6) if ip.data.get("is_pristine", false) else Color(0.4, 1.0, 0.4)
 			_show_message("Collected " + ip.data.name)
+	ing_to_remove.sort()
+	for idx in range(ing_to_remove.size() - 1, -1, -1):
+		ingredient_pickups.remove_at(ing_to_remove[idx])
 
 # =========================================================
 # LEVEL UP
@@ -4096,17 +4117,17 @@ func _draw() -> void:
 			draw_circle(sp, 14.0, Color(0.5, 0.0, 0.8, 0.3))
 			draw_circle(sp, 10.0, Color(0.5, 0.0, 0.8))
 		elif p.type == "health":
-			# Green cross
-			draw_rect(Rect2(sp + Vector2(-6, -2), Vector2(12, 4)), Color(0.2, 0.9, 0.3))
-			draw_rect(Rect2(sp + Vector2(-2, -6), Vector2(4, 12)), Color(0.2, 0.9, 0.3))
-			draw_circle(sp, 9.0, Color(0.2, 0.9, 0.3, 0.25))
+			var h_alpha: float = _pickup_alpha(p.get("lifetime", 999.0))
+			draw_rect(Rect2(sp + Vector2(-6, -2), Vector2(12, 4)), Color(0.2, 0.9, 0.3, h_alpha))
+			draw_rect(Rect2(sp + Vector2(-2, -6), Vector2(4, 12)), Color(0.2, 0.9, 0.3, h_alpha))
+			draw_circle(sp, 9.0, Color(0.2, 0.9, 0.3, 0.25 * h_alpha))
 		elif p.type == "cleanse":
-			# Cyan diamond
-			draw_line(sp + Vector2(0, -8), sp + Vector2(8, 0), Color(0.2, 0.9, 1.0), 2.0)
-			draw_line(sp + Vector2(8, 0), sp + Vector2(0, 8), Color(0.2, 0.9, 1.0), 2.0)
-			draw_line(sp + Vector2(0, 8), sp + Vector2(-8, 0), Color(0.2, 0.9, 1.0), 2.0)
-			draw_line(sp + Vector2(-8, 0), sp + Vector2(0, -8), Color(0.2, 0.9, 1.0), 2.0)
-			draw_circle(sp, 9.0, Color(0.2, 0.9, 1.0, 0.2))
+			var c_alpha: float = _pickup_alpha(p.get("lifetime", 999.0))
+			draw_line(sp + Vector2(0, -8), sp + Vector2(8, 0), Color(0.2, 0.9, 1.0, c_alpha), 2.0)
+			draw_line(sp + Vector2(8, 0), sp + Vector2(0, 8), Color(0.2, 0.9, 1.0, c_alpha), 2.0)
+			draw_line(sp + Vector2(0, 8), sp + Vector2(-8, 0), Color(0.2, 0.9, 1.0, c_alpha), 2.0)
+			draw_line(sp + Vector2(-8, 0), sp + Vector2(0, -8), Color(0.2, 0.9, 1.0, c_alpha), 2.0)
+			draw_circle(sp, 9.0, Color(0.2, 0.9, 1.0, 0.2 * c_alpha))
 
 	# Ingredient pickups (Phase 3)
 	var time_sec: float = Time.get_ticks_msec() * 0.001
@@ -4118,10 +4139,11 @@ func _draw() -> void:
 		var sp: Vector2 = _w2s(ip.pos)
 		var is_pristine: bool = ip.data.get("is_pristine", false)
 		var pickup_color: Color = Color(0.9, 0.9, 0.2) if is_pristine else ip.get("color", Color.WHITE)
+		var ip_fade: float = _pickup_alpha(ip.get("lifetime", 999.0))
 		# Main square
-		draw_rect(Rect2(sp - Vector2(8, 8), Vector2(16, 16)), pickup_color)
+		draw_rect(Rect2(sp - Vector2(8, 8), Vector2(16, 16)), Color(pickup_color.r, pickup_color.g, pickup_color.b, ip_fade))
 		# Pulsing outline
-		var ip_pulse: float = 0.3 + 0.4 * sin(ip.pulse_phase + time_sec * 4.0)
+		var ip_pulse: float = (0.3 + 0.4 * sin(ip.pulse_phase + time_sec * 4.0)) * ip_fade
 		var outline_size := Vector2(20, 20)
 		draw_rect(Rect2(sp - outline_size * 0.5, outline_size), Color(pickup_color.r, pickup_color.g, pickup_color.b, ip_pulse), false, 1.5)
 		# Pristine sparkle — 4 orbiting dots
@@ -4647,7 +4669,19 @@ func _add_pickup(pickup: Dictionary) -> void:
 				break
 	if pickups.size() >= 60:
 		return
+	if not pickup.has("lifetime"):
+		pickup["lifetime"] = 120.0
 	pickups.append(pickup)
+
+func _pickup_alpha(lifetime: float) -> float:
+	if lifetime > 10.0:
+		return 1.0
+	if lifetime <= 0.0:
+		return 0.0
+	# Fade + fast flicker: oscillates 4x/sec, fades linearly to 0
+	var fade: float = lifetime / 10.0
+	var flicker: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.025)
+	return clampf(fade * flicker, 0.0, 1.0)
 
 func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -> void:
 	var font: Font = ThemeDB.fallback_font
