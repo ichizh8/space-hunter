@@ -417,6 +417,7 @@ var wave_current := 0
 var wave_timer := 0.0
 var hunt_elapsed := 0.0   # total seconds in hunt
 var purge_timer := 0.0    # timer for dead enemy cleanup
+var rage_sweep_timer: float = 30.0  # force-aggro idle enemies periodically
 const WAVE_INTERVAL_START := 20.0
 const WAVE_INTERVAL_MIN   := 8.0
 
@@ -566,6 +567,7 @@ var debug_overlay_visible: bool = false
 var debug_log: Array = []                  # rolling event log
 const DEBUG_LOG_MAX: int = 10
 var debug_btn_rect: Rect2 = Rect2(0, 0, 44, 24)  # updated each draw
+var abandon_btn_rect: Rect2 = Rect2(0, 0, 60, 28)  # updated each draw
 var debug_snap_timer: float = 0.0
 const DEBUG_SNAP_INTERVAL: float = 2.0
 var crash_log: String = ""    # loaded from localStorage on ready
@@ -1093,6 +1095,20 @@ func _update_waves(delta: float) -> void:
 		_spawn_wave(depth)
 		wave_timer = wave_interval
 
+	# Rage sweep: force-aggro idle enemies, frequency scales with time + corruption
+	rage_sweep_timer -= delta
+	var rage_interval: float = maxf(8.0, 30.0 - (hunt_elapsed / 30.0) - (corruption / 10.0))
+	if rage_sweep_timer <= 0.0:
+		rage_sweep_timer = rage_interval
+		var aggro_range: float = 600.0 + minf(hunt_elapsed / 10.0, 800.0) + corruption * 4.0
+		for i in range(enemies.size()):
+			var e: Dictionary = enemies[i]
+			if e.hp > 0 and not e.get("is_ally", false) and not e.is_aggroed:
+				if e.pos.distance_to(player_pos) < aggro_range:
+					e.is_aggroed = true
+					e.aggro_origin = e.pos
+					enemies[i] = e
+
 	# Elite timer — spawn one elite at interval, then reset
 	elite_timer -= delta
 	if elite_timer <= 0.0:
@@ -1459,6 +1475,11 @@ func _input(event: InputEvent) -> void:
 			if DEBUG_OVERLAY_ENABLED and debug_btn_rect.has_point(te.position):
 				debug_overlay_visible = !debug_overlay_visible
 				return
+			# Abandon button
+			if abandon_btn_rect.has_point(te.position):
+				debug_log_push("Hunt abandoned by player")
+				_finish_hunt(0)
+				return
 			# Kit button tap check
 			for ki in range(kit_button_rects.size()):
 				if ki < equipped_kits.size() and kit_button_rects[ki].has_point(te.position):
@@ -1483,12 +1504,17 @@ func _input(event: InputEvent) -> void:
 				diff = diff.normalized() * JOY_MAX_DIST
 			joy_knob = joy_base + diff
 
-	# Debug overlay toggle (F1)
-	if DEBUG_OVERLAY_ENABLED and event is InputEventKey:
+	# Debug overlay toggle (F1) + abandon (Escape)
+	if event is InputEventKey:
 		var ke: InputEventKey = event
-		if ke.pressed and ke.keycode == KEY_F1:
-			debug_overlay_visible = !debug_overlay_visible
-			return
+		if ke.pressed:
+			if DEBUG_OVERLAY_ENABLED and ke.keycode == KEY_F1:
+				debug_overlay_visible = !debug_overlay_visible
+				return
+			if ke.keycode == KEY_ESCAPE:
+				debug_log_push("Hunt abandoned by player")
+				_finish_hunt(0)
+				return
 
 	# Keyboard fallback for testing
 	# Handled in _process via Input.get_vector
@@ -3283,6 +3309,7 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 			_show_message("Ingredients: %d" % target_kills)
 		if target_kills >= target_total and not exit_spawned:
 			_spawn_exit()
+			return
 		return
 
 	# Regular enemies: essence + rare HP/cleanse drops
@@ -4300,7 +4327,7 @@ func _draw() -> void:
 	# Target counter (top center)
 	var target_text: String = ""
 	if contract_mode == "hunt" or contract_mode == "":
-		target_text = "Ingredients: %d/%d" % [target_kills, target_total]
+		target_text = "Ingredients: %d/%d" % [mini(target_kills, target_total), target_total]
 	else:
 		target_text = "Ingredients: %d" % target_kills
 	_draw_text(Vector2(vp_size.x * 0.5 - 80.0, 16.0), target_text, Color.WHITE, 14)
@@ -4390,6 +4417,13 @@ func _draw() -> void:
 			var cd_frac: float = clampf(cd / max_cd, 0.0, 1.0)
 			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0, 4.0), Color(0.2, 0.2, 0.2, 0.6))
 			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
+
+	# Abandon button (bottom-left)
+	var ab_w: float = 64.0
+	var ab_h: float = 28.0
+	abandon_btn_rect = Rect2(4.0, vp_size.y - ab_h - 4.0, ab_w, ab_h)
+	draw_rect(abandon_btn_rect, Color(0.5, 0.1, 0.1, 0.8))
+	_draw_text(Vector2(8.0, vp_size.y - ab_h + 6.0), "Abandon", Color(1.0, 0.5, 0.5), 11)
 
 	# XP bar (full width, bottom of screen)
 	var xp_bar_y: float = vp_size.y - 20.0
@@ -5237,10 +5271,22 @@ func _update_smoke(delta: float) -> void:
 							enemies[ei] = e
 				# T3 void: toxic smoke — enemies take 1 dmg/s, player gains corruption
 				if sz.get("toxic", false):
+					var grenade_mods: Dictionary = weapon_mods.get("grenade_launcher", {})
+					var pull_active: bool = grenade_mods.get("corr_zone_pull", false)
+					var zone_dmg_active: bool = grenade_mods.get("corr_zone_damage", false)
 					for ei in range(enemies.size()):
 						var e: Dictionary = enemies[ei]
-						if e.hp > 0 and e.pos.distance_to(sz.pos) < sz.radius:
-							e.hp -= maxi(1, int(delta))
+						if e.hp <= 0 or e.get("is_ally", false):
+							continue
+						var dist_sz: float = e.pos.distance_to(sz.pos)
+						if dist_sz < sz.radius:
+							# Base toxic damage
+							var tdmg: int = 2 if zone_dmg_active else 1
+							e.hp -= maxi(tdmg, int(float(tdmg) * delta + 0.5))
+							# Void pull: drag enemies toward zone center
+							if pull_active and dist_sz > 4.0:
+								var pull_dir: Vector2 = (sz.pos - e.pos).normalized()
+								e.pos += pull_dir * 60.0 * delta
 							enemies[ei] = e
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
