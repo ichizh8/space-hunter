@@ -566,6 +566,10 @@ var debug_overlay_visible: bool = false
 var debug_log: Array = []                  # rolling event log
 const DEBUG_LOG_MAX: int = 10
 var debug_btn_rect: Rect2 = Rect2(0, 0, 44, 24)  # updated each draw
+var debug_snap_timer: float = 0.0
+const DEBUG_SNAP_INTERVAL: float = 2.0
+var crash_log: String = ""    # loaded from localStorage on ready
+var crash_snap: String = ""   # loaded from localStorage on ready
 
 # === Creature data ===
 const CREATURE_DEFS: Dictionary = {
@@ -694,6 +698,17 @@ func _ready() -> void:
 	set_process_input(true)
 	queue_redraw()
 	_init_contract_mode(contract)
+
+	# Load crash data from previous session (WASM only)
+	if DEBUG_OVERLAY_ENABLED and OS.get_name() == "Web":
+		var prev_log = JavaScriptBridge.eval("localStorage.getItem('sh_debug_log')")
+		var prev_snap = JavaScriptBridge.eval("localStorage.getItem('sh_debug_snap')")
+		if typeof(prev_log) == TYPE_STRING and prev_log != "":
+			crash_log = prev_log
+		if typeof(prev_snap) == TYPE_STRING and prev_snap != "":
+			crash_snap = prev_snap
+		# Clear so we don't show stale data next time
+		JavaScriptBridge.eval("localStorage.removeItem('sh_debug_log'); localStorage.removeItem('sh_debug_snap');")
 
 func _init_contract_mode(contract: Dictionary) -> void:
 	match contract_mode:
@@ -1499,6 +1514,13 @@ func _process(delta: float) -> void:
 		speed_boost_timer -= delta
 	if player_hit_flash > 0.0:
 		player_hit_flash -= delta
+
+	# Debug watchdog: write state snapshot to localStorage every 2s
+	if DEBUG_OVERLAY_ENABLED:
+		debug_snap_timer += delta
+		if debug_snap_timer >= DEBUG_SNAP_INTERVAL:
+			debug_snap_timer = 0.0
+			_debug_write_snap()
 
 	_move_player(delta)
 	_update_camera()
@@ -5524,6 +5546,29 @@ func debug_log_push(msg: String) -> void:
 	debug_log.append("[%d:%02d] %s" % [mins, secs, msg])
 	if debug_log.size() > DEBUG_LOG_MAX:
 		debug_log.pop_front()
+	# Persist to localStorage so crash/freeze doesn't lose the log
+	if OS.get_name() == "Web":
+		var joined: String = "\n".join(debug_log)
+		JavaScriptBridge.eval("try{localStorage.setItem('sh_debug_log',%s)}catch(e){}" % JSON.stringify(joined))
+
+func _debug_write_snap() -> void:
+	if not DEBUG_OVERLAY_ENABLED or OS.get_name() != "Web":
+		return
+	var mins: int = int(hunt_elapsed) / 60
+	var secs: int = int(hunt_elapsed) % 60
+	var active_elites: Array = []
+	for e in enemies:
+		if e.get("is_elite", false):
+			active_elites.append(e.get("elite_type", "?") + str(e.get("affixes", [])))
+	var snap: String = "[%d:%02d] FPS:%d E:%d B:%d corr:%.0f%% HP:%d/%d wave:%d kills:%d/%d elites:%s" % [
+		mins, secs,
+		Engine.get_frames_per_second(),
+		enemies.size(), bullets.size(),
+		corruption, player_hp, player_max_hp,
+		wave_current, target_kills, target_total,
+		"|".join(active_elites) if active_elites.size() > 0 else "none"
+	]
+	JavaScriptBridge.eval("try{localStorage.setItem('sh_debug_snap',%s)}catch(e){}" % JSON.stringify(snap))
 
 func _draw_debug_overlay() -> void:
 	if not DEBUG_OVERLAY_ENABLED:
@@ -5597,3 +5642,22 @@ func _draw_debug_overlay() -> void:
 			var alpha: float = 0.5 + 0.5 * (float(i + 1) / float(debug_log.size()))
 			draw_string(font, Vector2(log_x + pad, log_y + pad + float(i) * line_h + line_h),
 				debug_log[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.85, 0.4, alpha))
+
+	# --- Crash log (bottom-right, red) — shown only if previous session data exists ---
+	if crash_log != "" or crash_snap != "":
+		var crash_lines: Array = ["== LAST CRASH =="]
+		if crash_snap != "":
+			crash_lines.append(crash_snap)
+		if crash_log != "":
+			for l in crash_log.split("\n"):
+				if l.strip_edges() != "":
+					crash_lines.append(l)
+		var cl_w: float = 360.0
+		var cl_h: float = float(crash_lines.size()) * line_h + pad * 2.0
+		var cl_x: float = vp_size.x - cl_w - pad
+		var cl_y: float = vp_size.y - cl_h - pad
+		draw_rect(Rect2(cl_x, cl_y, cl_w, cl_h), Color(0.3, 0.0, 0.0, 0.8))
+		for i in range(crash_lines.size()):
+			var col: Color = Color(1.0, 0.3, 0.3) if i == 0 else Color(1.0, 0.7, 0.7, 0.85)
+			draw_string(font, Vector2(cl_x + pad, cl_y + pad + float(i) * line_h + line_h),
+				crash_lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
