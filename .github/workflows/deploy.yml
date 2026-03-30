@@ -1,0 +1,59 @@
+name: Export and Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  export-and-deploy:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Godot export templates
+        run: |
+          mkdir -p /root/.local/share/godot/export_templates/
+          GODOT_VERSION=$(godot --version | grep -oP '^\d+\.\d+(\.\d+)?')
+          TEMPLATE_DIR="/root/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          if [ ! -d "$TEMPLATE_DIR" ]; then
+            EXISTING=$(ls /root/.local/share/godot/export_templates/ | head -1)
+            if [ -n "$EXISTING" ]; then
+              ln -s "/root/.local/share/godot/export_templates/$EXISTING" "$TEMPLATE_DIR"
+            fi
+          fi
+
+      - name: Import project
+        run: godot --headless --import 2>&1 || true
+
+      - name: Export to Web
+        run: |
+          mkdir -p docs
+          godot --headless --export-release "Web" docs/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: export-and-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
