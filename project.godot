@@ -23,6 +23,7 @@ boot_splash/bg_color=Color(0.0852449, 0.0852449, 0.0852449, 1)
 
 GameData="*res://scripts/game_data.gd"
 SaveManager="*res://scripts/save_manager.gd"
+UITheme="*res://scripts/ui_theme.gd"
 
 
 [debug]
@@ -229,4 +230,4 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 anti_aliasing/screen_space_roughness_limiter/enabled=false
-environment/defaults/default_clear_color=Color(0.0784314, 0.0470588, 0.109804, 1)
+environment/defaults/default_clear_color=Color(0.04, 0.04, 0.08, 1)

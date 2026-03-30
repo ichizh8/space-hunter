@@ -2,19 +2,13 @@ extends Control
 
 var selected_weapon: String = "sidearm"
 var go_btn: Button = null
+var weapon_buttons: Dictionary = {}  # wid -> Button
 
 const WEAPON_DISPLAY_NAMES: Dictionary = {
-	"sidearm": "Pistol",
-	"scatter": "Scatter",
-	"lance": "Lance",
-	"baton": "Baton",
-	"dart": "Dart",
-	"entropy_cannon": "Entropy",
-	"flamethrower": "Flamer",
-	"sniper_carbine": "Sniper",
-	"grenade_launcher": "Grenade",
-	"pulse_cannon": "Pulse",
-	"chain_rifle": "Chain",
+	"sidearm": "Pistol", "scatter": "Scatter", "lance": "Lance",
+	"baton": "Baton", "dart": "Dart", "entropy_cannon": "Entropy",
+	"flamethrower": "Flamer", "sniper_carbine": "Sniper",
+	"grenade_launcher": "Grenade", "pulse_cannon": "Pulse", "chain_rifle": "Chain",
 }
 
 const ALL_WEAPONS: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher", "pulse_cannon", "chain_rifle"]
@@ -23,86 +17,101 @@ func _ready() -> void:
 	var contract: Dictionary = GameData.current_contract
 
 	var bg := ColorRect.new()
-	bg.color = Color(0.08, 0.08, 0.12, 1.0)
+	bg.color = UITheme.BG_DARK
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
 	var vbox := VBoxContainer.new()
 	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vbox.add_theme_constant_override("separation", 12)
+	vbox.offset_left = UITheme.MARGIN_LG
+	vbox.offset_right = -UITheme.MARGIN_LG
+	vbox.offset_top = UITheme.MARGIN_LG
+	vbox.offset_bottom = -UITheme.MARGIN_LG
+	vbox.add_theme_constant_override("separation", UITheme.MARGIN_MD)
 	add_child(vbox)
 
 	# Title
-	var title := Label.new()
-	title.text = "LOADOUT"
+	var title := UITheme.make_label("LOADOUT", UITheme.FONT_TITLE, UITheme.ACCENT_GOLD)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color.WHITE)
 	vbox.add_child(title)
 
 	# Contract name
-	var sub := Label.new()
-	sub.text = contract.get("name", "Hunt")
+	var sub := UITheme.make_label(contract.get("name", "Hunt"), UITheme.FONT_BODY, UITheme.ACCENT_CYAN)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_color_override("font_color", Color(0.7, 0.7, 0.9))
 	vbox.add_child(sub)
 
-	vbox.add_child(HSeparator.new())
+	vbox.add_child(UITheme.make_separator())
 
-	# Weapon label
-	var wlbl := Label.new()
-	wlbl.text = "Choose Weapon:"
-	wlbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(wlbl)
+	# Weapon section
+	vbox.add_child(UITheme.make_section_header("WEAPON", UITheme.ACCENT_ORANGE))
 
-	# Weapon buttons — 3 per row, filtered by rep unlocks
+	# Weapon grid — 3 per row
 	var available_weapons: Array = SaveManager.data.get_available_weapons()
 	var row: HBoxContainer = null
 	for i in available_weapons.size():
 		if i % 3 == 0:
 			row = HBoxContainer.new()
 			row.alignment = BoxContainer.ALIGNMENT_CENTER
-			row.add_theme_constant_override("separation", 6)
+			row.add_theme_constant_override("separation", UITheme.MARGIN_SM)
 			vbox.add_child(row)
 		var wid: String = available_weapons[i]
 		var btn := Button.new()
 		btn.text = WEAPON_DISPLAY_NAMES.get(wid, wid)
-		btn.custom_minimum_size = Vector2(90, 40)
-		btn.pressed.connect(_select_weapon.bind(wid, btn))
+		btn.custom_minimum_size = Vector2(100, UITheme.BUTTON_MIN_H)
+		if wid == selected_weapon:
+			UITheme.style_button_primary(btn, UITheme.ACCENT_ORANGE, UITheme.FONT_SMALL)
+		else:
+			UITheme.style_button(btn, UITheme.ACCENT_CYAN, UITheme.FONT_SMALL)
+		btn.pressed.connect(_select_weapon.bind(wid))
 		row.add_child(btn)
+		weapon_buttons[wid] = btn
 
-	vbox.add_child(HSeparator.new())
+	vbox.add_child(UITheme.make_separator())
 
 	# Kit info
-	var kit_lbl := Label.new()
+	vbox.add_child(UITheme.make_section_header("KITS", UITheme.ACCENT_PURPLE))
 	var kits: Array = SaveManager.data.equipped_kits
-	kit_lbl.text = "Kits: %s" % ", ".join(kits)
+	var kit_names: Array = []
+	for kid in kits:
+		kit_names.append(kid.replace("_", " ").capitalize())
+	var kit_lbl := UITheme.make_label(", ".join(kit_names), UITheme.FONT_BODY, UITheme.ACCENT_GREEN)
 	kit_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	kit_lbl.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
 	vbox.add_child(kit_lbl)
 
-	vbox.add_child(HSeparator.new())
+	# Spacer
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
 
-	# Buttons
+	# Bottom buttons
 	var btn_row := HBoxContainer.new()
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	btn_row.add_theme_constant_override("separation", 20)
+	btn_row.add_theme_constant_override("separation", UITheme.MARGIN_LG)
 	vbox.add_child(btn_row)
 
 	var back_btn := Button.new()
 	back_btn.text = "BACK"
-	back_btn.custom_minimum_size = Vector2(110, 55)
+	back_btn.custom_minimum_size = Vector2(120, 56)
+	UITheme.style_button_ghost(back_btn, UITheme.FONT_HEADING)
 	back_btn.pressed.connect(_go_back)
 	btn_row.add_child(back_btn)
 
 	go_btn = Button.new()
 	go_btn.text = "GO HUNT"
-	go_btn.custom_minimum_size = Vector2(110, 55)
+	go_btn.custom_minimum_size = Vector2(160, 56)
+	UITheme.style_button_primary(go_btn, UITheme.ACCENT_GREEN, UITheme.FONT_HEADING)
 	go_btn.pressed.connect(_go_hunt)
 	btn_row.add_child(go_btn)
 
-func _select_weapon(wid: String, _btn: Button) -> void:
+func _select_weapon(wid: String) -> void:
 	selected_weapon = wid
+	# Update button styles
+	for w in weapon_buttons:
+		var btn: Button = weapon_buttons[w]
+		if w == wid:
+			UITheme.style_button_primary(btn, UITheme.ACCENT_ORANGE, UITheme.FONT_SMALL)
+		else:
+			UITheme.style_button(btn, UITheme.ACCENT_CYAN, UITheme.FONT_SMALL)
 
 func _go_back() -> void:
 	get_tree().change_scene_to_file("res://scenes/ContractBoard.tscn")

@@ -3836,25 +3836,21 @@ func _create_upgrade_panel() -> void:
 
 	# Dark overlay background
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.05, 0.1, 0.92)
+	style.bg_color = UITheme.BG_OVERLAY
 	panel.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
-	vbox.position = Vector2(vp_size.x * 0.1, vp_size.y * 0.15)
-	vbox.size = Vector2(vp_size.x * 0.8, vp_size.y * 0.7)
+	vbox.position = Vector2(vp_size.x * 0.06, vp_size.y * 0.12)
+	vbox.size = Vector2(vp_size.x * 0.88, vp_size.y * 0.76)
+	vbox.add_theme_constant_override("separation", UITheme.MARGIN_SM)
 	panel.add_child(vbox)
 
-	var title := Label.new()
-	title.text = "LEVEL UP"
+	var title := UITheme.make_label("LEVEL UP", UITheme.FONT_TITLE, UITheme.ACCENT_PURPLE)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color(0.8, 0.6, 1.0))
-	title.add_theme_font_size_override("font_size", 28)
 	vbox.add_child(title)
 
-	var subtitle := Label.new()
-	subtitle.text = "Choose an upgrade:"
+	var subtitle := UITheme.make_label("Choose an upgrade:", UITheme.FONT_BODY, UITheme.TEXT_SECONDARY)
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_color_override("font_color", Color(0.6, 0.5, 0.8))
 	vbox.add_child(subtitle)
 
 	upgrade_buttons = []
@@ -3865,14 +3861,12 @@ func _create_upgrade_panel() -> void:
 
 		# Card container
 		var card := PanelContainer.new()
-		card.custom_minimum_size = Vector2(0, 72)
-		var card_style := StyleBoxFlat.new()
-		card_style.bg_color = Color(0.12, 0.08, 0.20, 0.95) if is_rare else Color(0.08, 0.10, 0.16, 0.95)
-		card_style.border_color = Color(0.9, 0.7, 0.1) if is_rare else Color(0.4, 0.4, 0.6)
-		card_style.border_width_left = 2; card_style.border_width_right = 2
-		card_style.border_width_top = 2; card_style.border_width_bottom = 2
-		card_style.corner_radius_top_left = 6; card_style.corner_radius_top_right = 6
-		card_style.corner_radius_bottom_left = 6; card_style.corner_radius_bottom_right = 6
+		card.custom_minimum_size = Vector2(0, 76)
+		var rare_accent: Color = UITheme.ACCENT_GOLD if is_rare else UITheme.BORDER_LIGHT
+		var card_style := UITheme.make_panel_style(
+			Color(UITheme.ACCENT_PURPLE.r * 0.12, UITheme.ACCENT_PURPLE.g * 0.12, UITheme.ACCENT_PURPLE.b * 0.12, 0.95) if is_rare else UITheme.BG_MEDIUM,
+			rare_accent
+		)
 		card.add_theme_stylebox_override("panel", card_style)
 
 		var hbox := HBoxContainer.new()
@@ -3890,18 +3884,14 @@ func _create_upgrade_panel() -> void:
 		text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(text_vbox)
 
-		var name_lbl := Label.new()
-		var rarity_tag: String = "  ◆ RARE" if is_rare else ""
-		name_lbl.text = "[%d] %s%s" % [i + 1, c.label, rarity_tag]
-		name_lbl.add_theme_font_size_override("font_size", 15)
-		var name_color: Color = Color(1.0, 0.85, 0.3) if is_rare else Color(0.9, 0.9, 1.0)
-		name_lbl.add_theme_color_override("font_color", name_color)
+		var name_lbl := UITheme.make_label(
+			"[%d] %s%s" % [i + 1, c.label, "  RARE" if is_rare else ""],
+			UITheme.FONT_BODY,
+			UITheme.ACCENT_GOLD if is_rare else UITheme.TEXT_PRIMARY
+		)
 		text_vbox.add_child(name_lbl)
 
-		var desc_lbl := Label.new()
-		desc_lbl.text = c.desc
-		desc_lbl.add_theme_font_size_override("font_size", 12)
-		desc_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.85))
+		var desc_lbl := UITheme.make_label(c.desc, UITheme.FONT_SMALL, UITheme.TEXT_SECONDARY)
 		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		text_vbox.add_child(desc_lbl)
 
@@ -4883,15 +4873,18 @@ func _draw() -> void:
 	var hp_bar_y := 16.0
 	var hp_bar_w := 120.0
 	var hp_bar_h := 12.0
-	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w, hp_bar_h), Color(0.3, 0.1, 0.1))
+	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w, hp_bar_h), UITheme.HP_BG)
+	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w, hp_bar_h), UITheme.BORDER_DEFAULT, false, 2.0)
 	var hp_frac: float = clampf(float(player_hp) / float(player_max_hp), 0.0, 1.0)
-	draw_rect(Rect2(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, hp_bar_h), Color(0.2, 0.9, 0.2))
+	var hp_color: Color = UITheme.HP_GREEN if hp_frac > 0.3 else UITheme.ACCENT_RED
+	draw_rect(Rect2(hp_bar_x + 1, hp_bar_y + 1, (hp_bar_w - 2) * hp_frac, hp_bar_h - 2), hp_color)
+	_draw_text(Vector2(hp_bar_x + hp_bar_w + 4.0, hp_bar_y - 2.0), "%d/%d" % [player_hp, player_max_hp], UITheme.TEXT_PRIMARY, 11)
 
 	# Primary weapon ammo text
 	if not main_weapon.is_empty():
 		var pw: Dictionary = main_weapon
 		var pw_reloading: bool = pw.reload_timer > 0.0
-		var ammo_color: Color = Color(1.0, 0.8, 0.2) if not pw_reloading else Color(1.0, 0.4, 0.2)
+		var ammo_color: Color = UITheme.ACCENT_GOLD if not pw_reloading else UITheme.ACCENT_ORANGE
 		var ammo_text: String
 		if pw.mag_size >= 999:
 			ammo_text = WEAPON_DEFS[pw.id].name
@@ -4899,7 +4892,7 @@ func _draw() -> void:
 			ammo_text = "RELOADING..."
 		else:
 			ammo_text = "%d / %d" % [pw.mag_ammo, pw.mag_size]
-		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 6.0), ammo_text, ammo_color, 13)
+		_draw_text(Vector2(hp_bar_x, hp_bar_y + hp_bar_h + 8.0), ammo_text, ammo_color, 13)
 
 	# Target counter (top center)
 	var target_text: String = ""
@@ -4912,18 +4905,19 @@ func _draw() -> void:
 
 	# Corruption meter (top right)
 	var corr_x: float = vp_size.x - 92.0
-	_draw_text(Vector2(corr_x, 4.0), "CORRUPTION", Color(0.7, 0.4, 0.9, 0.8), 9)
-	draw_rect(Rect2(corr_x, 16.0, 80.0, 10.0), Color(0.2, 0.1, 0.2))
+	_draw_text(Vector2(corr_x, 4.0), "CORRUPTION", UITheme.ACCENT_PURPLE, 9)
+	draw_rect(Rect2(corr_x, 16.0, 80.0, 10.0), UITheme.BG_DARK)
+	draw_rect(Rect2(corr_x, 16.0, 80.0, 10.0), UITheme.BORDER_DEFAULT, false, 2.0)
 	var corr_frac: float = clampf(corruption / corruption_max, 0.0, 1.0)
 	var corr_color: Color
 	if corruption < 36.0:
-		corr_color = Color(0.5, 0.1, 0.8)
+		corr_color = UITheme.ACCENT_PURPLE
 	elif corruption < 61.0:
 		corr_color = Color(0.8, 0.1, 0.5)
 	else:
-		corr_color = Color(1.0, 0.1, 0.2)
+		corr_color = UITheme.ACCENT_RED
 	if corr_frac > 0.0:
-		draw_rect(Rect2(corr_x, 16.0, 80.0 * corr_frac, 10.0), corr_color)
+		draw_rect(Rect2(corr_x + 1, 17.0, (80.0 - 2) * corr_frac, 8.0), corr_color)
 
 	# Corruption state label + subtext
 	var corr_state_label: String
@@ -4932,26 +4926,26 @@ func _draw() -> void:
 	var corr_threshold: int
 	if corruption < 15.0:
 		corr_state_label = "[CLEAN]"
-		corr_state_color = Color(0.3, 0.9, 0.3)
+		corr_state_color = UITheme.CORRUPTION_LOW
 		corr_subtext = "range+  speed+"
 		corr_threshold = 0
 	elif corruption <= 35.0:
 		corr_state_label = "[VALLEY]"
-		corr_state_color = Color(0.9, 0.8, 0.2)
+		corr_state_color = UITheme.CORRUPTION_MID
 		corr_subtext = "debuffs ramp"
 		corr_threshold = 1
 	elif corruption <= 60.0:
 		corr_state_label = "[CORRUPT]"
-		corr_state_color = Color(0.9, 0.3, 0.2)
+		corr_state_color = UITheme.CORRUPTION_HI
 		corr_subtext = "melee+  armor+"
 		corr_threshold = 2
 	else:
 		corr_state_label = "[VOID]"
-		corr_state_color = Color(1.0, 0.1, 0.1)
+		corr_state_color = UITheme.CORRUPTION_MAX
 		corr_subtext = "mutating..."
 		corr_threshold = 3
 	_draw_text(Vector2(corr_x, 28.0), corr_state_label, corr_state_color, 10)
-	_draw_text(Vector2(corr_x, 40.0), corr_subtext, Color(0.6, 0.6, 0.6), 9)
+	_draw_text(Vector2(corr_x, 40.0), corr_subtext, UITheme.TEXT_SECONDARY, 9)
 
 	# Corruption threshold transition message
 	if corr_threshold != corruption_prev_threshold:
@@ -4982,8 +4976,10 @@ func _draw() -> void:
 		var cd: float = state.get("cooldown", 0.0)
 		var charges: int = state.get("charges", -1)
 		var can_use: bool = cd <= 0.0 and (charges < 0 or charges > 0)
-		var btn_color: Color = Color(0.15, 0.5, 0.15, 0.85) if can_use else Color(0.3, 0.3, 0.3, 0.7)
+		var btn_color: Color = Color(UITheme.ACCENT_GREEN.r * 0.3, UITheme.ACCENT_GREEN.g * 0.3, UITheme.ACCENT_GREEN.b * 0.3, 0.85) if can_use else Color(UITheme.BG_LIGHT.r, UITheme.BG_LIGHT.g, UITheme.BG_LIGHT.b, 0.7)
 		draw_rect(btn_rect, btn_color)
+		var btn_border: Color = UITheme.ACCENT_GREEN if can_use else UITheme.BORDER_DEFAULT
+		draw_rect(btn_rect, btn_border, false, 2.0)
 		var kit_label: String = kdef.get("name", kit_id)
 		if charges >= 0:
 			kit_label += " (%d)" % charges
@@ -5003,36 +4999,36 @@ func _draw() -> void:
 			draw_rect(Rect2(btn_pos.x, btn_pos.y + 36.0, 70.0 * cd_frac, 4.0), Color(0.3, 0.8, 0.3, 0.7))
 
 	# Abandon button (bottom-left)
-	var ab_w: float = 64.0
-	var ab_h: float = 24.0
-	abandon_btn_rect = Rect2(4.0, 4.0, ab_w, ab_h)
-	draw_rect(abandon_btn_rect, Color(0.5, 0.1, 0.1, 0.8))
-	_draw_text(Vector2(8.0, 6.0), "Abandon", Color(1.0, 0.5, 0.5), 11)
+	var ab_w: float = 72.0
+	var ab_h: float = 28.0
+	abandon_btn_rect = Rect2(4.0, vp_size.y - 64.0, ab_w, ab_h)
+	draw_rect(abandon_btn_rect, Color(UITheme.ACCENT_RED.r * 0.2, UITheme.ACCENT_RED.g * 0.2, UITheme.ACCENT_RED.b * 0.2, 0.8))
+	draw_rect(abandon_btn_rect, Color(UITheme.ACCENT_RED.r * 0.5, UITheme.ACCENT_RED.g * 0.5, UITheme.ACCENT_RED.b * 0.5), false, 2.0)
+	_draw_text(Vector2(10.0, vp_size.y - 62.0), "Abandon", UITheme.ACCENT_RED, 11)
 
 	# XP bar (full width, bottom of screen)
-	var xp_bar_y: float = vp_size.y - 20.0
-	var xp_bar_h := 8.0
-	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), Color(0.1, 0.1, 0.15))
+	var xp_bar_y: float = vp_size.y - 16.0
+	var xp_bar_h := 6.0
+	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), UITheme.BG_DARK)
 	var xp_frac: float
 	if player_level >= MAX_LEVEL:
 		xp_frac = float(post_cap_xp) / 210.0
 	else:
 		xp_frac = float(essence_collected) / float(xp_threshold)
-	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), Color(0.5, 0.0, 0.9))
-	# LV label left of bar
+	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), UITheme.XP_PURPLE)
 	var lv_label: String = "LV MAX" if player_level >= MAX_LEVEL else "LV %d" % player_level
-	_draw_text(Vector2(4.0, xp_bar_y - 4.0), lv_label, Color(0.7, 0.5, 1.0), 12)
+	_draw_text(Vector2(4.0, xp_bar_y - 6.0), lv_label, UITheme.ACCENT_PURPLE, 11)
 
 	# Weapon display (bottom left, above XP bar)
 	if not main_weapon.is_empty():
-		var wy: float = xp_bar_y - 16.0
+		var wy: float = xp_bar_y - 18.0
 		var def: Dictionary = WEAPON_DEFS[main_weapon.id]
 		var reload_indicator: String = " (reloading)" if main_weapon.reload_timer > 0 else ""
 		var ammo_str: String = "" if main_weapon.mag_size >= 999 else "  %d/%d" % [main_weapon.mag_ammo, main_weapon.mag_size]
 		var mut_str: String = ""
 		if main_weapon.mutated:
 			mut_str = " [%s]" % main_weapon.mutation_type.to_upper()
-		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(main_weapon.level) + mut_str + ammo_str + reload_indicator, Color(0.6,0.7,0.9,0.85), 11)
+		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(main_weapon.level) + mut_str + ammo_str + reload_indicator, UITheme.TEXT_SECONDARY, 11)
 
 	# Corruption flavor text (bottom center, subtle)
 	var flavor: String = _get_corruption_flavor()
