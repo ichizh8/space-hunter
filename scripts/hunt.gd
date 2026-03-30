@@ -488,6 +488,8 @@ var familiar_corruption_timer: float = 0.0
 var familiar2_active: bool = false
 var familiar2_pos: Vector2 = Vector2.ZERO
 var kit_t3_choices: Dictionary = {}
+var kit_t3_pending: Array = []  # kits queued for T3 path choice this level-up
+var kit_t3_mismatch_timer: float = 0.0  # checks debuff state every 5s
 var kit_t2_paths: Dictionary = {}
 var drone_fire_timer: float = 0.0
 var stim_speed_timer: float = 0.0
@@ -1573,6 +1575,11 @@ func _process(delta: float) -> void:
 	_update_drone(delta)
 	_update_familiar(delta)
 	_update_contract_mode(delta)
+	# T3 mismatch debuff check every 5s
+	kit_t3_mismatch_timer -= delta
+	if kit_t3_mismatch_timer <= 0.0:
+		kit_t3_mismatch_timer = 5.0
+		_check_t3_debuffs()
 	_update_affix_trails(delta)
 
 	# Flush pending enemy spawns (never append during iteration)
@@ -2206,7 +2213,7 @@ func _update_enemies(delta: float) -> void:
 
 		# Aggro check (lurkers handle their own aggro)
 		if not e.is_aggroed and e.behavior != "lurker":
-			if dist_to_player < e.detection:
+			if dist_to_player < e.detection and not e.get("smoke_suppressed", false):
 				e.is_aggroed = true
 				e.aggro_origin = e.pos
 		else:
@@ -3557,22 +3564,37 @@ func _generate_upgrades() -> Array:
 			options.append({type="resonance", id=rp2.id, rarity="legendary", icon=rp2.icon, label=rp2.name, desc=rp2.desc, perk={}})
 			slot2_done = true
 	if not slot2_done:
+		# Collect all kits eligible for tier upgrade
+		var t3_eligible: Array = []
+		var t2_eligible: Array = []
 		for kid in equipped_kits:
 			var kt: int = kit_tiers.get(kid, 1)
-			if kt < 3:
-				var kdef: Dictionary = KIT_DEFS.get(kid, {})
-				options.append({
-					type = "kit_tier",
-					kit_id = kid,
-					new_tier = kt + 1,
-					rarity = "rare",
-					icon = kdef.get("icon", "K"),
-					label = kdef.get("name", kid) + " Tier " + str(kt + 1),
-					desc = "+1 max HP (tier upgrade)",
-					perk = {},
-				})
-				slot2_done = true
-				break
+			if kt == 2:
+				t3_eligible.append(kid)
+			elif kt < 2:
+				t2_eligible.append(kid)
+		# T3 — queue all eligible, pick one randomly to show path choice panel
+		if t3_eligible.size() > 0:
+			t3_eligible.shuffle()
+			# Queue any beyond the first for later level-ups
+			for i in range(t3_eligible.size()):
+				if not kit_t3_pending.has(t3_eligible[i]):
+					kit_t3_pending.append(t3_eligible[i])
+			slot2_done = true  # suppress normal card; path choice fires after panel closes
+		elif t2_eligible.size() > 0:
+			var kid: String = t2_eligible[0]
+			var kdef: Dictionary = KIT_DEFS.get(kid, {})
+			options.append({
+				type = "kit_tier",
+				kit_id = kid,
+				new_tier = 2,
+				rarity = "rare",
+				icon = kdef.get("icon", "K"),
+				label = kdef.get("name", kid) + " Tier 2",
+				desc = "+1 max HP (tier upgrade)",
+				perk = {},
+			})
+			slot2_done = true
 	if not slot2_done:
 		var avail2: Array = []
 		for m in RUN_MODIFIERS:
@@ -3770,11 +3792,229 @@ func _on_upgrade_chosen(idx: int) -> void:
 	joy_touch_index = -1
 	joy_knob = Vector2.ZERO
 	call_deferred("_remove_upgrade_panel")
+	# If T3 path choices are pending, show the first one after a frame
+	if kit_t3_pending.size() > 0:
+		call_deferred("_show_t3_choice_panel")
 
 func _remove_upgrade_panel() -> void:
 	var panel := get_node_or_null("UpgradePanel")
 	if panel:
 		panel.queue_free()
+
+# ── T3 PATH CHOICE ─────────────────────────────────────────────────────────────
+
+func _show_t3_choice_panel() -> void:
+	if kit_t3_pending.size() == 0:
+		return
+	var kit_id: String = kit_t3_pending[0]
+	var kdef: Dictionary = KIT_DEFS.get(kit_id, {})
+	var kit_name: String = kdef.get("name", kit_id)
+
+	# Determine which T3 effects to describe
+	var clean_desc: String = _get_kit_t3_desc(kit_id, "clean")
+	var void_desc: String  = _get_kit_t3_desc(kit_id, "void")
+
+	paused = true
+	var vp_size := get_viewport_rect().size
+	var panel := Panel.new()
+	panel.name = "T3ChoicePanel"
+	panel.position = Vector2.ZERO
+	panel.size = vp_size
+
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.03, 0.03, 0.08, 0.96)
+	panel.add_theme_stylebox_override("panel", bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.position = Vector2(vp_size.x * 0.08, vp_size.y * 0.12)
+	vbox.size = Vector2(vp_size.x * 0.84, vp_size.y * 0.76)
+	vbox.add_theme_constant_override("separation", 16)
+	panel.add_child(vbox)
+
+	# Header
+	var header := Label.new()
+	header.text = "PATH CHOICE"
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header.add_theme_font_size_override("font_size", 32)
+	header.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+	vbox.add_child(header)
+
+	var sub := Label.new()
+	sub.text = "%s reached Tier 3 — choose your path" % kit_name
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 14)
+	sub.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
+	vbox.add_child(sub)
+
+	var warn := Label.new()
+	warn.text = "⚠  Playing against your path doubles kit cooldowns"
+	warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	warn.add_theme_font_size_override("font_size", 12)
+	warn.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(warn)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 8)
+	vbox.add_child(spacer)
+
+	# Cards row
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 12)
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(hbox)
+
+	for path in ["clean", "void"]:
+		var is_void: bool = path == "void"
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var cs := StyleBoxFlat.new()
+		cs.bg_color = Color(0.05, 0.14, 0.08, 0.95) if not is_void else Color(0.14, 0.05, 0.18, 0.95)
+		cs.border_color = Color(0.3, 0.9, 0.4) if not is_void else Color(0.7, 0.2, 1.0)
+		cs.border_width_left = 3; cs.border_width_right = 3
+		cs.border_width_top = 3; cs.border_width_bottom = 3
+		cs.corner_radius_top_left = 8; cs.corner_radius_top_right = 8
+		cs.corner_radius_bottom_left = 8; cs.corner_radius_bottom_right = 8
+		card.add_theme_stylebox_override("panel", cs)
+
+		var cv := VBoxContainer.new()
+		cv.add_theme_constant_override("separation", 10)
+		card.add_child(cv)
+
+		var path_title := Label.new()
+		path_title.text = "✦ CLEAN" if not is_void else "☠ VOID"
+		path_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		path_title.add_theme_font_size_override("font_size", 22)
+		path_title.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if not is_void else Color(0.85, 0.3, 1.0))
+		cv.add_child(path_title)
+
+		var corr_hint := Label.new()
+		corr_hint.text = "Stay below 35 corruption" if not is_void else "Stay above 35 corruption"
+		corr_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		corr_hint.add_theme_font_size_override("font_size", 11)
+		corr_hint.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6) if not is_void else Color(0.75, 0.5, 0.9))
+		cv.add_child(corr_hint)
+
+		var sep2 := HSeparator.new()
+		cv.add_child(sep2)
+
+		var desc_lbl := Label.new()
+		desc_lbl.text = clean_desc if not is_void else void_desc
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc_lbl.add_theme_font_size_override("font_size", 13)
+		desc_lbl.add_theme_color_override("font_color", Color(0.88, 0.95, 0.88) if not is_void else Color(0.95, 0.82, 1.0))
+		cv.add_child(desc_lbl)
+
+		var spacer2 := Control.new()
+		spacer2.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		cv.add_child(spacer2)
+
+		var choose_btn := Button.new()
+		choose_btn.text = "[1] Choose Clean" if not is_void else "[2] Choose Void"
+		choose_btn.custom_minimum_size = Vector2(0, 48)
+		var btn_style := StyleBoxFlat.new()
+		btn_style.bg_color = Color(0.1, 0.5, 0.15) if not is_void else Color(0.35, 0.05, 0.5)
+		btn_style.corner_radius_top_left = 6; btn_style.corner_radius_top_right = 6
+		btn_style.corner_radius_bottom_left = 6; btn_style.corner_radius_bottom_right = 6
+		choose_btn.add_theme_stylebox_override("normal", btn_style)
+		choose_btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+		choose_btn.add_theme_font_size_override("font_size", 16)
+		choose_btn.pressed.connect(_on_t3_path_chosen.bind(kit_id, path))
+		cv.add_child(choose_btn)
+
+		hbox.add_child(card)
+
+	add_child(panel)
+
+func _get_kit_t3_desc(kit_id: String, path: String) -> String:
+	match kit_id:
+		"stim_pack":
+			if path == "clean": return "Speed boost after stim use."
+			else: return "Elite kills refresh stim cooldown."
+		"flash_trap":
+			if path == "clean": return "Trap radius +50%. Stunned enemies take double damage."
+			else: return "Trap triggers a void pulse — pulls nearby enemies inward."
+		"smoke_kit":
+			if path == "clean": return "Player moves 50% faster inside own smoke cloud."
+			else: return "Smoke becomes toxic — enemies take 1 dmg/s inside. Player gains corruption."
+		"familiar_kit":
+			if path == "clean": return "Familiar reduces corruption from all sources by 30%."
+			else: return "Familiar fires void shots that add corruption to enemies."
+		"drone":
+			if path == "clean": return "Drone targets healing items, delivers to player automatically."
+			else: return "Drone fires void bolts that slow and corrupt enemies."
+		"turret":
+			if path == "clean": return "Turret gains +50% fire rate and prioritizes elites."
+			else: return "Turret fires corruption rounds — adds 5 corruption per hit."
+		"decoy":
+			if path == "clean": return "Decoy lasts 2x longer and taunts elites."
+			else: return "Decoy explodes on death/expire, dealing AOE damage."
+		"gravity_well":
+			if path == "clean": return "Well slows enemies by 60% and ignores player."
+			else: return "Well pulls enemies and detonates after 3s — scales with corruption."
+		"void_surge":
+			if path == "clean": return "Speed boost doesn't cost corruption — draws from HP instead (1 HP)."
+			else: return "Speed boost also grants immunity to corruption gain for its duration."
+		"rupture_field":
+			if path == "clean": return "Rupture field stuns enemies for 1.5s on entry."
+			else: return "Enemies killed in rupture spawn a mini void pool."
+		"pack_kit":
+			if path == "clean": return "Allies gain +2 HP and shared armor reduces incoming damage."
+			else: return "Allies deal void damage — each hit adds corruption to the target."
+		"blink_kit":
+			if path == "clean": return "Blink leaves a stun field at departure point."
+			else: return "Blink gains a void aura at arrival — damages nearby enemies."
+		"chain_kit":
+			if path == "clean": return "Chain arc to a second enemy. Clean arc deals bonus damage."
+			else: return "Chain adds void status — enemies pulse corruption damage to nearby foes."
+		"charge_kit":
+			if path == "clean": return "Charge burst fires 3 rapid shots during the dash."
+			else: return "Charge leaves a void trail — enemies who cross it take 2 dmg/s."
+	return "Tier 3 upgrade."
+
+func _on_t3_path_chosen(kit_id: String, path: String) -> void:
+	# Remove panel
+	var panel := get_node_or_null("T3ChoicePanel")
+	if panel:
+		panel.queue_free()
+	# Apply upgrade
+	kit_tiers[kit_id] = 3
+	kit_t3_choices[kit_id] = path
+	GameData.kit_t3_choices[kit_id] = path
+	player_max_hp += 1
+	player_hp = mini(player_hp + 1, player_max_hp)
+	_show_message("%s → %s path unlocked!" % [KIT_DEFS.get(kit_id, {}).get("name", kit_id), path.capitalize()])
+	# Remove from pending
+	kit_t3_pending.erase(kit_id)
+	# Resume
+	paused = false
+	joy_active = false
+	joy_touch_index = -1
+	joy_knob = Vector2.ZERO
+	# If more T3 choices pending (two kits hit T3 same level), show next after a frame
+	if kit_t3_pending.size() > 0:
+		call_deferred("_show_t3_choice_panel")
+
+func _check_t3_debuffs() -> void:
+	# Called on a timer — update mismatch state for each equipped kit at T3
+	for kit_id in equipped_kits:
+		if kit_tiers.get(kit_id, 1) < 3:
+			continue
+		var path: String = kit_t3_choices.get(kit_id, "")
+		if path == "":
+			continue
+		var mismatch: bool = false
+		if path == "void" and corruption < 35.0:
+			mismatch = true
+		elif path == "clean" and corruption > 50.0:
+			mismatch = true
+		kit_states[kit_id]["t3_mismatch"] = mismatch
+		if mismatch:
+			_show_message("⚠ %s path mismatch — cooldowns doubled" % KIT_DEFS.get(kit_id, {}).get("name", kit_id))
+
+# ── END T3 PATH CHOICE ─────────────────────────────────────────────────────────
 
 func _apply_weapon_perk(wid: String, perk: Dictionary) -> void:
 	if perk.is_empty():
@@ -5062,6 +5302,10 @@ func _activate_kit(kit_id: String) -> void:
 			corruption = 0.0
 			state.cooldown = 30.0
 			_show_message("RUPTURE! -%d corruption" % dmg)
+
+	# T3 path mismatch penalty: double cooldown
+	if kit_states.get(kit_id, {}).get("t3_mismatch", false):
+		state.cooldown *= 2.0
 
 	kit_states[kit_id] = state
 

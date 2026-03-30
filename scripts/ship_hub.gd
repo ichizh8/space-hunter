@@ -466,22 +466,16 @@ func _build_kits_list() -> void:
 			elif tier == 2:
 				var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
 				var t3_cost: int = costs[2] if costs.size() > 2 else 200
-				var clean_btn := Button.new()
-				clean_btn.text = "T3 Clean (%dcr)" % t3_cost
-				clean_btn.custom_minimum_size = Vector2(120, 36)
-				clean_btn.disabled = SaveManager.data.total_credits < t3_cost
-				clean_btn.pressed.connect(_on_kit_t3_choice.bind(kit_id, "clean", t3_cost))
-				btn_row.add_child(clean_btn)
-
-				var void_btn := Button.new()
-				void_btn.text = "T3 Void (%dcr)" % t3_cost
-				void_btn.custom_minimum_size = Vector2(120, 36)
-				void_btn.disabled = SaveManager.data.total_credits < t3_cost
-				void_btn.pressed.connect(_on_kit_t3_choice.bind(kit_id, "void", t3_cost))
-				btn_row.add_child(void_btn)
+				var t3_btn := Button.new()
+				t3_btn.text = "Unlock T3 (%dcr) — path chosen in run" % t3_cost
+				t3_btn.custom_minimum_size = Vector2(220, 36)
+				t3_btn.disabled = SaveManager.data.total_credits < t3_cost
+				t3_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 3, t3_cost))
+				btn_row.add_child(t3_btn)
 			else:
+				var path_label: String = "(%s path)" % t3_choice.capitalize() if t3_choice != "" else "(path pending)"
 				var maxed_lbl := Label.new()
-				maxed_lbl.text = "MAXED (T3 %s)" % t3_choice.capitalize()
+				maxed_lbl.text = "MAXED T3 %s" % path_label
 				btn_row.add_child(maxed_lbl)
 
 			# Assign to slot buttons
