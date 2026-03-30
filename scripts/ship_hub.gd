@@ -334,6 +334,168 @@ func _ready() -> void:
 	_build_kitchen()
 	_show_ship_tab()
 
+	# Show intro on first ever launch
+	if SaveManager.data.contracts_completed == 0 and not SaveManager.data.active_bonuses.get("_intro_seen", false):
+		call_deferred("_show_intro_panel")
+
+# ── INTRO ONBOARDING ──────────────────────────────────────────────────────────
+
+const INTRO_SLIDES: Array = [
+	{
+		title = "SPACE HUNTER",
+		icon = "🚀",
+		body = "You are a hunter drifting between dead worlds.\n\nEvery run is a contract — kill, collect, survive.\nWhat you bring back shapes who you become.",
+		color = Color(0.4, 0.8, 1.0),
+	},
+	{
+		title = "THE LOOP",
+		icon = "🔄",
+		body = "① Pick a contract on the board\n② Hunt — kill elites, collect ingredients\n③ Return to your ship\n④ Cook recipes → earn reputation\n⑤ Rep unlocks new weapons and kits\n\nEach run you level up and choose upgrades.",
+		color = Color(0.5, 1.0, 0.6),
+	},
+	{
+		title = "CORRUPTION",
+		icon = "☠",
+		body = "Everything out there corrupts you.\n\nStay clean (low corruption) for precise, powerful abilities.\nEmbrace the void (high corruption) to unlock chaos and scaling damage.\n\nNeither path is wrong. Both demand commitment.",
+		color = Color(0.75, 0.3, 1.0),
+	},
+	{
+		title = "KITS",
+		icon = "🧰",
+		body = "You carry two kits into each hunt.\n\nKits evolve: Tier 2 adds new mechanics, Tier 3 lets you choose a path — Clean or Void.\n\nPlaying against your chosen path doubles your cooldowns. Commit.",
+		color = Color(1.0, 0.75, 0.2),
+	},
+	{
+		title = "READY TO HUNT",
+		icon = "★",
+		body = "Tap Contract Board to pick your first contract.\n\nGood luck out there.",
+		color = Color(1.0, 0.9, 0.4),
+	},
+]
+
+var _intro_slide_index: int = 0
+
+func _show_intro_panel() -> void:
+	_intro_slide_index = 0
+	_build_intro_slide()
+
+func _build_intro_slide() -> void:
+	var existing := get_node_or_null("IntroPanel")
+	if existing:
+		existing.queue_free()
+
+	var slide: Dictionary = INTRO_SLIDES[_intro_slide_index]
+	var vp_size := get_viewport_rect().size
+
+	var panel := Panel.new()
+	panel.name = "IntroPanel"
+	panel.position = Vector2.ZERO
+	panel.size = vp_size
+
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.03, 0.03, 0.08, 0.97)
+	panel.add_theme_stylebox_override("panel", bg)
+
+	var outer := VBoxContainer.new()
+	outer.position = Vector2(vp_size.x * 0.08, vp_size.y * 0.10)
+	outer.size = Vector2(vp_size.x * 0.84, vp_size.y * 0.80)
+	outer.add_theme_constant_override("separation", 18)
+	panel.add_child(outer)
+
+	# Progress dots
+	var dots_row := HBoxContainer.new()
+	dots_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	dots_row.add_theme_constant_override("separation", 8)
+	outer.add_child(dots_row)
+	for i in range(INTRO_SLIDES.size()):
+		var dot := Label.new()
+		dot.text = "●" if i == _intro_slide_index else "○"
+		dot.add_theme_font_size_override("font_size", 14)
+		dot.add_theme_color_override("font_color", slide.color if i == _intro_slide_index else Color(0.4, 0.4, 0.5))
+		dots_row.add_child(dot)
+
+	# Icon
+	var icon_lbl := Label.new()
+	icon_lbl.text = slide.icon
+	icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_lbl.add_theme_font_size_override("font_size", 52)
+	outer.add_child(icon_lbl)
+
+	# Title
+	var title_lbl := Label.new()
+	title_lbl.text = slide.title
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_lbl.add_theme_font_size_override("font_size", 26)
+	title_lbl.add_theme_color_override("font_color", slide.color)
+	outer.add_child(title_lbl)
+
+	# Body
+	var body_lbl := Label.new()
+	body_lbl.text = slide.body
+	body_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	body_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body_lbl.add_theme_font_size_override("font_size", 15)
+	body_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+	body_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(body_lbl)
+
+	# Buttons row
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.add_theme_constant_override("separation", 16)
+	outer.add_child(btn_row)
+
+	# Skip (only on non-last slides)
+	if _intro_slide_index < INTRO_SLIDES.size() - 1:
+		var skip_btn := Button.new()
+		skip_btn.text = "Skip"
+		skip_btn.custom_minimum_size = Vector2(90, 44)
+		var skip_style := StyleBoxFlat.new()
+		skip_style.bg_color = Color(0.15, 0.15, 0.2)
+		skip_style.corner_radius_top_left = 6; skip_style.corner_radius_top_right = 6
+		skip_style.corner_radius_bottom_left = 6; skip_style.corner_radius_bottom_right = 6
+		skip_btn.add_theme_stylebox_override("normal", skip_style)
+		skip_btn.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
+		skip_btn.pressed.connect(_close_intro)
+		btn_row.add_child(skip_btn)
+
+	# Next / Let's Go
+	var next_btn := Button.new()
+	var is_last: bool = _intro_slide_index == INTRO_SLIDES.size() - 1
+	next_btn.text = "Let's Go!" if is_last else "Next →"
+	next_btn.custom_minimum_size = Vector2(130, 48)
+	var next_style := StyleBoxFlat.new()
+	next_style.bg_color = Color(slide.color.r * 0.35, slide.color.g * 0.35, slide.color.b * 0.35)
+	next_style.border_color = slide.color
+	next_style.border_width_left = 2; next_style.border_width_right = 2
+	next_style.border_width_top = 2; next_style.border_width_bottom = 2
+	next_style.corner_radius_top_left = 6; next_style.corner_radius_top_right = 6
+	next_style.corner_radius_bottom_left = 6; next_style.corner_radius_bottom_right = 6
+	next_btn.add_theme_stylebox_override("normal", next_style)
+	next_btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	next_btn.add_theme_font_size_override("font_size", 17)
+	next_btn.pressed.connect(_intro_next)
+	btn_row.add_child(next_btn)
+
+	add_child(panel)
+
+func _intro_next() -> void:
+	if _intro_slide_index < INTRO_SLIDES.size() - 1:
+		_intro_slide_index += 1
+		_build_intro_slide()
+	else:
+		_close_intro()
+
+func _close_intro() -> void:
+	var panel := get_node_or_null("IntroPanel")
+	if panel:
+		panel.queue_free()
+	# Mark intro as seen so it never shows again
+	SaveManager.data.active_bonuses["_intro_seen"] = true
+	SaveManager.save_game()
+
+# ── END INTRO ONBOARDING ───────────────────────────────────────────────────────
+
 func _make_upgrade_row(def: Dictionary) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
