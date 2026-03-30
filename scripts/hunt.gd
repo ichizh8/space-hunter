@@ -416,6 +416,9 @@ var contract_type := ""
 var wave_current := 0
 var wave_timer := 0.0
 var hunt_elapsed := 0.0   # total seconds in hunt
+var run_total_kills: int = 0   # all enemy kills (not just elites)
+var run_damage_dealt: int = 0  # total damage dealt to enemies
+var run_peak_corruption: float = 0.0  # highest corruption reached this run
 var purge_timer := 0.0    # timer for dead enemy cleanup
 var rage_sweep_timer: float = 30.0  # force-aggro idle enemies periodically
 const WAVE_INTERVAL_START := 20.0
@@ -1079,6 +1082,8 @@ func _update_waves(delta: float) -> void:
 		return
 
 	hunt_elapsed += delta
+	if corruption > run_peak_corruption:
+		run_peak_corruption = corruption
 
 	# Count living non-elite enemies
 	var alive: int = 0
@@ -2945,6 +2950,7 @@ func _update_bullets(delta: float) -> void:
 							b.hit_ids = hit_ids
 							hit_dmg = _apply_affix_damage(e, hit_dmg, true)
 							e.hp -= hit_dmg
+							run_damage_dealt += hit_dmg
 							if b.get("slow_on_hit", false):
 								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 1.0
 							# Parasite dart
@@ -3020,6 +3026,7 @@ func _update_bullets(delta: float) -> void:
 							b["bounce_hit_ids"] = b_hit_ids
 							hit_dmg = _apply_affix_damage(e, hit_dmg, true)
 							e.hp -= hit_dmg
+							run_damage_dealt += hit_dmg
 							if b.get("void_chain", false):
 								e["burn_timer"] = 1.0
 								e["burn_dmg"] = 2.0
@@ -3051,6 +3058,7 @@ func _update_bullets(delta: float) -> void:
 						# Apply affix damage modifiers
 						hit_dmg = _apply_affix_damage(e, hit_dmg, true)
 						e.hp -= hit_dmg
+						run_damage_dealt += hit_dmg
 						# Burning (flamethrower napalm perk)
 						if b.get("apply_burning", false):
 							e["burn_timer"] = 3.0
@@ -3337,6 +3345,8 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	# ~6% chance: cleanse shard — reduces corruption by 10, only spawns at >20% corruption
 	if corruption > 20.0 and randf() < 0.06:
 		_add_pickup({pos = death_pos + Vector2(0, 10), type = "cleanse"})
+
+	run_total_kills += 1
 
 func _drop_ingredient(enemy: Dictionary) -> void:
 	var ing_id: String = enemy.get("ingredient_id", "")
@@ -4086,23 +4096,36 @@ func _die() -> void:
 	_show_message("DEAD")
 	debug_log_push("Player DIED | corr %.0f%% | wave %d | kills %d/%d" % [corruption, wave_current, target_kills, target_total])
 
+func _build_hunt_extras(status: String) -> Dictionary:
+	var contract: Dictionary = GameData.current_contract
+	return {
+		"contract_name": contract.get("name", "Hunt"),
+		"hunt_status": status,
+		"time_survived": hunt_elapsed,
+		"total_kills": run_total_kills,
+		"damage_dealt": run_damage_dealt,
+		"peak_corruption": run_peak_corruption,
+		"elite_kills": target_kills,
+	}
+
 func _complete_hunt() -> void:
 	var contract: Dictionary = GameData.current_contract
 	var reward: int = contract.get("reward", 50)
 	var corr: int = int(corruption)
 	var pristine_count: int = run_ingredients.filter(func(i): return i.get("is_pristine", false)).size()
 	SaveManager.complete_contract(reward, corr)
-	GameData.set_hunt_result(reward, corr, run_ingredients.size(), run_ingredients)
+	GameData.set_hunt_result(reward, corr, run_ingredients.size(), run_ingredients, _build_hunt_extras("COMPLETED"))
 	GameData.hunt_result["pristine_count"] = pristine_count
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 func _finish_hunt(credits: int) -> void:
 	var corr: int = int(corruption)
 	var pristine_count: int = run_ingredients.filter(func(i): return i.get("is_pristine", false)).size()
-	if credits == 0:
-		SaveManager.complete_contract(0, corr)
-		GameData.set_hunt_result(0, corr, 0)
-		GameData.hunt_result["pristine_count"] = pristine_count
+	var status: String = "FAILED" if credits == 0 else "ABANDONED"
+	# Save partial loot on death/abandon — ingredients collected are kept
+	SaveManager.complete_contract(credits, corr)
+	GameData.set_hunt_result(credits, corr, run_ingredients.size(), run_ingredients, _build_hunt_extras(status))
+	GameData.hunt_result["pristine_count"] = pristine_count
 	get_tree().change_scene_to_file("res://scenes/Results.tscn")
 
 # =========================================================

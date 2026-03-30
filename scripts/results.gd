@@ -71,10 +71,14 @@ func _draw() -> void:
 	_stat_row(left, y, "Apex kills", str(apex_kills))
 	y += 18.0
 
-	var peak_c: int = result.get("peak_corruption", 0)
-	var peak_name: String = CORRUPTION_NAMES[clampi(peak_c, 0, 3)]
-	var peak_color: Color = CORRUPTION_COLORS[clampi(peak_c, 0, 3)]
-	_stat_row_color(left, y, "Peak corruption", peak_name, peak_color)
+	var peak_c: float = result.get("peak_corruption", 0.0)
+	var peak_idx: int = 0
+	if peak_c >= 70.0: peak_idx = 3
+	elif peak_c >= 36.0: peak_idx = 2
+	elif peak_c >= 16.0: peak_idx = 1
+	var peak_name: String = CORRUPTION_NAMES[peak_idx]
+	var peak_color: Color = CORRUPTION_COLORS[peak_idx]
+	_stat_row_color(left, y, "Peak corruption", "%s (%.0f)" % [peak_name, peak_c], peak_color)
 	y += 18.0
 
 	var dmg_dealt: int = result.get("damage_dealt", 0)
@@ -121,13 +125,13 @@ func _draw() -> void:
 	# Corruption bonus
 	var corr_bonus: int = 0
 	var corr_desc: String = ""
-	if peak_c == 0:
+	if peak_c < 16.0:
 		corr_bonus = int(base_score * 0.3)
 		corr_desc = "Never left CLEAN (+30%)"
-	elif peak_c >= 3 and hunt_status == "COMPLETED":
+	elif peak_c >= 70.0 and hunt_status == "COMPLETED":
 		corr_bonus = int(base_score * 0.25)
 		corr_desc = "VOID survivor (+25%)"
-	elif peak_c >= 3 and hunt_status == "ABANDONED":
+	elif peak_c >= 70.0 and hunt_status == "ABANDONED":
 		corr_bonus = int(base_score * 0.5)
 		corr_desc = "VOID extracted (+50%)"
 	if corr_desc != "":

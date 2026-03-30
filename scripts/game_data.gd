@@ -126,10 +126,17 @@ func _generate_contract_of_type(ctype: String) -> Dictionary:
 func set_current_contract(contract: Dictionary) -> void:
 	current_contract = contract
 
-func set_hunt_result(credits: int, corruption: int, items: int, ingredients: Array = []) -> void:
+func set_hunt_result(credits: int, corruption: int, items: int, ingredients: Array = [], extras: Dictionary = {}) -> void:
 	hunt_result = {
 		"credits": credits,
 		"corruption": corruption,
 		"items": items,
 		"ingredients": ingredients,
+		"contract_name": extras.get("contract_name", "Hunt"),
+		"hunt_status": extras.get("hunt_status", "COMPLETED"),
+		"time_survived": extras.get("time_survived", 0.0),
+		"total_kills": extras.get("total_kills", 0),
+		"damage_dealt": extras.get("damage_dealt", 0),
+		"peak_corruption": extras.get("peak_corruption", corruption),
+		"elite_kills": extras.get("elite_kills", 0),
 	}
