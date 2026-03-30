@@ -419,6 +419,7 @@ var hunt_elapsed := 0.0   # total seconds in hunt
 var run_total_kills: int = 0   # all enemy kills (not just elites)
 var run_damage_dealt: int = 0  # total damage dealt to enemies
 var run_peak_corruption: float = 0.0  # highest corruption reached this run
+var elite_guard_timer: float = 0.0   # spawns adds near active elites for pressure
 
 # ── SPRINT 1: Feel & Atmosphere ────────────────────────────────────────────────
 var shake_timer: float = 0.0
@@ -436,8 +437,8 @@ var last_move_dir: Vector2 = Vector2.ZERO
 # ── END SPRINT 1 ───────────────────────────────────────────────────────────────
 var purge_timer := 0.0    # timer for dead enemy cleanup
 var rage_sweep_timer: float = 30.0  # force-aggro idle enemies periodically
-const WAVE_INTERVAL_START := 20.0
-const WAVE_INTERVAL_MIN   := 8.0
+const WAVE_INTERVAL_START := 12.0
+const WAVE_INTERVAL_MIN   := 5.0
 
 # === Elite system ===
 var elite_timer := 0.0
@@ -1120,6 +1121,27 @@ func _update_waves(delta: float) -> void:
 		_spawn_wave(depth)
 		wave_timer = wave_interval
 
+	# Elite guard pressure — while an elite is alive, spawn adds near it every 15s
+	elite_guard_timer -= delta
+	if elite_guard_timer <= 0.0:
+		elite_guard_timer = 15.0
+		for e in enemies:
+			if e.hp > 0 and e.get("is_elite", false):
+				# Spawn 4-6 adds within 200px of the elite
+				var rng_eg := RandomNumberGenerator.new()
+				rng_eg.randomize()
+				var add_count: int = rng_eg.randi_range(4, 6)
+				for _ag in range(add_count):
+					var offset: Vector2 = Vector2(rng_eg.randf_range(-180, 180), rng_eg.randf_range(-180, 180))
+					var add_pos: Vector2 = e.pos + offset
+					add_pos.x = clampf(add_pos.x, 60.0, WORLD_W - 60.0)
+					add_pos.y = clampf(add_pos.y, 60.0, WORLD_H - 60.0)
+					var biome: String = _get_biome_at(add_pos)
+					var pool: Array = BIOME_ENEMY_POOLS.get(biome, BIOME_ENEMY_POOLS["open"])
+					var ft: String = pool[rng_eg.randi_range(0, pool.size() - 1)]
+					_spawn_single_enemy(ft, false, rng_eg, add_pos)
+				break  # only one elite at a time gets guard adds
+
 	# Rage sweep: force-aggro idle enemies, frequency scales with time + corruption
 	rage_sweep_timer -= delta
 	var rage_interval: float = maxf(8.0, 30.0 - (hunt_elapsed / 30.0) - (corruption / 10.0))
@@ -1176,8 +1198,8 @@ func _spawn_wave(depth: int) -> void:
 	var effective_wave: int = min(wave_current, 10)
 	var time_bonus: int = int(hunt_elapsed / 60.0)                         # +1 per minute
 	var corr_bonus: int = int(corruption / 25.0)                           # +1 per 25% corruption
-	var base_fillers: int = 14 + depth * 4
-	var filler_count: int = base_fillers + (effective_wave - 1) * 2 + time_bonus + corr_bonus + rng.randi_range(0, 2)
+	var base_fillers: int = 20 + depth * 5
+	var filler_count: int = base_fillers + (effective_wave - 1) * 3 + time_bonus * 2 + corr_bonus + rng.randi_range(0, 3)
 	var spawn_start: int = enemies.size()
 	for i in range(filler_count):
 		# Determine spawn position first, then pick biome-appropriate type
@@ -1432,20 +1454,23 @@ func _roll_affixes(elite: Dictionary, count: int, rng: RandomNumberGenerator, is
 		affix_spawn_label_text = ", ".join(chosen)
 		affix_spawn_label_timer = 2.0
 
-func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator) -> void:
+func _spawn_single_enemy(type_name: String, is_target: bool, rng: RandomNumberGenerator, forced_pos: Vector2 = Vector2.ZERO) -> void:
 	var def: Dictionary = CREATURE_DEFS[type_name]
 	var pos := Vector2.ZERO
-	for _try in range(30):
-		pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
-		if pos.distance_to(player_pos) < 180.0:
-			continue
-		var blocked := false
-		for obs in obstacles:
-			if pos.distance_to(obs.pos) < obs.radius + def.radius + 10.0:
-				blocked = true
+	if forced_pos != Vector2.ZERO:
+		pos = forced_pos
+	else:
+		for _try in range(30):
+			pos = Vector2(rng.randf_range(200.0, WORLD_W - 200.0), rng.randf_range(200.0, WORLD_H - 200.0))
+			if pos.distance_to(player_pos) < 180.0:
+				continue
+			var blocked := false
+			for obs in obstacles:
+				if pos.distance_to(obs.pos) < obs.radius + def.radius + 10.0:
+					blocked = true
+					break
+			if not blocked:
 				break
-		if not blocked:
-			break
 
 	var enemy: Dictionary = {
 		type = type_name,
@@ -1707,8 +1732,8 @@ func _update_camera() -> void:
 	var vp_size := get_viewport_rect().size
 	var vp_center: Vector2 = vp_size * 0.5
 	# Lookahead: camera leads in movement direction
-	var target_lookahead: Vector2 = last_move_dir * 40.0
-	camera_lookahead = camera_lookahead.lerp(target_lookahead, 0.08)
+	var target_lookahead: Vector2 = last_move_dir * 24.0
+	camera_lookahead = camera_lookahead.lerp(target_lookahead, 0.04)
 	var target_pos: Vector2 = player_pos + camera_lookahead - vp_center
 	target_pos.x = clampf(target_pos.x, 0.0, WORLD_W - vp_size.x)
 	target_pos.y = clampf(target_pos.y, 0.0, WORLD_H - vp_size.y)
@@ -5135,19 +5160,18 @@ func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -
 # XP CURVE
 # =========================================================
 func _xp_needed_for_level(lv: int) -> int:
-	# Early: linear 3-kill steps (lv1→2 = 3, lv2→3 = 6, lv3→4 = 9...)
-	# Mid: hyperbolic ramp — meaningful upgrades still available
-	# Late: plateau — upgrades exhausted, only stat bumps remain; very slow grind
-	if lv <= 12:
-		return lv * 3              # 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36
-	elif lv <= 20:
-		# Accelerating curve: starts at ~50, reaches ~140 by lv20
-		var t: float = float(lv - 12) / 8.0   # 0.0 → 1.0
+	# Early: fast levels so player gets upgrades before first elite dies
+	# Mid: ramps up meaningfully
+	# Late: plateau — slow grind
+	if lv <= 8:
+		return lv * 2              # 2, 4, 6, 8, 10, 12, 14, 16 — very fast early
+	elif lv <= 16:
+		return 10 + (lv - 8) * 4  # 14, 18, 22, 26, 30, 34, 38, 42
+	elif lv <= 24:
+		var t: float = float(lv - 16) / 8.0
 		return int(50.0 + 90.0 * t * t)
 	else:
-		# Plateau: hyperbolic — each level costs significantly more
-		# lv21=160, lv25=240, lv30=340, lv40=540 — slow but never stops
-		return int(160.0 + float(lv - 20) * 20.0)
+		return int(160.0 + float(lv - 24) * 20.0)
 
 # =========================================================
 # KIT SYSTEM
@@ -5950,26 +5974,30 @@ func _update_familiar(delta: float) -> void:
 	if familiar2_active:
 		var orbit2: float = fmod(hunt_elapsed * 1.5 + PI + PI, TAU)
 		familiar2_pos = player_pos + Vector2(cos(orbit2), sin(orbit2)) * 55.0
-	# Corruption cost
-	familiar_corruption_timer -= delta
-	var corr_interval: float = 8.0 if fam_tier < 2 else 6.0
-	if familiar_corruption_timer <= 0.0:
-		corruption += 1.0
-		familiar_corruption_timer = corr_interval
-	# Attack nearby enemy
+	# Corruption cost — only T2+ has a corruption cost (T1 is free)
+	if fam_tier >= 2:
+		familiar_corruption_timer -= delta
+		var corr_interval: float = 10.0 if fam_tier < 3 else 8.0
+		if familiar_corruption_timer <= 0.0:
+			corruption += 1.0
+			familiar_corruption_timer = corr_interval
+
+	# Attack nearby enemy — faster at higher tiers, meaningful damage
 	familiar_attack_timer -= delta
-	var atk_interval: float = 3.0 if fam_tier < 2 else 2.0
+	var atk_interval: float = 1.5 if fam_tier < 2 else 1.0
+	var atk_dmg: int = 4 if fam_tier < 2 else (6 if fam_tier < 3 else 10)
+	var atk_range: float = 220.0 if fam_tier < 2 else 280.0
 	if familiar_attack_timer <= 0.0:
 		familiar_attack_timer = atk_interval
 		var positions: Array = [familiar_pos]
 		if familiar2_active:
 			positions.append(familiar2_pos)
 		for fpos in positions:
-			var best_dist: float = 150.0
+			var best_dist: float = atk_range
 			var best_idx: int = -1
 			for ei in range(enemies.size()):
 				var e: Dictionary = enemies[ei]
-				if e.hp <= 0:
+				if e.hp <= 0 or e.get("is_ally", false):
 					continue
 				var d: float = fpos.distance_to(e.pos)
 				if d < best_dist:
@@ -5977,8 +6005,15 @@ func _update_familiar(delta: float) -> void:
 					best_idx = ei
 			if best_idx >= 0:
 				var e: Dictionary = enemies[best_idx]
-				e.hp -= 2
+				var dmg: int = atk_dmg
+				# T3 void: damage scales with corruption
+				if fam_tier >= 3 and fam_t3 == "void":
+					dmg = int(float(dmg) * (1.0 + corruption / 50.0))
+				e.hp -= dmg
+				run_damage_dealt += dmg
 				enemies[best_idx] = e
+				# Small visual flash at familiar position
+				_add_aoe_flash({pos = fpos, radius = 20.0, timer = 0.1, color = Color(0.6, 0.2, 1.0, 0.5)})
 				if e.hp <= 0:
 					_on_enemy_killed(best_idx)
 
