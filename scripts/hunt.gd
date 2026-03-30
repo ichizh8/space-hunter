@@ -419,6 +419,21 @@ var hunt_elapsed := 0.0   # total seconds in hunt
 var run_total_kills: int = 0   # all enemy kills (not just elites)
 var run_damage_dealt: int = 0  # total damage dealt to enemies
 var run_peak_corruption: float = 0.0  # highest corruption reached this run
+
+# ── SPRINT 1: Feel & Atmosphere ────────────────────────────────────────────────
+var shake_timer: float = 0.0
+var shake_intensity: float = 0.0
+var shake_offset: Vector2 = Vector2.ZERO
+
+var apex_warning_timer: float = 0.0   # counts down 5s before apex spawns
+var apex_warning_active: bool = false
+
+var cleanse_drought_timer: float = 0.0  # time spent above 50 corruption without cleanse drop
+var run_start_gift_done: bool = false   # first-30s gift spawned
+
+var camera_lookahead: Vector2 = Vector2.ZERO  # smoothed lookahead offset
+var last_move_dir: Vector2 = Vector2.ZERO
+# ── END SPRINT 1 ───────────────────────────────────────────────────────────────
 var purge_timer := 0.0    # timer for dead enemy cleanup
 var rage_sweep_timer: float = 30.0  # force-aggro idle enemies periodically
 const WAVE_INTERVAL_START := 20.0
@@ -1085,6 +1100,9 @@ func _update_waves(delta: float) -> void:
 	if corruption > run_peak_corruption:
 		run_peak_corruption = corruption
 
+	_update_shake(delta)
+	_update_sprint1(delta)
+
 	# Count living non-elite enemies
 	var alive: int = 0
 	for e in enemies:
@@ -1126,6 +1144,12 @@ func _update_waves(delta: float) -> void:
 	# Apex elite timer
 	if not apex_active:
 		apex_timer -= delta
+		# 5-second warning before Apex spawns
+		if apex_timer <= 5.0 and apex_timer > 0.0 and not apex_warning_active:
+			apex_warning_active = true
+			apex_warning_timer = apex_timer
+			_show_message("Something vast approaches...")
+			_trigger_shake(3.0, 0.3)
 		if apex_timer <= 0.0:
 			var depth: int = GameData.current_contract.get("depth", 1)
 			_spawn_apex_elite(depth)
@@ -1254,7 +1278,8 @@ func _spawn_elite(depth: int) -> void:
 	if rng.randf() < 0.3:
 		elite_type = ELITE_TYPES[rng.randi_range(0, ELITE_TYPES.size() - 1)]
 
-	_show_message("ELITE: %s approaching!" % elite_type)
+	var _elite_epithet: String = _get_epithet()
+	var _elite_display_name: String = "%s — %s" % [elite_type, _elite_epithet]
 
 	var pos: Vector2 = _find_elite_spawn_pos(rng)
 	var hp_scale: float = 1.0 + (depth - 1) * 0.5 + elite_spawned_count * 0.2
@@ -1304,7 +1329,9 @@ func _spawn_elite(depth: int) -> void:
 	_roll_affixes(elite, affix_count, rng)
 
 	enemies.append(elite)
-	debug_log_push("Elite spawned: %s [%s]" % [elite_type, ",".join(elite.get("affixes", []))])
+	_show_message("ELITE: %s" % _elite_display_name)
+	_trigger_shake(2.0, 0.1)
+	debug_log_push("Elite spawned: %s [%s]" % [_elite_display_name, ",".join(elite.get("affixes", []))])
 
 func _spawn_apex_elite(depth: int) -> void:
 	apex_spawned_count += 1
@@ -1316,7 +1343,8 @@ func _spawn_apex_elite(depth: int) -> void:
 	if rng.randf() < 0.3:
 		apex_type = APEX_TYPES[rng.randi_range(0, APEX_TYPES.size() - 1)]
 
-	_show_message("!! APEX: %s !!" % apex_type)
+	var _apex_name: String = "%s — %s" % [apex_type, _get_epithet()]
+	_show_message("!! APEX: %s !!" % _apex_name)
 	var pos: Vector2 = _find_elite_spawn_pos(rng)
 	var hp_scale: float = 1.0 + (depth - 1) * 0.5
 
@@ -1356,8 +1384,9 @@ func _spawn_apex_elite(depth: int) -> void:
 	enemies.append(elite)
 	debug_log_push("APEX spawned: %s [%s]" % [apex_type, ",".join(elite.get("affixes", []))])
 
-	# Screen flash
+	# Screen flash + heavy shake
 	_add_aoe_flash({pos = player_pos, radius = 400.0, timer = 0.5, color = Color(1.0, 0.85, 0.0, 0.3)})
+	_trigger_shake(10.0, 0.5)
 
 const ALL_AFFIXES: Array = ["extra_fast", "vampiric", "shielded", "teleporter", "venomous", "berserker", "spectral", "multiplier", "magnetic", "voidbound", "armored", "corrupting"]
 const BANNED_COMBOS: Array = [["voidbound", "teleporter"], ["multiplier", "spectral"]]
@@ -1636,6 +1665,9 @@ func _move_player(delta: float) -> void:
 	if move_dir == Vector2.ZERO:
 		move_dir = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 
+	if move_dir != Vector2.ZERO:
+		last_move_dir = move_dir
+
 	if move_dir == Vector2.ZERO:
 		return
 
@@ -1674,9 +1706,13 @@ func _move_player(delta: float) -> void:
 func _update_camera() -> void:
 	var vp_size := get_viewport_rect().size
 	var vp_center: Vector2 = vp_size * 0.5
-	camera_offset = player_pos - vp_center
-	camera_offset.x = clampf(camera_offset.x, 0.0, WORLD_W - vp_size.x)
-	camera_offset.y = clampf(camera_offset.y, 0.0, WORLD_H - vp_size.y)
+	# Lookahead: camera leads in movement direction
+	var target_lookahead: Vector2 = last_move_dir * 40.0
+	camera_lookahead = camera_lookahead.lerp(target_lookahead, 0.08)
+	var target_pos: Vector2 = player_pos + camera_lookahead - vp_center
+	target_pos.x = clampf(target_pos.x, 0.0, WORLD_W - vp_size.x)
+	target_pos.y = clampf(target_pos.y, 0.0, WORLD_H - vp_size.y)
+	camera_offset = target_pos + shake_offset
 
 func _update_weapons(delta: float) -> void:
 	if main_weapon.is_empty():
@@ -2688,6 +2724,9 @@ func _update_enemies(delta: float) -> void:
 				var spd: float = e.speed
 				if e.behavior == "burst" and e.burst_active:
 					spd *= 2.5
+				# Elite last-HP slowdown: below 20% HP elite slows 30%
+				if e.get("is_elite", false) and e.hp > 0 and float(e.hp) / float(maxi(e.max_hp, 1)) < 0.2:
+					spd *= 0.7
 				# Slow debuff (#1)
 				var now_sec: float = Time.get_ticks_msec() * 0.001
 				if e.get("slow_until", 0.0) > now_sec:
@@ -2717,6 +2756,7 @@ func _update_enemies(delta: float) -> void:
 						player_hp -= e.melee_dmg
 						enemy_melee_cooldowns[cd_key] = 1.0
 						player_hit_flash = 0.2
+						_trigger_shake(3.0, 0.12)
 						_show_message("Hit! -%d HP" % e.melee_dmg)
 						# Adrenaline reset on hit
 						adrenaline_stack = 0
@@ -3342,9 +3382,16 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	var hp_drop_chance: float = 0.08 if corruption < 35.0 else 0.04
 	if player_hp < player_max_hp and randf() < hp_drop_chance:
 		_add_pickup({pos = death_pos + Vector2(10, 0), type = "health"})
-	# ~6% chance: cleanse shard — reduces corruption by 10, only spawns at >20% corruption
-	if corruption > 20.0 and randf() < 0.06:
-		_add_pickup({pos = death_pos + Vector2(0, 10), type = "cleanse"})
+	# Cleanse shard drop — base 6%, pity spike after 3min above 50 corruption
+	var cleanse_chance: float = 0.06
+	if corruption > 20.0:
+		if cleanse_drought_timer > 300.0:
+			cleanse_chance = 1.0  # guaranteed after 5 min of high corruption
+		elif cleanse_drought_timer > 180.0:
+			cleanse_chance = 0.35  # 35% after 3 min
+		if corruption > 20.0 and randf() < cleanse_chance:
+			_add_pickup({pos = death_pos + Vector2(0, 10), type = "cleanse"})
+			cleanse_drought_timer = 0.0  # reset pity on successful drop
 
 	run_total_kills += 1
 
@@ -4141,11 +4188,99 @@ func _update_hud_message(delta: float) -> void:
 		if hud_message_timer <= 0.0:
 			hud_message = ""
 
+# ── SPRINT 1 SYSTEMS ──────────────────────────────────────
+
+const CORRUPTION_FLAVOR: Array = [
+	"The void keeps its distance.",        # 0-15
+	"Something watches from the edge.",    # 16-35
+	"The void is patient.",                # 36-55
+	"You are no longer invisible to it.",  # 56-75
+	"The void speaks now.",                # 76-89
+	"You are the void.",                   # 90+
+]
+
+const ELITE_EPITHETS: Array = [
+	"The Patient", "The Furious", "The Pale", "The Silent", "The Ancient",
+	"The Relentless", "Twice-Dead", "The Hollow", "Null", "The Burning",
+	"The Forgotten", "The Starved", "Unmoved", "The Ashen", "The Last",
+	"Undying", "The Witness", "The Ravenous", "The Blind", "The Scarred",
+	"The Inevitable", "The Distant", "The Wrathful", "The Cold", "The Lost",
+	"The Infinite", "The Broken", "The Betrayed", "The Dreaming", "The Still",
+	"The Waiting", "Unmerciful", "The Pure", "The Tainted", "The First",
+	"The Void-Touched", "The Consumed", "The Chosen", "The Returned", "The Final",
+]
+
+var _used_epithets: Array = []
+
+func _get_epithet() -> String:
+	var available: Array = ELITE_EPITHETS.filter(func(e): return not _used_epithets.has(e))
+	if available.is_empty():
+		_used_epithets.clear()
+		available = ELITE_EPITHETS.duplicate()
+	available.shuffle()
+	var ep: String = available[0]
+	_used_epithets.append(ep)
+	return ep
+
+func _get_corruption_flavor() -> String:
+	var c: float = corruption
+	if c >= 90.0: return CORRUPTION_FLAVOR[5]
+	elif c >= 76.0: return CORRUPTION_FLAVOR[4]
+	elif c >= 56.0: return CORRUPTION_FLAVOR[3]
+	elif c >= 36.0: return CORRUPTION_FLAVOR[2]
+	elif c >= 16.0: return CORRUPTION_FLAVOR[1]
+	return CORRUPTION_FLAVOR[0]
+
+func _update_sprint1(delta: float) -> void:
+	# Run-start gift — spawn health + essence near player within first 30s
+	if not run_start_gift_done and hunt_elapsed > 2.0:
+		run_start_gift_done = true
+		var rng_gift := RandomNumberGenerator.new()
+		rng_gift.randomize()
+		_add_pickup({pos = player_pos + Vector2(rng_gift.randf_range(-80, 80), rng_gift.randf_range(-80, 80)), type = "health"})
+		_add_pickup({pos = player_pos + Vector2(rng_gift.randf_range(-80, 80), rng_gift.randf_range(-80, 80)), type = "essence"})
+		_add_pickup({pos = player_pos + Vector2(rng_gift.randf_range(-80, 80), rng_gift.randf_range(-80, 80)), type = "essence"})
+
+	# Apex 5-second warning
+	if apex_warning_active:
+		apex_warning_timer -= delta
+		if apex_warning_timer <= 0.0:
+			apex_warning_active = false
+
+	# Pity cleanse: if above 50 corruption for >3 min, spike cleanse drops
+	if corruption >= 50.0:
+		cleanse_drought_timer += delta
+	else:
+		cleanse_drought_timer = maxf(0.0, cleanse_drought_timer - delta * 2.0)
+
+# ── END SPRINT 1 SYSTEMS ──────────────────────────────────
+
+# ── SCREEN SHAKE ──────────────────────────────────────────
+func _trigger_shake(intensity: float, duration: float) -> void:
+	if intensity > shake_intensity:
+		shake_intensity = intensity
+	if duration > shake_timer:
+		shake_timer = duration
+
+func _update_shake(delta: float) -> void:
+	if shake_timer > 0.0:
+		shake_timer -= delta
+		var angle: float = randf() * TAU
+		shake_offset = Vector2(cos(angle), sin(angle)) * shake_intensity
+		shake_intensity = lerpf(shake_intensity, 0.0, 0.25)
+		if shake_timer <= 0.0:
+			shake_offset = Vector2.ZERO
+			shake_intensity = 0.0
+	else:
+		shake_offset = Vector2.ZERO
+# ── END SCREEN SHAKE ──────────────────────────────────────
+
 # =========================================================
 # HELPERS — perk effects
 # =========================================================
 func _bullet_explode(impact_pos: Vector2, dmg: int) -> void:
 	_add_aoe_flash({pos = impact_pos, radius = 60.0, timer = 0.3, color = Color(1.0, 0.6, 0.1, 0.7)})
+	_trigger_shake(4.0, 0.15)
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
 		if ae.hp <= 0 or ae.get("is_ally", false):
@@ -4184,6 +4319,7 @@ func _grenade_explode(impact_pos: Vector2, dmg: int, wid: String, is_mini: bool 
 	var mods_g: Dictionary = weapon_mods.get(wid, {})
 	var aoe_radius: float = 80.0 + mods_g.get("aoe_radius_bonus", 0.0)
 	_add_aoe_flash({pos = impact_pos, radius = aoe_radius, timer = 0.3, color = Color(0.4, 0.9, 0.2, 0.7)})
+	_trigger_shake(6.0 if not is_mini else 3.0, 0.2)
 	for ei2 in range(enemies.size()):
 		var ae: Dictionary = enemies[ei2]
 		if ae.hp <= 0:
@@ -4760,6 +4896,20 @@ func _draw() -> void:
 		if main_weapon.mutated:
 			mut_str = " [%s]" % main_weapon.mutation_type.to_upper()
 		_draw_text(Vector2(4.0, wy), def.name + " Lv" + str(main_weapon.level) + mut_str + ammo_str + reload_indicator, Color(0.6,0.7,0.9,0.85), 11)
+
+	# Corruption flavor text (bottom center, subtle)
+	var flavor: String = _get_corruption_flavor()
+	var flavor_alpha: float = 0.45 + 0.35 * (corruption / 100.0)
+	var flavor_color: Color = Color(0.6, 0.4, 0.9, flavor_alpha) if corruption >= 36.0 else Color(0.5, 0.8, 0.5, flavor_alpha)
+	_draw_text(Vector2(vp_size.x * 0.5 - 100.0, vp_size.y - 52.0), flavor, flavor_color, 11)
+
+	# Apex warning pulse (screen edges)
+	if apex_warning_active:
+		var pulse: float = sin(Time.get_ticks_msec() * 0.006) * 0.5 + 0.5
+		draw_rect(Rect2(0, 0, vp_size.x, 4), Color(0.9, 0.1, 0.1, 0.5 * pulse))
+		draw_rect(Rect2(0, vp_size.y - 4, vp_size.x, 4), Color(0.9, 0.1, 0.1, 0.5 * pulse))
+		draw_rect(Rect2(0, 0, 4, vp_size.y), Color(0.9, 0.1, 0.1, 0.5 * pulse))
+		draw_rect(Rect2(vp_size.x - 4, 0, 4, vp_size.y), Color(0.9, 0.1, 0.1, 0.5 * pulse))
 
 	# HUD message (center)
 	if hud_message != "":

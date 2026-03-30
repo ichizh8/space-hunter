@@ -350,6 +350,17 @@ func _ready() -> void:
 	if SaveManager.data.contracts_completed == 0 and not SaveManager.data.active_bonuses.get("_intro_seen", false):
 		call_deferred("_show_intro_panel")
 
+	# Endowed progress — gift starter rep + ingredients on very first launch
+	if not SaveManager.data.active_bonuses.get("_endowed_progress", false):
+		SaveManager.data.active_bonuses["_endowed_progress"] = true
+		for track in ["contractor", "void_walker", "tactician", "scrapper"]:
+			SaveManager.data.reputation[track] = SaveManager.data.reputation.get(track, 0) + 5
+		for ing in ["rift_dust", "void_crystal", "cave_moss", "river_silt"]:
+			SaveManager.data.pantry[ing] = SaveManager.data.pantry.get(ing, 0) + 1
+		SaveManager.save_game()
+		_update_stats()
+		_update_pantry()
+
 # ── INTRO ONBOARDING ──────────────────────────────────────────────────────────
 
 const INTRO_SLIDES: Array = [
