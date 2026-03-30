@@ -152,11 +152,23 @@ func _ready() -> void:
 	for child in vbox.get_children():
 		child.queue_free()
 
-	# Title
+	# Title row with help button
+	var title_row := HBoxContainer.new()
+	title_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(title_row)
+
 	var title := Label.new()
 	title.text = "The Wanderer — Your Ship"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title)
+
+	var help_btn := Button.new()
+	help_btn.text = "?"
+	help_btn.custom_minimum_size = Vector2(36, 36)
+	help_btn.tooltip_text = "How to play"
+	help_btn.pressed.connect(_show_intro_panel)
+	title_row.add_child(help_btn)
 
 	# Stats
 	stats_label = Label.new()
