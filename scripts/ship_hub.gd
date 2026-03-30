@@ -468,19 +468,18 @@ func _build_intro_slide() -> void:
 	btn_row.add_theme_constant_override("separation", 16)
 	outer.add_child(btn_row)
 
-	# Skip (only on non-last slides)
-	if _intro_slide_index < INTRO_SLIDES.size() - 1:
-		var skip_btn := Button.new()
-		skip_btn.text = "Skip"
-		skip_btn.custom_minimum_size = Vector2(90, 44)
-		var skip_style := StyleBoxFlat.new()
-		skip_style.bg_color = Color(0.15, 0.15, 0.2)
-		skip_style.corner_radius_top_left = 6; skip_style.corner_radius_top_right = 6
-		skip_style.corner_radius_bottom_left = 6; skip_style.corner_radius_bottom_right = 6
-		skip_btn.add_theme_stylebox_override("normal", skip_style)
-		skip_btn.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
-		skip_btn.pressed.connect(_close_intro)
-		btn_row.add_child(skip_btn)
+	# Skip on non-last slides, Close on last slide
+	var skip_btn := Button.new()
+	skip_btn.text = "Skip" if _intro_slide_index < INTRO_SLIDES.size() - 1 else "Close"
+	skip_btn.custom_minimum_size = Vector2(90, 44)
+	var skip_style := StyleBoxFlat.new()
+	skip_style.bg_color = Color(0.15, 0.15, 0.2)
+	skip_style.corner_radius_top_left = 6; skip_style.corner_radius_top_right = 6
+	skip_style.corner_radius_bottom_left = 6; skip_style.corner_radius_bottom_right = 6
+	skip_btn.add_theme_stylebox_override("normal", skip_style)
+	skip_btn.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
+	skip_btn.pressed.connect(_close_intro)
+	btn_row.add_child(skip_btn)
 
 	# Next / Let's Go
 	var next_btn := Button.new()
@@ -505,13 +504,13 @@ func _build_intro_slide() -> void:
 func _intro_next() -> void:
 	if _intro_slide_index < INTRO_SLIDES.size() - 1:
 		_intro_slide_index += 1
-		_build_intro_slide()
+		call_deferred("_build_intro_slide")
 	else:
-		_close_intro()
+		call_deferred("_close_intro")
 
 func _close_intro() -> void:
 	var panel := get_node_or_null("IntroPanel")
-	if panel:
+	if is_instance_valid(panel):
 		panel.queue_free()
 	# Mark intro as seen so it never shows again
 	SaveManager.data.active_bonuses["_intro_seen"] = true
