@@ -451,20 +451,12 @@ func _build_intro_slide() -> void:
 	bg.bg_color = UITheme.BG_OVERLAY
 	panel.add_theme_stylebox_override("panel", bg)
 
-	# Content card in the center
-	var card := PanelContainer.new()
-	card.position = Vector2(vp_size.x * 0.06, vp_size.y * 0.08)
-	card.size = Vector2(vp_size.x * 0.88, vp_size.y * 0.84)
-	var card_style := UITheme.make_panel_style(
-		UITheme.BG_MEDIUM,
-		Color(slide.color.r * 0.5, slide.color.g * 0.5, slide.color.b * 0.5)
-	)
-	card.add_theme_stylebox_override("panel", card_style)
-	panel.add_child(card)
-
+	# Content area — direct VBoxContainer on panel (no PanelContainer wrapper)
 	var outer := VBoxContainer.new()
+	outer.position = Vector2(vp_size.x * 0.08, vp_size.y * 0.10)
+	outer.size = Vector2(vp_size.x * 0.84, vp_size.y * 0.80)
 	outer.add_theme_constant_override("separation", UITheme.MARGIN_LG)
-	card.add_child(outer)
+	panel.add_child(outer)
 
 	# Progress bar (pixel segments)
 	var progress_hbox := HBoxContainer.new()
