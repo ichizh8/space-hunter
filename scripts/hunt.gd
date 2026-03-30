@@ -5984,9 +5984,9 @@ func _update_familiar(delta: float) -> void:
 
 	# Attack nearby enemy — faster at higher tiers, meaningful damage
 	familiar_attack_timer -= delta
-	var atk_interval: float = 1.5 if fam_tier < 2 else 1.0
-	var atk_dmg: int = 4 if fam_tier < 2 else (6 if fam_tier < 3 else 10)
-	var atk_range: float = 220.0 if fam_tier < 2 else 280.0
+	var atk_interval: float = 3.0 if fam_tier < 2 else (2.2 if fam_tier < 3 else 1.5)
+	var atk_dmg: int = 2 if fam_tier < 2 else (4 if fam_tier < 3 else 7)
+	var atk_range: float = 160.0 if fam_tier < 2 else (200.0 if fam_tier < 3 else 240.0)
 	if familiar_attack_timer <= 0.0:
 		familiar_attack_timer = atk_interval
 		var positions: Array = [familiar_pos]
