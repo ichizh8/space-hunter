@@ -19,20 +19,18 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.4
+    env:
+      HOME: /root
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Godot export templates
+      - name: Verify export templates
         run: |
-          mkdir -p /root/.local/share/godot/export_templates/
-          GODOT_VERSION=$(godot --version | grep -oP '^\d+\.\d+(\.\d+)?')
-          TEMPLATE_DIR="/root/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
-          if [ ! -d "$TEMPLATE_DIR" ]; then
-            EXISTING=$(ls /root/.local/share/godot/export_templates/ | head -1)
-            if [ -n "$EXISTING" ]; then
-              ln -s "/root/.local/share/godot/export_templates/$EXISTING" "$TEMPLATE_DIR"
-            fi
-          fi
+          echo "Godot version:"
+          godot --version
+          echo "Export templates:"
+          ls -la /root/.local/share/godot/export_templates/ || echo "No templates dir"
+          ls -la /root/.local/share/godot/export_templates/*/ || echo "No version dirs"
 
       - name: Import project
         run: godot --headless --import 2>&1 || true
