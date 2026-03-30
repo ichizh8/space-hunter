@@ -1,4 +1,5 @@
 extends Node
+# v47 — CI/CD pipeline test (auto-export + deploy via GitHub Actions)
 
 const CREATURE_TYPES := ["Void Leech", "Shadow Crawler", "Abyss Worm", "Nether Stalker", "Rift Parasite"]
 const CONTRACT_NAMES_PREFIX := ["Exterminate", "Purge", "Eliminate", "Hunt Down", "Eradicate"]
