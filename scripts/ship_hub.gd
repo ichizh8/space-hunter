@@ -405,7 +405,7 @@ func _show_intro_panel() -> void:
 func _build_intro_slide() -> void:
 	var existing := get_node_or_null("IntroPanel")
 	if existing:
-		existing.queue_free()
+		existing.call_deferred("queue_free")
 
 	var slide: Dictionary = INTRO_SLIDES[_intro_slide_index]
 	var vp_size := get_viewport_rect().size
@@ -500,6 +500,7 @@ func _build_intro_slide() -> void:
 	btn_row.add_child(next_btn)
 
 	add_child(panel)
+	panel.move_to_front()
 
 func _intro_next() -> void:
 	if _intro_slide_index < INTRO_SLIDES.size() - 1:
@@ -511,7 +512,7 @@ func _intro_next() -> void:
 func _close_intro() -> void:
 	var panel := get_node_or_null("IntroPanel")
 	if is_instance_valid(panel):
-		panel.queue_free()
+		panel.call_deferred("queue_free")
 	# Mark intro as seen so it never shows again
 	SaveManager.data.active_bonuses["_intro_seen"] = true
 	SaveManager.save_game()
