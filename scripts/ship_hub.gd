@@ -397,6 +397,8 @@ const INTRO_SLIDES: Array = [
 ]
 
 var _intro_slide_index: int = 0
+var _intro_pending_next: bool = false
+var _intro_pending_close: bool = false
 
 func _show_intro_panel() -> void:
 	_intro_slide_index = 0
@@ -504,18 +506,32 @@ func _build_intro_slide() -> void:
 
 func _intro_next() -> void:
 	if _intro_slide_index < INTRO_SLIDES.size() - 1:
-		_intro_slide_index += 1
-		_build_intro_slide()
+		_intro_pending_next = true
 	else:
-		_close_intro()
+		_intro_pending_close = true
 
 func _close_intro() -> void:
+	_intro_pending_close = true
+
+func _do_intro_next() -> void:
+	_intro_slide_index += 1
+	_build_intro_slide()
+
+func _do_close_intro() -> void:
 	var panel := get_node_or_null("IntroPanel")
 	if is_instance_valid(panel):
 		panel.queue_free()
 	# Mark intro as seen so it never shows again
 	SaveManager.data.active_bonuses["_intro_seen"] = true
 	SaveManager.save_game()
+
+func _process(_delta: float) -> void:
+	if _intro_pending_next:
+		_intro_pending_next = false
+		_do_intro_next()
+	if _intro_pending_close:
+		_intro_pending_close = false
+		_do_close_intro()
 
 # ── END INTRO ONBOARDING ───────────────────────────────────────────────────────
 
