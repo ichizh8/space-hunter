@@ -528,10 +528,10 @@ func _do_close_intro() -> void:
 func _process(_delta: float) -> void:
 	if _intro_pending_next:
 		_intro_pending_next = false
-		_do_intro_next()
+		call_deferred("_do_intro_next")
 	if _intro_pending_close:
 		_intro_pending_close = false
-		_do_close_intro()
+		call_deferred("_do_close_intro")
 
 # ── END INTRO ONBOARDING ───────────────────────────────────────────────────────
 
