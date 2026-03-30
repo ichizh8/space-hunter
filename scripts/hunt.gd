@@ -5,6 +5,24 @@ const WORLD_W := 4800
 const WORLD_H := 4800
 const GRID_STEP := 300
 
+const MAX_LEVEL := 12
+const XP_PER_LEVEL: Array = [0, 5, 10, 18, 28, 42, 60, 82, 108, 138, 170, 210]
+# index = level (1-11), value = kills needed to reach level+1
+# post-cap threshold = 210 (same as last)
+const POST_CAP_ROTATION: Array = ["move_speed", "attack_speed", "projectile_speed", "reload_speed"]
+const POST_CAP_LIMITS: Dictionary = {
+	"move_speed": 4,
+	"attack_speed": 3,
+	"projectile_speed": 4,
+	"reload_speed": 3,
+}
+const POST_CAP_VALUES: Dictionary = {
+	"move_speed": 5.0,
+	"attack_speed": -0.02,
+	"projectile_speed": 15.0,
+	"reload_speed": -0.05,
+}
+
 # === Weapon definitions ===
 const WEAPON_DEFS: Dictionary = {
 	# Sidearm: safe, balanced, no gimmick — pure reliability
@@ -114,10 +132,6 @@ const RUN_MODIFIERS: Array = [
 	{id="biome_bond",   rarity="rare",   icon="B", name="Biome Bond",    desc="+20% damage while in your starting biome"},
 	{id="precision",    rarity="rare",   icon="X", name="Precision",     desc="First shot after reload always crits (2x damage)"},
 	{id="void_drain",   rarity="common", icon="D", name="Void Drain",    desc="Killing void enemies reduces corruption by 3"},
-	{id="tough",        rarity="common", icon="T", name="Reinforced Suit", desc="+3 max HP, heal to full"},
-	{id="speed",        rarity="common", icon="F", name="Thruster Boost", desc="+25 move speed"},
-	{id="reload",       rarity="common", icon="R", name="Speed Loader",  desc="Reload time -30%"},
-	{id="magplus",      rarity="common", icon="A", name="Extended Mag",  desc="+4 ammo"},
 	{id="dodge",        rarity="rare",   icon="G", name="Phase Shift",   desc="10% chance to dodge a hit"},
 	{id="vamp",         rarity="rare",   icon="H", name="Blood Harvest", desc="1 in 5 kills restores 1 HP"},
 	{id="elite_dmg",    rarity="rare",   icon="K", name="Hunters Mark",  desc="+30% damage vs elites"},
@@ -366,6 +380,65 @@ const RESONANCE_POOL: Array = [
 	{id="surge_charge", kits=["void_surge","charge_kit"], icon="X", name="Surge Charge", desc="Void surge resets charge kit cooldown instantly."},
 ]
 
+const KIT_PERKS: Dictionary = {
+	"stim_pack": [
+		{id="withdrawal", icon="W", name="Withdrawal", rarity="common", desc="After stim wears off: next hit absorbed (0 dmg)."},
+		{id="adrenaline_spike", icon="A", name="Adrenaline Spike", rarity="rare", desc="Stim causes nearby enemies to scatter 80px."},
+	],
+	"flash_trap": [
+		{id="trap_magnetism", icon="M", name="Trap Magnetism", rarity="rare", desc="Stunned enemy pulls 2 nearby enemies toward it."},
+		{id="fragile_state", icon="F", name="Fragile State", rarity="common", desc="Enemies emerging from stun take 2x dmg for 1s."},
+	],
+	"smoke_kit": [
+		{id="afterburn", icon="A", name="Afterburn", rarity="common", desc="Enemies exiting smoke are slowed 40% for 2s."},
+		{id="lure", icon="L", name="Lure", rarity="rare", desc="Multiple enemies inside smoke ignore player and attack each other."},
+	],
+	"familiar_kit": [
+		{id="spotter", icon="S", name="Spotter", rarity="common", desc="Familiar marks highest-HP enemy — your bullets +30% to marked target."},
+		{id="leash_break", icon="X", name="Leash Break", rarity="rare", desc="If familiar is hit, it explodes once (5 dmg, 80px AOE)."},
+	],
+	"blink_kit": [
+		{id="arrival_strike", icon="A", name="Arrival Strike", rarity="common", desc="Blink arrival pushes nearby enemies away 100px."},
+		{id="swap", icon="S", name="Swap", rarity="rare", desc="Blink teleports to nearest enemy instead of direction."},
+	],
+	"chain_kit": [
+		{id="conductor", icon="C", name="Conductor", rarity="rare", desc="While enemy is tethered, your bullets ricochet off them once."},
+		{id="drag", icon="D", name="Drag", rarity="common", desc="Tethered enemy is slowly pulled toward you 20px/s."},
+	],
+	"charge_kit": [
+		{id="aftershock", icon="A", name="Aftershock", rarity="common", desc="Charge impact leaves a 3s slow field at landing point."},
+		{id="redirect", icon="R", name="Redirect", rarity="rare", desc="Hitting a wall during charge bounces you perpendicular."},
+	],
+	"mirage_kit": [
+		{id="magnet_decoy", icon="M", name="Magnet Decoy", rarity="common", desc="Decoy pulls enemies within 120px toward it."},
+		{id="copycat", icon="X", name="Copycat", rarity="rare", desc="Decoy fires your last weapon shot every 3s."},
+	],
+	"turret_kit": [
+		{id="target_priority", icon="T", name="Target Priority", rarity="common", desc="Turret only fires at enemies you have hit in the last 2s."},
+		{id="overheat", icon="O", name="Overheat", rarity="rare", desc="Turret explodes on death (70px AOE, 4 dmg) instead of disappearing."},
+	],
+	"drone_kit": [
+		{id="intercept_link", icon="I", name="Intercept Link", rarity="rare", desc="Drone-intercepted bullets explode (20px AOE) damaging the shooter."},
+		{id="shepherd", icon="H", name="Shepherd", rarity="common", desc="Drone slowly herds pickups toward player."},
+	],
+	"pack_kit": [
+		{id="sacrifice", icon="S", name="Sacrifice", rarity="rare", desc="When an ally dies, you gain 2s invincibility."},
+		{id="frenzy_aura", icon="F", name="Frenzy Aura", rarity="common", desc="Each nearby ally increases your fire rate 8% (max 3)."},
+	],
+	"void_surge": [
+		{id="void_trail", icon="V", name="Void Trail", rarity="common", desc="Surge leaves a corruption zone along your path (3s, +3 corr/s to enemies)."},
+		{id="phase_burst", icon="P", name="Phase Burst", rarity="rare", desc="At surge end: shockwave pushes all enemies 80px."},
+	],
+	"anchor_kit": [
+		{id="crush_zone", icon="C", name="Crush Zone", rarity="common", desc="Enemies inside anchor pull zone take 2x dmg from all sources."},
+		{id="chain_reaction", icon="X", name="Chain Reaction", rarity="rare", desc="Enemies killed inside anchor explosion each spawn a mini void pool."},
+	],
+	"rupture_kit": [
+		{id="scatter_field", icon="S", name="Scatter", rarity="common", desc="Rupture launches shrapnel in 8 directions (3 dmg each)."},
+		{id="drain_aura", icon="D", name="Drain Aura", rarity="rare", desc="While inside rupture field, player regenerates 1 HP per 2s."},
+	],
+}
+
 # Runtime weapon modifiers (applied to WEAPON_DEFS at fire time)
 var weapon_mods: Dictionary = {}  # weapon_id -> {fire_rate_mult, damage_bonus, extra_pellets, piercing, slow, etc.}
 
@@ -459,6 +532,15 @@ var run_ingredients: Array = []
 # === Void essence / leveling ===
 var essence_collected := 0
 var player_level := 1
+var post_cap_xp: int = 0
+var post_cap_index: int = 0
+var post_cap_counts: Dictionary = {"move_speed": 0, "attack_speed": 0, "projectile_speed": 0, "reload_speed": 0}
+var post_cap_fire_rate_bonus: float = 0.0
+var post_cap_reload_bonus: float = 0.0
+var kit_perks_taken: Array = []
+var stim_withdrawal_active: bool = false
+var sacrifice_invincible_timer: float = 0.0
+var rupture_drain_timer: float = 0.0
 
 # === Exit zone ===
 var exit_spawned := false
@@ -3508,7 +3590,12 @@ func _check_pickups(delta: float = 0.016) -> void:
 				_show_message("\u2713 " + p.ingredient_data.name)
 			elif p.type == "essence":
 				essence_collected += 1
-				if essence_collected >= xp_threshold:
+				if player_level >= MAX_LEVEL:
+					post_cap_xp += 1
+					if post_cap_xp >= 210:
+						post_cap_xp -= 210
+						_apply_post_cap_buff()
+				elif essence_collected >= xp_threshold:
 					essence_collected -= xp_threshold
 					player_level += 1
 					xp_threshold = _xp_needed_for_level(player_level)
@@ -3701,12 +3788,29 @@ func _generate_upgrades() -> Array:
 		var m3: Dictionary = avail3[0]
 		options.append({type="modifier", id=m3.id, rarity=m3.rarity, icon=m3.icon, label=m3.name, desc=m3.desc, perk={}})
 
+	# --- Kit Perk injection (max 1 per screen) ---
+	var best_kit_perk: Dictionary = {}
+	var best_kit_perk_is_rare: bool = false
+	for kid in equipped_kits:
+		var perks_for_kit: Array = KIT_PERKS.get(kid, [])
+		for kp in perks_for_kit:
+			if kit_perks_taken.has(kp.id):
+				continue
+			var is_rare: bool = kp.rarity == "rare"
+			if best_kit_perk.is_empty() or (is_rare and not best_kit_perk_is_rare):
+				best_kit_perk = {type="kit_perk", kit_id=kid, id=kp.id, rarity=kp.rarity, icon=kp.icon, label=kp.name, desc=kp.desc, perk={}}
+				best_kit_perk_is_rare = is_rare
+			elif is_rare == best_kit_perk_is_rare and rng.randi() % 2 == 0:
+				best_kit_perk = {type="kit_perk", kit_id=kid, id=kp.id, rarity=kp.rarity, icon=kp.icon, label=kp.name, desc=kp.desc, perk={}}
+	if not best_kit_perk.is_empty():
+		options.append(best_kit_perk)
+
 	# --- Guaranteed fallbacks so panel is never empty ---
 	if options.size() < 3:
 		var fallbacks: Array = [
 			{type="fallback", id="hp_restore",   rarity="common", icon="H", label="Field Medkit",      desc="Restore 3 HP immediately",            perk={}},
-			{type="fallback", id="dmg_boost",    rarity="common", icon="D", label="Weapon Calibration", desc="+1 damage",                           perk={}},
-			{type="fallback", id="speed_boost",  rarity="common", icon="S", label="Adrenaline Shot",    desc="+20 move speed permanently",          perk={}},
+			{type="fallback", id="void_drain_f",  rarity="common", icon="D", label="Void Drain",    desc="Killing void enemies reduces corruption by 3",           perk={}},
+			{type="fallback", id="pack_hunter_f", rarity="common", icon="P", label="Pack Awareness", desc="+8% damage per enemy within 200px",                       perk={}},
 			{type="fallback", id="corr_purge",   rarity="rare",   icon="P", label="Void Purge",         desc="Reduce corruption by 20",             perk={}},
 		]
 		var existing_ids: Array = []
@@ -3856,15 +3960,18 @@ func _on_upgrade_chosen(idx: int) -> void:
 				"hp_restore":
 					player_hp = mini(player_hp + 3, player_max_hp)
 					_show_message("+3 HP")
-				"dmg_boost":
-					var mods_fb: Dictionary = weapon_mods.get(main_weapon.id, {})
-					mods_fb["damage_bonus"] = mods_fb.get("damage_bonus", 0) + 1
-					weapon_mods[main_weapon.id] = mods_fb
-				"speed_boost":
-					player_speed += 20.0
+				"void_drain_f":
+					modifiers_taken.append("void_drain")
+				"pack_hunter_f":
+					modifiers_taken.append("pack_hunter")
 				"corr_purge":
 					corruption = maxf(0.0, corruption - 20.0)
 					_show_message("Corruption -20")
+		"kit_perk":
+			var perk_id: String = choice.get("id", "")
+			kit_perks_taken.append(perk_id)
+			_apply_kit_perk(perk_id, choice.get("kit_id", ""))
+			_show_message(choice.label + " unlocked!")
 
 	paused = false
 	upgrade_choices = []
@@ -4906,10 +5013,15 @@ func _draw() -> void:
 	var xp_bar_y: float = vp_size.y - 20.0
 	var xp_bar_h := 8.0
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x, xp_bar_h), Color(0.1, 0.1, 0.15))
-	var xp_frac: float = float(essence_collected) / float(xp_threshold)
+	var xp_frac: float
+	if player_level >= MAX_LEVEL:
+		xp_frac = float(post_cap_xp) / 210.0
+	else:
+		xp_frac = float(essence_collected) / float(xp_threshold)
 	draw_rect(Rect2(0.0, xp_bar_y, vp_size.x * xp_frac, xp_bar_h), Color(0.5, 0.0, 0.9))
 	# LV label left of bar
-	_draw_text(Vector2(4.0, xp_bar_y - 4.0), "LV %d" % player_level, Color(0.7, 0.5, 1.0), 12)
+	var lv_label: String = "LV MAX" if player_level >= MAX_LEVEL else "LV %d" % player_level
+	_draw_text(Vector2(4.0, xp_bar_y - 4.0), lv_label, Color(0.7, 0.5, 1.0), 12)
 
 	# Weapon display (bottom left, above XP bar)
 	if not main_weapon.is_empty():
@@ -5160,18 +5272,98 @@ func _draw_text(pos: Vector2, text: String, color: Color, font_size: int = 16) -
 # XP CURVE
 # =========================================================
 func _xp_needed_for_level(lv: int) -> int:
-	# Early: fast levels so player gets upgrades before first elite dies
-	# Mid: ramps up meaningfully
-	# Late: plateau — slow grind
-	if lv <= 8:
-		return lv * 2              # 2, 4, 6, 8, 10, 12, 14, 16 — very fast early
-	elif lv <= 16:
-		return 10 + (lv - 8) * 4  # 14, 18, 22, 26, 30, 34, 38, 42
-	elif lv <= 24:
-		var t: float = float(lv - 16) / 8.0
-		return int(50.0 + 90.0 * t * t)
-	else:
-		return int(160.0 + float(lv - 24) * 20.0)
+	if lv >= XP_PER_LEVEL.size():
+		return 210
+	return XP_PER_LEVEL[lv]
+
+func _apply_post_cap_buff() -> void:
+	# Rotate through stats, skip if maxed
+	var attempts: int = 0
+	while attempts < POST_CAP_ROTATION.size():
+		var stat_key: String = POST_CAP_ROTATION[post_cap_index % POST_CAP_ROTATION.size()]
+		post_cap_index = (post_cap_index + 1) % POST_CAP_ROTATION.size()
+		if post_cap_counts.get(stat_key, 0) >= POST_CAP_LIMITS.get(stat_key, 0):
+			attempts += 1
+			continue
+		post_cap_counts[stat_key] = post_cap_counts.get(stat_key, 0) + 1
+		var val: float = POST_CAP_VALUES.get(stat_key, 0.0)
+		match stat_key:
+			"move_speed":
+				player_speed += val
+				_show_message("+5 speed")
+			"attack_speed":
+				post_cap_fire_rate_bonus += val
+				_show_message("faster shots")
+			"projectile_speed":
+				var mods_pc: Dictionary = weapon_mods.get(main_weapon.id, {})
+				mods_pc["bullet_speed_bonus"] = mods_pc.get("bullet_speed_bonus", 0.0) + val
+				weapon_mods[main_weapon.id] = mods_pc
+				_show_message("+15 bullet speed")
+			"reload_speed":
+				post_cap_reload_bonus += val
+				_show_message("faster reload")
+		return
+	_show_message("All post-cap stats maxed!")
+
+func _apply_kit_perk(perk_id: String, kit_id: String) -> void:
+	match perk_id:
+		"withdrawal":
+			stim_withdrawal_active = true
+		"adrenaline_spike":
+			pass  # Checked at stim activation: push enemies within 100px away 80px
+		"fragile_state":
+			pass  # Checked at flash trap stun end: mark enemy fragile_timer = 1.0, 2x dmg
+		"afterburn":
+			pass  # Checked at smoke zone exit: apply 40% slow for 2s
+		"drag":
+			pass  # Checked each frame while chain tethered: pull enemy 20px/s toward player
+		"arrival_strike":
+			pass  # Checked after blink: push enemies within 100px away 100px
+		"crush_zone":
+			pass  # Checked in damage calc: enemies in anchor pull zone take 2x dmg
+		"scatter_field":
+			pass  # Checked on rupture activate: fire 8 bullets (3 dmg each)
+		"drain_aura":
+			pass  # Checked while player in rupture field: heal 1 HP per 2s
+		"void_trail":
+			pass  # Checked while void_surge active: drop corruption zone every 0.3s
+		"phase_burst":
+			pass  # Checked at surge end: push enemies within 120px away 80px
+		"frenzy_aura":
+			pass  # Checked each frame: count allies within 150px, fire_rate mult
+		"sacrifice":
+			pass  # Checked on pack ally death: set sacrifice_invincible_timer = 2.0
+		# TODO: Stub — implement in follow-up
+		"conductor":
+			pass  # TODO: While enemy is tethered, your bullets ricochet off them once
+		"spotter":
+			pass  # TODO: Familiar marks highest-HP enemy — your bullets +30% to marked target
+		"overheat":
+			pass  # TODO: Turret explodes on death (70px AOE, 4 dmg)
+		"intercept_link":
+			pass  # TODO: Drone-intercepted bullets explode (20px AOE) damaging shooter
+		"swap":
+			pass  # TODO: Blink teleports to nearest enemy instead of direction
+		"copycat":
+			pass  # TODO: Decoy fires your last weapon shot every 3s
+		"chain_reaction":
+			pass  # TODO: Enemies killed inside anchor explosion spawn mini void pool
+		"lure":
+			pass  # TODO: Multiple enemies inside smoke ignore player and attack each other
+		"leash_break":
+			pass  # TODO: If familiar is hit, it explodes once (5 dmg, 80px AOE)
+		"redirect":
+			pass  # TODO: Hitting a wall during charge bounces you perpendicular
+		"target_priority":
+			pass  # TODO: Turret only fires at enemies you have hit in last 2s
+		"magnet_decoy":
+			pass  # TODO: Decoy pulls enemies within 120px toward it
+		"shepherd":
+			pass  # TODO: Drone slowly herds pickups toward player
+		"aftershock":
+			pass  # TODO: Charge impact leaves a 3s slow field at landing point
+		"trap_magnetism":
+			pass  # TODO: Stunned enemy pulls 2 nearby enemies toward it
 
 # =========================================================
 # KIT SYSTEM
@@ -5946,7 +6138,12 @@ func _update_drone(delta: float) -> void:
 			var p: Dictionary = pickups[pi]
 			if p.type == "essence" and drone_pos.distance_to(p.pos) < 200.0:
 				essence_collected += 1
-				if essence_collected >= xp_threshold:
+				if player_level >= MAX_LEVEL:
+					post_cap_xp += 1
+					if post_cap_xp >= 210:
+						post_cap_xp -= 210
+						_apply_post_cap_buff()
+				elif essence_collected >= xp_threshold:
 					essence_collected -= xp_threshold
 					player_level += 1
 					xp_threshold = _xp_needed_for_level(player_level)
@@ -6022,18 +6219,6 @@ func _update_familiar(delta: float) -> void:
 # =========================================================
 func _apply_modifier(mod_id: String) -> void:
 	match mod_id:
-		"tough":
-			player_max_hp += 3
-			player_hp = player_max_hp
-		"speed":
-			player_speed += 25.0
-		"reload":
-			var mods: Dictionary = weapon_mods.get(main_weapon.id, {})
-			mods["reload_mult"] = mods.get("reload_mult", 1.0) * 0.7
-			weapon_mods[main_weapon.id] = mods
-		"magplus":
-			main_weapon.mag_size += 4
-			main_weapon.mag_ammo = mini(main_weapon.mag_ammo + 4, main_weapon.mag_size)
 		"dodge":
 			var mods_d: Dictionary = weapon_mods.get("_player", {})
 			mods_d["dodge_chance"] = mods_d.get("dodge_chance", 0.0) + 0.1
