@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full overflow-hidden scanlines">{children}</body>
+      <body className="h-full scanlines">{children}</body>
     </html>
   );
 }
