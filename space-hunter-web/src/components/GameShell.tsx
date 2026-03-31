@@ -24,7 +24,7 @@ export function GameShell() {
   const showIntro = !introSeen && contractsCompleted === 0 && screen === 'hub';
 
   return (
-    <div className="h-full w-full max-w-[540px] mx-auto relative overflow-hidden" style={{ fontFamily: 'var(--font-pixel)' }}>
+    <div className="h-screen w-full max-w-[540px] mx-auto relative overflow-hidden" style={{ fontFamily: 'var(--font-pixel)' }}>
       {screen === 'hub' && <HubScreen />}
       {screen === 'contracts' && <ContractBoard />}
       {screen === 'loadout' && <LoadoutScreen />}
