@@ -8,6 +8,15 @@ import { HUD } from './HUD';
 import { v2dist } from '../lib/math';
 import { PLAYER_BASE_HP, WORLD_W, WORLD_H, PLAYER_COLOR, XP_PER_LEVEL, MAX_LEVEL } from './constants';
 import { CREATURE_DEFS } from '../data/creatures';
+import {
+  halSay,
+  HAL_HUNT_START, HAL_WAVE_INCOMING, HAL_FIRST_KILL, HAL_KILL_STREAK,
+  HAL_ELITE_SPAWNED, HAL_LOW_HP, HAL_CRITICAL_HP, HAL_TOOK_DAMAGE,
+  HAL_CORRUPTION_VALLEY, HAL_CORRUPTION_CORRUPT, HAL_CORRUPTION_VOID,
+  HAL_OBJECTIVE_HALF, HAL_OBJECTIVE_NEAR,
+  HAL_LEVEL_UP_GAME, HAL_PLAYER_DIED, HAL_CONTRACT_DONE,
+  HAL_RELOAD,
+} from '../data/hal';
 
 // Sprite name → creature name mapping
 const CREATURE_SPRITE_MAP: Record<string, string> = {
@@ -99,6 +108,19 @@ export class Game {
   hpBonus = 0;
   magBonus = 0;
 
+  // HAL event tracking
+  halCooldown = 0;              // global cooldown between HAL messages
+  halReloadSaid = false;        // don't spam reload messages
+  halLowHpSaid = false;         // one low-HP warning per danger window
+  halCriticalHpSaid = false;
+  halCorruptionValleySaid = false;
+  halCorruptionCorruptSaid = false;
+  halCorruptionVoidSaid = false;
+  halKillStreakTimer = 0;       // comment on sustained killing
+  halKillsSinceStreak = 0;
+  halHalfSaid = false;
+  halNearSaid = false;
+
   constructor(app: Application, kits: string[], contractType: string, targetTotal: number, hpBonus: number, magBonus: number, callbacks: GameCallbacks) {
     this.app = app;
     this.callbacks = callbacks;
@@ -153,6 +175,7 @@ export class Game {
     this.hudLayer.addChild(this.hud.timerText);
     this.hudLayer.addChild(this.hud.levelText);
     this.hudLayer.addChild(this.hud.messageText);
+    this.hudLayer.addChild(this.hud.halStripText);
 
     // Draw static map
     this.map.drawStatic(this.mapGfx);
@@ -160,6 +183,7 @@ export class Game {
     // Spawn initial wave
     this.enemies.spawnWave(15, this.player.pos, this.map);
     this.hud.showMessage('HUNT STARTED', 2);
+    setTimeout(() => this.hud.showHalMessage(halSay(HAL_HUNT_START), 5), 2500);
 
     // Input
     this.setupInput();
@@ -333,6 +357,76 @@ export class Game {
     this.player.update(dt, this.map);
     this.peakCorruption = Math.max(this.peakCorruption, this.player.corruption);
 
+    // HAL commentary cooldown
+    if (this.halCooldown > 0) this.halCooldown -= dt;
+    this.halKillStreakTimer = Math.max(0, this.halKillStreakTimer - dt);
+
+    // HAL: HP warnings
+    const hpFrac = this.player.hp / this.player.maxHp;
+    if (hpFrac < 0.15 && !this.halCriticalHpSaid) {
+      this.halCriticalHpSaid = true;
+      this.halLowHpSaid = true;
+      this.hud.showHalMessage(halSay(HAL_CRITICAL_HP), 4);
+      this.halCooldown = 8;
+    } else if (hpFrac < 0.35 && !this.halLowHpSaid && this.halCooldown <= 0) {
+      this.halLowHpSaid = true;
+      this.hud.showHalMessage(halSay(HAL_LOW_HP), 4);
+      this.halCooldown = 10;
+    } else if (hpFrac > 0.6) {
+      // Reset warnings when healed
+      this.halLowHpSaid = false;
+      this.halCriticalHpSaid = false;
+    }
+
+    // HAL: Corruption thresholds
+    const c = this.player.corruption;
+    if (c >= 70 && !this.halCorruptionVoidSaid && this.halCooldown <= 0) {
+      this.halCorruptionVoidSaid = true;
+      this.hud.showHalMessage(halSay(HAL_CORRUPTION_VOID), 5);
+      this.halCooldown = 12;
+    } else if (c >= 36 && !this.halCorruptionCorruptSaid && this.halCooldown <= 0) {
+      this.halCorruptionCorruptSaid = true;
+      this.hud.showHalMessage(halSay(HAL_CORRUPTION_CORRUPT), 5);
+      this.halCooldown = 10;
+    } else if (c >= 16 && !this.halCorruptionValleySaid && this.halCooldown <= 0) {
+      this.halCorruptionValleySaid = true;
+      this.hud.showHalMessage(halSay(HAL_CORRUPTION_VALLEY), 4);
+      this.halCooldown = 8;
+    }
+
+    // HAL: Reload commentary (rare, not every reload)
+    if (this.player.reloadTimer > 0 && !this.halReloadSaid && Math.random() < 0.12 && this.halCooldown <= 0) {
+      this.halReloadSaid = true;
+      this.hud.showHalMessage(halSay(HAL_RELOAD), 2);
+      this.halCooldown = 6;
+    } else if (this.player.reloadTimer <= 0) {
+      this.halReloadSaid = false;
+    }
+
+    // HAL: Objective progress
+    if (!this.halHalfSaid && this.targetCount >= Math.floor(this.targetTotal * 0.5) && this.targetTotal > 0 && this.halCooldown <= 0) {
+      this.halHalfSaid = true;
+      this.hud.showHalMessage(halSay(HAL_OBJECTIVE_HALF), 4);
+      this.halCooldown = 6;
+    } else if (!this.halNearSaid && this.targetCount >= Math.floor(this.targetTotal * 0.75) && this.targetTotal > 0 && this.halCooldown <= 0) {
+      this.halNearSaid = true;
+      this.hud.showHalMessage(halSay(HAL_OBJECTIVE_NEAR), 4);
+      this.halCooldown = 6;
+    }
+
+    // HAL: Kill streak (fires if kills happen in rapid succession)
+    if (this.halKillsSinceStreak >= 5 && this.halKillStreakTimer <= 0 && this.halCooldown <= 0) {
+      this.halKillsSinceStreak = 0;
+      this.hud.showHalMessage(halSay(HAL_KILL_STREAK), 3);
+      this.halCooldown = 8;
+    }
+
+    // HAL: took damage (detect hit flash transition, random chance to comment)
+    if (this.player.hitFlash > 0.12 && this.halCooldown <= 0 && Math.random() < 0.18) {
+      this.hud.showHalMessage(halSay(HAL_TOOK_DAMAGE), 2);
+      this.halCooldown = 4;
+    }
+
     // Camera
     this.camera.follow(this.player.pos, dt);
 
@@ -390,12 +484,17 @@ export class Game {
       this.enemies.spawnWave(Math.min(count, 30), this.player.pos, this.map);
       this.waveTimer = Math.max(8, 20 - this.waveCount * 1.5);
       this.hud.showMessage(`WAVE ${this.waveCount + 1}`, 1.5);
+      if (this.halCooldown <= 0) {
+        setTimeout(() => this.hud.showHalMessage(halSay(HAL_WAVE_INCOMING), 3), 600);
+        this.halCooldown = 5;
+      }
     }
 
     // Death check
     if (this.player.hp <= 0 && !this.dead) {
       this.dead = true;
       this.hud.showMessage('YOU DIED', 3);
+      this.hud.showHalMessage(halSay(HAL_PLAYER_DIED), 4);
       setTimeout(() => this.finishHunt('FAILED'), 2000);
     }
 
@@ -403,6 +502,7 @@ export class Game {
     if (this.contractType === 'hunt' && this.targetCount >= this.targetTotal && !this.complete) {
       this.complete = true;
       this.hud.showMessage('CONTRACT COMPLETE', 2);
+      this.hud.showHalMessage(halSay(HAL_CONTRACT_DONE), 5);
       setTimeout(() => this.finishHunt('COMPLETED'), 2000);
     }
 
@@ -431,6 +531,20 @@ export class Game {
     this.totalKills++;
     this.targetCount++;
     this.player.essenceCollected++;
+    this.halKillsSinceStreak++;
+    this.halKillStreakTimer = 4; // reset 4s streak window
+
+    // HAL: first kill
+    if (this.totalKills === 1 && this.halCooldown <= 0) {
+      this.hud.showHalMessage(halSay(HAL_FIRST_KILL), 3);
+      this.halCooldown = 5;
+    }
+
+    // HAL: elite kill announcement
+    if (enemy.isElite && this.halCooldown <= 0) {
+      this.hud.showHalMessage(halSay(HAL_ELITE_SPAWNED), 3);
+      this.halCooldown = 6;
+    }
 
     // Check level up
     if (this.player.level < MAX_LEVEL) {
@@ -439,6 +553,7 @@ export class Game {
         this.player.level++;
         this.player.essenceCollected = 0;
         this.hud.showMessage(`LEVEL ${this.player.level}!`, 1.5);
+        setTimeout(() => this.hud.showHalMessage(halSay(HAL_LEVEL_UP_GAME), 4), 1000);
         // Simple stat boost on level
         this.player.maxHp += 1;
         this.player.hp = Math.min(this.player.hp + 1, this.player.maxHp);

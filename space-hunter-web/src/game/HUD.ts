@@ -4,11 +4,12 @@ import { WEAPON_DEFS } from '../data/weapons';
 import { KIT_DEFS } from '../data/kits';
 import { MAX_LEVEL, XP_PER_LEVEL, CORR_CLEAN, CORR_VALLEY, CORR_CORRUPT } from './constants';
 
-// HAL 9000 terminal font styles — scaled up for readability
+// HAL 9000 terminal font styles
 const FONT_HAL  = new TextStyle({ fontFamily: 'PixelOperator, monospace', fontSize: 22, fill: 0xff3300, letterSpacing: 1 });
 const FONT_DATA = new TextStyle({ fontFamily: 'PixelOperator, monospace', fontSize: 18, fill: 0xcc4422 });
 const FONT_DIM  = new TextStyle({ fontFamily: 'PixelOperator, monospace', fontSize: 16, fill: 0x886644 });
 const FONT_MSG  = new TextStyle({ fontFamily: 'PixelOperator, monospace', fontSize: 28, fill: 0xff2200, align: 'center', letterSpacing: 3 });
+const FONT_HAL_STRIP = new TextStyle({ fontFamily: 'PixelOperator, monospace', fontSize: 15, fill: 0xcc4422, letterSpacing: 1 });
 
 export class HUD {
   gfx: Graphics;
@@ -20,7 +21,9 @@ export class HUD {
   timerText: Text;
   levelText: Text;
   messageText: Text;
+  halStripText: Text;     // HAL commentary strip — bottom center
   messageDuration = 0;
+  halStripDuration = 0;
   viewW: number;
   viewH: number;
 
@@ -37,11 +40,18 @@ export class HUD {
     this.levelText = new Text({ text: '', style: FONT_DATA });
     this.messageText = new Text({ text: '', style: FONT_MSG });
     this.messageText.anchor.set(0.5, 0.5);
+    this.halStripText = new Text({ text: '', style: FONT_HAL_STRIP });
+    this.halStripText.anchor.set(0.5, 1);
   }
 
   showMessage(msg: string, duration = 2) {
     this.messageText.text = msg;
     this.messageDuration = duration;
+  }
+
+  showHalMessage(msg: string, duration = 4) {
+    this.halStripText.text = `HAL: ${msg}`;
+    this.halStripDuration = duration;
   }
 
   draw(player: Player, dt: number, kills: number, elapsed: number, kits: string[]) {
@@ -181,6 +191,24 @@ export class HUD {
       this.messageText.alpha = Math.min(this.messageDuration, 1);
     } else {
       this.messageText.alpha = 0;
+    }
+
+    // ── HAL COMMENTARY STRIP — bottom center, above XP bar ──
+    if (this.halStripDuration > 0) {
+      this.halStripDuration -= dt;
+      const alpha = Math.min(this.halStripDuration, 1);
+      // Background pill
+      const tw = Math.min(this.halStripText.width + 24, this.viewW - 40);
+      const th = 22;
+      const tx = this.viewW / 2 - tw / 2;
+      const ty = this.viewH - 46;
+      g.rect(tx, ty, tw, th).fill({ color: 0x050508, alpha: alpha * 0.88 });
+      g.rect(tx, ty, tw, th).stroke({ color: 0x661100, width: 1, alpha: alpha * 0.6 });
+      this.halStripText.x = this.viewW / 2;
+      this.halStripText.y = this.viewH - 28;
+      this.halStripText.alpha = alpha;
+    } else {
+      this.halStripText.alpha = 0;
     }
   }
 }
