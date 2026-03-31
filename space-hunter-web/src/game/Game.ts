@@ -200,7 +200,7 @@ export class Game {
     if (playerTex) {
       this.playerSprite = new Sprite(playerTex);
       this.playerSprite.anchor.set(0.5, 0.5);
-      this.playerSprite.scale.set(1);
+      this.playerSprite.scale.set(2);
       this.playerSprite.roundPixels = true;
       this.spriteLayer.addChild(this.playerSprite);
     }
@@ -241,7 +241,7 @@ export class Game {
 
     const spr = new Sprite(tex);
     spr.anchor.set(0.5, 0.5);
-    spr.scale.set(1); // pro mode sprites are already correct size
+    spr.scale.set(2);
     spr.roundPixels = true;
     this.spriteLayer.addChild(spr);
     this.spritePool.set(enemy.id, spr);
