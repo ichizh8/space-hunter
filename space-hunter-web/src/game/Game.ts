@@ -14,7 +14,7 @@ import {
   HAL_ELITE_SPAWNED, HAL_LOW_HP, HAL_CRITICAL_HP, HAL_TOOK_DAMAGE,
   HAL_CORRUPTION_VALLEY, HAL_CORRUPTION_CORRUPT, HAL_CORRUPTION_VOID,
   HAL_OBJECTIVE_HALF, HAL_OBJECTIVE_NEAR,
-  HAL_LEVEL_UP_GAME, HAL_PLAYER_DIED, HAL_CONTRACT_DONE,
+  HAL_LEVEL_UP, HAL_PLAYER_DIED, HAL_CONTRACT_DONE,
   HAL_RELOAD,
 } from '../data/hal';
 
@@ -553,7 +553,7 @@ export class Game {
         this.player.level++;
         this.player.essenceCollected = 0;
         this.hud.showMessage(`LEVEL ${this.player.level}!`, 1.5);
-        setTimeout(() => this.hud.showHalMessage(halSay(HAL_LEVEL_UP_GAME), 4), 1000);
+        setTimeout(() => this.hud.showHalMessage(halSay(HAL_LEVEL_UP), 4), 1000);
         // Simple stat boost on level
         this.player.maxHp += 1;
         this.player.hp = Math.min(this.player.hp + 1, this.player.maxHp);
