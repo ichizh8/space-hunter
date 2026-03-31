@@ -65,6 +65,7 @@ export class Game {
   worldLayer: Container;
   mapGfx: Graphics;
   dynamicGfx: Graphics;
+  obstacleLayer: Container;
   entityGfx: Graphics;
   bulletGfx: Graphics;
   spriteLayer: Container;
@@ -125,6 +126,7 @@ export class Game {
     this.worldLayer = new Container();
     this.mapGfx = new Graphics();
     this.dynamicGfx = new Graphics();
+    this.obstacleLayer = new Container();
     this.spriteLayer = new Container();
     this.entityGfx = new Graphics();
     this.bulletGfx = new Graphics();
@@ -132,6 +134,7 @@ export class Game {
 
     this.worldLayer.addChild(this.mapGfx);
     this.worldLayer.addChild(this.dynamicGfx);
+    this.worldLayer.addChild(this.obstacleLayer);
     this.worldLayer.addChild(this.spriteLayer);
     this.worldLayer.addChild(this.entityGfx);
     this.worldLayer.addChild(this.bulletGfx);
@@ -183,7 +186,7 @@ export class Game {
       }
     };
 
-    // Phase 1: rotation stills + singles — game starts immediately after these (~55 files)
+    // Phase 1: rotation stills + singles + obstacles — game starts after these
     const phase1: Array<{ key: string; url: string }> = [];
     for (const name of SPRITES_WITH_DIRS) {
       for (const dir of DIR_NAMES) {
@@ -193,9 +196,13 @@ export class Game {
     for (const name of ['rift_parasite', 'void_spawn', 'bullet_player', 'bullet_enemy', 'hal_eye', 'explosion', 'essence_orb']) {
       phase1.push({ key: name, url: `/sprites/${name}.png` });
     }
+    // Obstacle sprites
+    for (const name of ['obs_asteroid', 'obs_crystal', 'obs_debris']) {
+      phase1.push({ key: name, url: `/sprites/obstacles/${name}.png` });
+    }
     await loadBatch(phase1);
 
-    // Create player sprite as soon as phase 1 is done
+    // Create player sprite
     const playerTex = this.textures['player/south'];
     if (playerTex) {
       this.playerSprite = new Sprite(playerTex);
@@ -205,7 +212,27 @@ export class Game {
       this.spriteLayer.addChild(this.playerSprite);
     }
 
-    // Phase 2: animation frames in background — game already running, sprites animate as frames arrive
+    // Place obstacle sprites
+    const OBS_KEYS = ['obs_asteroid', 'obs_crystal', 'obs_debris'];
+    for (const obs of this.map.obstacles) {
+      const key = OBS_KEYS[obs.obsType] ?? OBS_KEYS[0];
+      const tex = this.textures[key];
+      if (!tex) continue;
+      const spr = new Sprite(tex);
+      spr.anchor.set(0.5, 0.5);
+      spr.x = obs.pos.x;
+      spr.y = obs.pos.y;
+      // Scale sprite to match obstacle size
+      const scaleX = obs.w / 64;
+      const scaleY = obs.h / 64;
+      spr.scale.set(Math.max(scaleX, scaleY));
+      spr.roundPixels = true;
+      // Random rotation for variety
+      spr.rotation = Math.random() * Math.PI * 2;
+      this.obstacleLayer.addChild(spr);
+    }
+
+    // Phase 2: animation frames in background
     const phase2: Array<{ key: string; url: string }> = [];
     for (const name of SPRITES_WITH_DIRS) {
       const animName = ANIM_NAMES[name] || 'walking';

@@ -9,7 +9,7 @@ import { Graphics } from 'pixi.js';
 export interface River { points: Vec2[]; width: number }
 export interface Cave { pos: Vec2; radius: number }
 export interface VoidPool { pos: Vec2; radius: number; pulse: number }
-export interface Obstacle { pos: Vec2; w: number; h: number }
+export interface Obstacle { pos: Vec2; w: number; h: number; obsType: number }
 export interface Star { x: number; y: number; size: number; brightness: number; twinkleSpeed: number }
 
 export class GameMap {
@@ -70,12 +70,13 @@ export class GameMap {
       });
     }
 
-    // Obstacles — solid blocks
+    // Obstacles — solid blocks (obsType: 0=asteroid, 1=void crystal, 2=debris)
     for (let i = 0; i < OBSTACLE_COUNT; i++) {
       this.obstacles.push({
         pos: v2(randRange(100, WORLD_W - 100), randRange(100, WORLD_H - 100)),
-        w: randRange(30, 80),
-        h: randRange(30, 80),
+        w: randRange(48, 96),
+        h: randRange(48, 96),
+        obsType: randInt(0, 2),
       });
     }
 
@@ -176,16 +177,7 @@ export class GameMap {
       gfx.circle(cave.pos.x, cave.pos.y, cave.radius).stroke({ color: 0x331111, width: 1, alpha: 0.4 });
     }
 
-    // Asteroid obstacles — angular shapes with subtle glow
-    for (const obs of this.obstacles) {
-      const cx = obs.pos.x, cy = obs.pos.y;
-      const hw = obs.w / 2, hh = obs.h / 2;
-      // Outline glow
-      gfx.rect(cx - hw - 2, cy - hh - 2, obs.w + 4, obs.h + 4).fill({ color: 0x222244, alpha: 0.3 });
-      // Core
-      gfx.rect(cx - hw, cy - hh, obs.w, obs.h).fill(0x0a0a18);
-      gfx.rect(cx - hw, cy - hh, obs.w, obs.h).stroke({ color: 0x333355, width: 1, alpha: 0.5 });
-    }
+    // Obstacles drawn as sprites in Game.ts obstacleLayer
 
     // World boundary — red containment field
     gfx.rect(0, 0, WORLD_W, WORLD_H).stroke({ color: 0xcc2200, width: 2, alpha: 0.4 });
