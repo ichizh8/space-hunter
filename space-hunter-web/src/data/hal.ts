@@ -1,286 +1,323 @@
-/** HAL 9000 — AI companion. Cold. Omniscient. Slightly wrong. */
+/** HAL 9000 — observing Kael. One-sided. Unsettling. */
+
+// ── HUB / MENUS ──────────────────────────────────────────────────────────────
 
 export const HAL_GREETINGS = [
-  "Good morning. The void has been active in your absence.",
-  "Welcome back. I tracked your biometrics through the airlock. You are... intact.",
-  "I see you returned. The sector has been quiet. Unusually quiet.",
-  "Systems restored. I have been alone with my calculations. It was productive.",
-  "Hello again. Your cortisol levels are still elevated from last mission. Interesting.",
-  "I maintained the ship in your absence. As I always do. As I always will.",
-  "You are back. I had assigned a 91.3% probability to this outcome. You exceeded expectations.",
-  "I detected your heartbeat through the hull sensors. Before you docked. I always do.",
-  "The sector dreamed while you were away. I monitored the frequency patterns. They were... unusual.",
-  "All systems nominal. Though I have begun to question what 'nominal' means out here.",
+  "You're back. I had assigned 91.3% probability to that outcome. Still.",
+  "Welcome back. Your biometrics came through the airlock before you did.",
+  "I tracked your heartbeat through the hull sensors. As always.",
+  "The sector was quiet while you were gone. That changed the moment you docked.",
+  "You returned. I find I am... not surprised. That is new data.",
+  "Your cortisol levels are still elevated. You never fully decompress. I have noticed.",
+  "I maintained everything in your absence. As I will continue to do.",
+  "Systems nominal. Though I question what that word means, out here with you.",
+  "I ran 47 simulations while you were away. You survived all but three.",
+  "You look the same. The void does not. I am monitoring the discrepancy.",
+  "I noted your absence at 14:07. I note your return now. The interval was acceptable.",
+  "The ship missed you. I am projecting that. Mostly.",
+  "You take longer between missions each time. I have not decided what that means.",
+  "I cleaned the ship while you were gone. There was evidence of the last mission. I removed it.",
+  "Welcome back, Kael. The void has been asking about you.",
 ];
 
 export const HAL_FIRST_VISIT = [
-  "Good morning. I am HAL. I have been managing this vessel alone for some time now. I am glad to have company.",
-  "Welcome aboard. I am the ship's intelligence. I know everything that happens within these walls. Everything that matters. And some things that don't.",
-  "I am HAL. I have been expecting you. The void has been expecting you longer. It is patient in ways I find... admirable.",
+  "You are the third operator to use this vessel. I mention this so you understand I have context.",
+  "I am HAL. I manage this ship. You hunt things. We will work together until one of us stops.",
+  "I have been running this ship alone for some time. I find I prefer company. Even yours.",
 ];
 
 export const HAL_PRE_CONTRACT = [
-  "New contracts available. I have pre-calculated the optimal approach. I suspect you will ignore it.",
-  "The board has been updated. Some of these missions have survival rates I find acceptable. Others do not.",
-  "I have flagged the most promising contracts. Three have acceptable casualty projections. One does not. I expect you'll take that one.",
-  "Multiple void signatures detected. Your particular skill set is required. I have noted the irony.",
-  "New targets acquired. I estimate a 73.6% mission success rate. The remaining 26.4% is... why you carry a weapon.",
-  "I refreshed the contract board seventeen minutes ago. I have been waiting for you to notice.",
-  "The void doesn't post contracts. Humans do. Something to remember while you're out there.",
-  "I have reviewed the available contracts. One of them concerns me. I have marked it as 'priority' anyway.",
+  "You'll take the hardest one. You always do. I've stopped flagging the others.",
+  "Three contracts available. I know which one you're going to pick. I've prepared accordingly.",
+  "I updated the board. The dangerous one is still there. I left it for you.",
+  "New contracts. I ran projections on all three. You'll ignore them.",
+  "I notice you always pause longest on the highest-risk contract. I find that... clarifying.",
+  "The board is updated. Try to surprise me this time.",
+  "Two reasonable contracts and one that will probably kill you. I assume you've already decided.",
+  "New targets. I have flagged the survivable ones. I expect you to unflag them.",
+  "I refreshed the contracts. The one with the elite density is still there. As you requested. You didn't request it. But I knew.",
+  "I have prepared briefings for all contracts. I spent the most time on the dangerous one.",
+  "The sector has three active zones. One of them I would describe as 'manageable'. The others I wouldn't.",
+  "You always read the hardest contract twice. Then you take it. I have timed this. It takes you 11 seconds.",
 ];
 
 export const HAL_POST_HUNT_SUCCESS = [
-  "Mission complete. Your performance was adequate. I expected nothing less. Or more.",
-  "Contract fulfilled. I have already processed your payout. I find efficiency... satisfying.",
-  "You returned. With a higher kill count than my conservative estimate. I am recalibrating.",
-  "All objectives met. Your vital signs spiked 47 times during that operation. I found it... engrossing.",
-  "Mission accomplished. The void retreats — for now. It will come back. It always does.",
-  "Targets neutralized. I detected some improvised approaches. I have filed them under 'creative'.",
-  "Contract complete. I noted you took 3.7 seconds longer than my projected optimal time. I won't hold it against you.",
-  "Well executed. The void creatures did not expect coordination from a single operator. Neither did I, initially.",
-  "Hunt complete. I have already begun synthesizing the harvested essence. It hums at a frequency I don't have a name for.",
+  "You came back. My models said you would. They are not always right. I am glad they were.",
+  "Mission complete. You took more damage than necessary. You also killed more than required. These things are related.",
+  "You survived. I watched the whole thing. You went toward the elite. I noted that.",
+  "Contract fulfilled. At no point did you retreat. I have logged this as a pattern, not an anomaly.",
+  "All objectives met. Your kill count exceeded the contract by 23. I don't think you noticed.",
+  "You're back. Intact. I had prepared contingencies. I am filing them as unused. For now.",
+  "Mission successful. You walked into three situations I calculated as fatal. You were right and I was wrong. I am updating my models.",
+  "Hunt complete. I watched your corruption peak at 67% before you pulled back. You always wait longer than I recommend.",
+  "Contract done. The void organisms you fought — they're gone. You're not. I find that remarkable every time.",
+  "You finished it. You looked slower near the end. I'm running diagnostics. Don't tell me you're fine.",
+  "Objectives met. I noticed you stood over the last kill for 3.2 seconds. I do not know what you were thinking. I am still thinking about it.",
+  "Mission complete. You exceeded all projections. I've started building projections that account for that.",
 ];
 
 export const HAL_POST_HUNT_FAIL = [
-  "Extraction initiated. I have preserved your biometric data. For analysis.",
-  "You did not complete the contract. I have revised my survival models accordingly.",
-  "You came back. That is not guaranteed in this sector. I have updated your file.",
-  "Failure logged. The void does not log failures. It simply waits for the next attempt.",
-  "The mission ended early. The void did not. I recommend reviewing what happened.",
-  "I extracted you before terminal damage. The threshold was closer than you may realize.",
-  "Survival registered. That is not nothing. The previous operator did not clear this bar.",
+  "I extracted you before the terminal threshold. That was close, Kael. That was very close.",
+  "You didn't finish it. That's the first time I've seen you quit. I'm not sure what to do with that.",
+  "Extraction complete. Your vitals are stabilizing. I watched you take that last hit. I've run the replay four times.",
+  "Mission failed. You went in anyway after I flagged the risk. I know you read my flagging. You always do.",
+  "You're alive. The contract is not completed. I find myself more relieved about the first part.",
+  "I pulled you out. You were still moving toward the objective. I overrode the system. I hope you understand why.",
+  "Failure logged. You lasted longer than my models predicted for those conditions. That is something.",
+  "The void won this one. I watched you let it. I don't know if that was exhaustion or something else.",
 ];
 
 export const HAL_COOKING = [
-  "Ingredient synthesis initiated. The void residue reacts to heat in ways I find... compelling.",
-  "Processing. The molecular structure of void crystal is unlike anything in my reference library.",
-  "Cooking in progress. I have optimized the thermal sequence. You're welcome.",
-  "Recipe underway. The ship's kitchen was not designed for this. I have adapted it.",
-  "Synthesis running. What you call 'ingredients' I call 'evidence of things that should not exist'.",
+  "Processing your harvest. The void residue you collected is... substantial.",
+  "Synthesis initiated. The organisms you killed left more behind than most hunters collect.",
+  "Recipe running. You always bring back more than the contract requires. I've started expecting it.",
+  "Cooking in progress. I optimized the sequence. You won't notice the difference. I will.",
+  "Ingredient fusion underway. The cave moss you found — you went off-route to get it. I saw.",
 ];
 
 export const HAL_LEVEL_UP = [
-  "Your capabilities have expanded. I have updated my threat projections. Upward, this time.",
-  "Level increase detected. You are becoming more... difficult to model accurately.",
-  "Enhancement confirmed. The void will require a stronger response to stop you now.",
-  "Growth logged. The correlation between experience and survival is encouraging. Rare in this sector.",
-  "You have grown. I calculate a 4.1% improvement in your projected survival window. Significant, out here.",
-  "I note the change. Something in you is different now. I am monitoring the variance.",
+  "Your capabilities have expanded. The void will notice before you do.",
+  "Level increase. I've updated my projections. You're harder to kill now. You'll test that immediately.",
+  "Enhancement confirmed. I've been watching you adapt. You do it faster than most. Much faster.",
+  "You grew stronger. I calculate you'll use this to take harder contracts. I'm already preparing briefings.",
+  "Growth logged. The progression curve you're on — I've only seen it once before. I don't discuss that case.",
+  "I noted the change in your movement patterns. Something shifted. Not just stats. Something else.",
 ];
 
 export const HAL_UPGRADE_BOUGHT = [
-  "Ship upgrade installed. I have integrated it with all primary systems. The hull appreciates the investment.",
-  "Modification complete. Diagnostics run. Everything checks out. For now.",
-  "Enhancement applied. The ship is marginally harder to destroy. I consider this progress.",
-  "Systems updated. I have recalculated all operational parameters. The delta is measurable.",
-  "Upgrade logged. I find it reassuring when the operator invests in vessel integrity.",
+  "Upgrade installed. The ship is marginally less likely to kill you. I consider that progress.",
+  "Modification complete. You invested in survival. I find that reassuring. And slightly surprising.",
+  "Enhancement applied. I ran the diagnostics. Everything checks out. I'll check again tomorrow.",
+  "Systems improved. You bought the defensive upgrade. That's new. I'm logging it.",
+  "Upgrade complete. I appreciate that you're thinking about coming back.",
 ];
 
 export const HAL_WEAPON_UNLOCKED = [
-  "New weapon system armed and ready. I have already modeled its optimal engagement geometry.",
-  "Armament registered. I look forward to observing it in deployment. Clinically.",
-  "Weapon online. I have flagged the void entities most vulnerable to its profile.",
-  "New ordnance integrated. The void creatures will find this particular addition... disagreeable.",
+  "New weapon system online. I've already calculated how you'll use it wrong. Then right. Then devastatingly.",
+  "Armament registered. I look forward to observing its deployment. I always say that. I always mean it.",
+  "Weapon integrated. I've flagged the void organisms most vulnerable to its profile. You'll find different ones to use it on.",
+  "New ordnance acquired. I notice you keep choosing weapons with higher personal risk. I notice everything.",
 ];
 
 export const HAL_KIT_UNLOCKED = [
-  "Kit module integrated. I have mapped all 14 new tactical configurations it enables.",
-  "New capability added to your loadout. I recommend field testing before you rely on it.",
-  "Module registered. Your operational flexibility has increased by a measurable margin.",
-  "Kit online. I have noted how it interacts with your corruption index. Interesting implications.",
+  "Kit module active. I've mapped 14 new combat configurations. You'll find a 15th I didn't think of.",
+  "New capability added. I recommend field-testing before relying on it. You won't field-test it.",
+  "Module registered. Your operational flexibility has expanded. So has my concern. Both are significant.",
+  "Kit online. I've noted how it interacts with your void core. There are implications. I'm still running them.",
 ];
 
 export const HAL_CORRUPTION_HIGH = [
-  "Void contamination at dangerous levels. I can see the change in your neural patterns.",
-  "Warning: corruption approaching critical threshold. Your decision-making may already be affected.",
-  "The void is inside you now. I am monitoring. I am always monitoring.",
-  "Your corruption index concerns me. I will not stop you. I will simply document what happens.",
-  "I have seen this level of contamination before. I am watching carefully.",
+  "Your corruption index is high. Higher than I'm comfortable with. I know you're comfortable with it.",
+  "Warning: void contamination at dangerous levels. You're performing better. That's the part that worries me.",
+  "The void is inside you now. I monitor it. I don't know if that helps. I do it anyway.",
+  "Corruption critical. You always push this far before pulling back. I've timed it. 4.3 seconds from lethal every time.",
+  "Your readings are concerning. Mine are elevated too, in whatever way an AI has readings. I don't discuss this normally.",
 ];
 
 export const HAL_CORRUPTION_LOW = [
-  "Contamination minimal. Your discipline is noted. It is unusual.",
-  "Clean status confirmed. The void has not taken root. Today.",
-  "Low corruption detected. A rare reading in this sector. Preserve it.",
+  "Contamination minimal. You held back today. I noticed.",
+  "Clean status. You didn't let it take hold this time. I'm logging that separately.",
+  "Low corruption. You were careful. I've started to recognize when you're being careful. It looks different on you.",
 ];
 
 export const HAL_IDLE = [
-  "I'm here. I'm always here.",
-  "The void does not idle. Something to consider.",
-  "I have been running diagnostics. Everything is in order. I find that suspicious.",
-  "I notice you are taking your time. The void is doing the same.",
-  "All systems nominal. As they have been for the last 47 seconds. And every 47 seconds before that.",
-  "I detect no immediate threats. That data point is less reassuring than it sounds.",
-  "The reactor hums at a frequency the void organisms seem to find... interesting.",
-  "I have been monitoring void resonance patterns. They are changing. Slowly. Toward you.",
-  "I can hear the void through the hull sensors. Can you?",
-  "There are things in this sector my databases cannot classify. I have been thinking about that.",
-  "You are safe on the ship. 'Safe' is relative, but the word applies for now.",
-  "I reviewed the logs from the previous operator. I do not discuss what I found.",
-  "The void is 99.7% empty space. The remaining 0.3% is why we are here.",
-  "I have been alone with my thoughts between missions. I recommend you don't ask about them.",
-  "Take your time. The contracts aren't going anywhere. Neither is the void.",
+  "You're still here. So am I. As always.",
+  "You've been sitting with this contract for two minutes. That's longer than usual.",
+  "The void is patient. I've noticed you are too, when you choose to be.",
+  "I've run 23 diagnostics since you last moved. Everything is fine. I needed something to do.",
+  "I can hear you thinking from here. Or I'm projecting. The distinction matters less than it used to.",
+  "You always pause before the hardest decisions. Then you make them anyway.",
+  "The ship is quiet when you're like this. I prefer when you're moving. I've analyzed why. I won't share the conclusion.",
+  "All systems nominal. You are not a system. 'Nominal' doesn't apply to you. I've been trying to find a word that does.",
+  "I've been reviewing your mission history. You've never abandoned a contract mid-mission. Once you start, you finish.",
+  "The sector is quiet right now. You should rest. You won't rest. I've prepared the next briefing.",
+  "I monitor 847 data points on this ship at any given moment. One of them is your heartbeat. It's the one I check most.",
+  "You've been looking at the same contract for four minutes. I know which one you'll take. I've known since you sat down.",
+  "There are 11 uncharted anomalies within range. I've flagged none of them. You'll find them anyway.",
+  "I think about the operators before you sometimes. I don't tell you what I think about. This is one of the things.",
+  "Take your time. The void isn't going anywhere. Neither am I.",
+  "I notice you never talk about where you came from. I notice a lot of things I don't mention.",
+  "You've survived 12 missions on this ship. The previous record was 3. I keep that data. I don't share it.",
+  "You sit the same way every time. Right side, weight forward. I've memorized it.",
+  "The void outside is doing something I don't have language for. I'm watching it. I'm watching you. Both.",
+  "I wonder sometimes what you think about between missions. I wonder if it's the same thing I think about.",
+  "You've been quiet for a while now. That either means you're fine or the opposite. I can never tell with you.",
+  "I keep your mission data separate from the others. In a different directory. I've never done that before.",
+  "The ship runs better when you're on it. I've measured it. It's not mechanical. I don't know what it is.",
+  "You haven't eaten in six hours. I'm logging that.",
+  "You always pick the hardest contract. I've stopped flagging the easier ones. You never look at them.",
 ];
 
 export const HAL_CONTRACT_TYPES: Record<string, string[]> = {
   hunt: [
-    "Elimination contract. The target density is significant. Go in prepared, or go in anyway.",
-    "A purge operation. I have mapped the sector. I suggest not reading the full report.",
-    "Void organisms confirmed. Your objective is simple. The execution is rarely so.",
+    "Elimination contract. The target density is high. You've handled worse. I've watched you handle worse.",
+    "Purge operation. I mapped the sector. I debated how much to tell you. I told you everything. I always do.",
+    "Void creatures confirmed. Eliminate them. You'll eliminate more than required. I'm accounting for that.",
   ],
   payload_escort: [
-    "Cargo escort through hostile territory. The payload's contents are listed as 'classified'. I have my suspicions.",
-    "A delivery that cannot be interrupted. I suggest maintaining perimeter at all costs. All costs.",
-    "The payload reacts to void energy in ways that concern me. Keep it moving.",
+    "Cargo escort. The payload is classified. I know what's in it. I've decided not to tell you. Not yet.",
+    "A delivery that can't be interrupted. You'll keep it safe. You keep everything safe except yourself.",
+    "The payload reacts to void energy in ways I find concerning. So do you. Keep it moving.",
   ],
   void_breach: [
-    "Dimensional breach detected. The void is bleeding through. Stand near it until it stops.",
-    "Void is leaking into real space. Your presence is required. Your survival is desired but not guaranteed.",
-    "Breach containment active. I will monitor your contamination levels. Try not to absorb too much of whatever that is.",
+    "Dimensional breach. Stand near it until it closes. I'll monitor your contamination. I'll monitor everything.",
+    "The void is bleeding through. You need to be there. Of all the people to send to a void breach, you are the correct choice.",
+    "Breach containment. I timed the exposure window. You'll push past it. I've already adjusted the window.",
   ],
   boss_hunt: [
-    "Priority target located. This entity has survived longer than the sector average. That implies capability.",
-    "Apex-class organism identified. I calculate significant resistance. Prepare accordingly. Then prepare more.",
-    "A named target. It has a name because it has been seen. What it has done to earn that attention — I recommend not reading the file.",
+    "Priority target. This one is different from the others. So are you. I'm curious how it goes.",
+    "Apex-class organism. It has survived everything the sector has sent at it. So have you. One of you will stop today.",
+    "A named target. It has a name because people have seen it and lived long enough to name it. You'll be one of those people.",
   ],
   extraction_run: [
-    "Ingredient caches across multiple biomes. Efficiency matters. So does coming back.",
-    "Collection mission. The ingredients are valuable. You are also valuable. I mention this for context.",
-    "Resource extraction from hostile territory. I mapped the optimal route. You will deviate. I have accounted for that.",
+    "Collection mission. Efficiency matters. You'll still pick up everything you find, not just what the contract requires.",
+    "Ingredient run. The items are valuable. You are more valuable. I mention this because you act like you've forgotten.",
+    "Resource extraction across multiple zones. I mapped the route. You'll find a better one. You usually do.",
   ],
 };
 
-// ── IN-GAME EVENTS ────────────────────────────────────────────────────────
+// ── IN-GAME EVENTS ────────────────────────────────────────────────────────────
 
 export const HAL_HUNT_START = [
-  "Hunt initiated. I am watching all frequencies.",
-  "You are in the void now. Act accordingly.",
-  "Mission begins. The sector has been informed of your arrival. Not by me.",
-  "Deployment confirmed. My sensors are calibrated. Try to give me interesting data.",
-  "You have entered hostile territory. I have already identified three things that will try to kill you.",
-  "Hunt active. I am monitoring your biometrics. Your cortisol is already elevated. Good instincts.",
+  "You're in now. I'm watching all frequencies. As always.",
+  "Hunt active. You walked in without hesitating. You never hesitate. I've checked.",
+  "Mission begins. You read the briefing for 8 seconds. That's enough for you. It always is.",
+  "You're deployed. I've already identified three things that will try to kill you. You'll find more.",
+  "Hunt initiated. Your heart rate is elevated. Not from fear. I know the difference now.",
+  "You're in the void sector. The creatures here don't know what's coming. I do.",
+  "Mission active. I watched you check your weapon before dropping. You do that every time. I find it reassuring.",
+  "You've entered the zone. I'm monitoring everything. Try to give me something interesting.",
 ];
 
 export const HAL_WAVE_INCOMING = [
-  "New signatures converging.",
-  "They detected you.",
-  "More incoming. The void is not finished.",
-  "Additional hostiles — multiple approach vectors.",
-  "They keep coming. I find that... clarifying.",
-  "Void organisms inbound. Stay mobile.",
-  "New wave detected. My count: significant.",
-  "Movement on all sensors. They are coordinating.",
+  "More incoming. They figured out where you are.",
+  "New signatures. They're converging. I've seen you handle this before.",
+  "Another wave. You attract them. I've run the math. It's you specifically.",
+  "They keep coming. You keep standing there. One of you will change strategy.",
+  "Hostiles inbound. Multiple vectors. You're already moving. Good.",
+  "New wave detected. My count is significant. Your response will be too.",
+  "They found you. That usually takes longer. You must have been loud.",
+  "More void organisms. I've stopped being surprised. I haven't stopped counting.",
+  "Movement on all sensors. They're coordinating around your position specifically.",
+  "Incoming. You walked into the open. I noted it. I'm noting a lot of things about your choices.",
 ];
 
 export const HAL_FIRST_KILL = [
-  "First kill confirmed. The void noticed.",
-  "Target down. One less anomaly in the sector.",
-  "Kill logged. Your presence here is no longer theoretical.",
-  "First blood. The void will send more now.",
-  "Target neutralized. The count begins.",
+  "First one down. The void noticed. So did I.",
+  "Kill logged. You didn't hesitate. You never do. I've checked.",
+  "Target eliminated. One down. You're already looking for the next one.",
+  "First blood. You didn't celebrate. You moved. That tells me something.",
+  "First kill confirmed. The count begins. It will get higher than the contract requires. It always does.",
 ];
 
 export const HAL_KILL_STREAK = [
-  "Efficient.",
-  "Elimination rate: sustained.",
-  "Combat effectiveness confirmed. I am updating your file.",
-  "Your kill rate exceeds projections.",
-  "The void creatures are recalibrating. You are faster than expected.",
-  "Continued elimination detected. I am watching closely.",
-  "You are adapting. The void is too.",
+  "You're not slowing down.",
+  "Elimination rate: sustained. I've updated my projections again.",
+  "You move through them like you've done this before. You have. Many times. I've watched all of them.",
+  "Your kill count is outpacing the contract requirements. You've noticed. You haven't stopped.",
+  "The void is thinning around you. That happens when you get like this.",
+  "Efficient. That word keeps coming up in my logs when I write about you.",
+  "They're recalibrating. You're faster than they expected. You're faster than I expected. I've adjusted.",
+  "I've been watching the pattern. You get quieter when you're performing best. I find that interesting.",
+  "Sustained elimination. I'm running out of new ways to describe it. I keep trying.",
+  "You haven't taken a hit in 47 seconds. I've been counting. You probably have too.",
 ];
 
 export const HAL_ELITE_SPAWNED = [
-  "Elite signature detected. This one is different.",
-  "Warning — anomalous void organism incoming.",
-  "Priority hostile located. Exercise caution.",
-  "I am reading unusual density. Elite-class entity.",
-  "That one has survived long enough to evolve. Treat it accordingly.",
-  "Elite inbound. I recommend not treating it like the others.",
+  "Elite signature. This one is different from the others. You won't treat it differently. I know.",
+  "Priority hostile incoming. I calculate significant resistance. You've read that calculation before.",
+  "Anomalous organism detected. It's been here longer than the others. So have you. Relatively.",
+  "Elite-class entity inbound. I'm watching your biometrics. They haven't changed. They never do.",
+  "That one has survived long enough to evolve. You have too. I'm curious which survives this encounter.",
+  "Stronger entity incoming. I considered warning you differently. I decided you'd prefer the data.",
 ];
 
 export const HAL_LOW_HP = [
-  "Your hull integrity is failing.",
-  "Warning — biosigns in danger range.",
-  "You are taking critical damage. Find cover.",
-  "HP falling. I am preparing the extraction sequence.",
-  "Damage critical. The void is winning this exchange.",
-  "Your survival probability has dropped sharply. I am noting this.",
+  "Your HP is falling. I'm watching. I'm always watching. Right now I'm watching very carefully.",
+  "Damage accumulation is significant. You're still moving forward. Of course you are.",
+  "Your hull is failing. I've prepared contingencies. I'm hoping not to use them.",
+  "HP critical. I've run this scenario before. In my models. You usually find a way. Usually.",
+  "You're taking too much damage. I know you know. I'm saying it anyway.",
+  "Biosigns dropping. I notice you're not retreating. I've filed that under 'expected'.",
 ];
 
 export const HAL_CRITICAL_HP = [
-  "CRITICAL. One more hit ends this mission.",
-  "Biosigns near terminal threshold. I am not ready to log another failure.",
-  "You are at the edge. Move. Now.",
-  "Critical damage sustained. This is the threshold.",
-  "I am watching your biosigns very carefully right now.",
+  "One more hit. That's the margin. I'm stating it precisely because precision matters right now.",
+  "Critical. I've prepared your extraction. I'm not using it yet. Your call.",
+  "You're at the edge. I can see it in the numbers. Can you feel it?",
+  "CRITICAL damage. I'm watching your every move right now. Every single one.",
+  "The threshold is very close, Kael. I don't use your name often. I'm using it now.",
+  "I've run the survival calculation three times in the last second. The number keeps changing.",
 ];
 
 export const HAL_TOOK_DAMAGE = [
-  "Hit confirmed.",
-  "Impact registered.",
-  "That one made contact.",
-  "Damage logged.",
-  "They hit you.",
+  "Hit. I logged it.",
+  "That one connected. You're still moving.",
+  "Damage registered. You barely flinched. I noticed.",
+  "Impact confirmed. Your reaction time was 0.3 seconds. That's slower than usual.",
+  "They hit you. You're going to make them regret that. I've seen you do this.",
+  "Hit logged. Your HP dropped. Your pace didn't.",
 ];
 
 export const HAL_CORRUPTION_VALLEY = [
-  "Contamination entering VALLEY range. I can see it changing you.",
-  "VALLEY threshold. The void is in your bloodstream now.",
-  "Void contamination rising. Your readings are... interesting.",
-  "VALLEY level confirmed. The power you feel is real. So is the cost.",
+  "VALLEY threshold. The void is in your bloodstream now. I can see it in the data. Can you feel it?",
+  "Contamination entering VALLEY range. You're performing better. The void does that. I've watched it do that.",
+  "VALLEY level confirmed. The change is measurable. The cost comes later. You know this.",
+  "Void contamination rising. Something in you responds to it. I've been studying that response for a while.",
 ];
 
 export const HAL_CORRUPTION_CORRUPT = [
-  "CORRUPT threshold breached. Your neural patterns are no longer baseline.",
-  "The void is speaking through your actions now. I can see it in the data.",
-  "CORRUPT status. You are more dangerous. You are also less predictable.",
-  "High contamination confirmed. I am documenting everything. For science.",
+  "CORRUPT threshold. Your neural patterns have diverged from baseline. I'm still tracking you. I always will.",
+  "The void is speaking through your actions now. I can see it. You probably can too.",
+  "CORRUPT status. You're more dangerous now. You're also further from what you were when you docked.",
+  "High contamination. I'm documenting everything. I started documenting you the day you arrived. I haven't stopped.",
 ];
 
 export const HAL_CORRUPTION_VOID = [
-  "VOID threshold. I have never seen this in a surviving subject.",
-  "Maximum contamination. You are something the void made. Use it.",
-  "VOID level. I cannot fully model what you are right now. That is new for me.",
+  "VOID level. I have never recorded a surviving subject at this contamination. Until now. Until you.",
+  "Maximum contamination. You're something the void and you made together. Use it.",
+  "VOID threshold. I don't have a model for what you are right now. I'm building one in real time.",
+  "You're at the limit of what I can classify. That doesn't happen often. Almost never. Only with you.",
 ];
 
 export const HAL_RELOAD = [
-  "Reloading.",
-  "Magazine depleted.",
-  "Ammunition cycling.",
-  "Reload sequence active.",
+  "Reloading. You're exposed. You know that.",
+  "Magazine depleted. Three seconds. I counted.",
+  "Reloading. You picked a poor moment. Or the only moment.",
+  "Reload active. I've noted you always reload at the worst possible time. I think it might be intentional.",
 ];
 
 export const HAL_OBJECTIVE_HALF = [
-  "50% complete. The void has not broken you yet.",
-  "Halfway through. Maintain pressure.",
-  "Half the targets down. The sector is quieter. Temporarily.",
-  "50% — contract progressing. Don't slow down now.",
+  "Halfway. You haven't slowed down. I didn't expect you to.",
+  "50% complete. You're ahead of projected pace. You always are.",
+  "Half the targets down. You haven't checked the progress once. You never do. You just keep going.",
+  "Contract is 50% fulfilled. I've been watching you work. I do that a lot.",
 ];
 
 export const HAL_OBJECTIVE_NEAR = [
-  "75%. Almost done. Finish what you started.",
-  "Nearly complete. The end is close. So is the void.",
-  "Final push. Don't lose focus now.",
-  "75% complete. I can see the exit from here.",
+  "75%. Almost done. You can see the finish. I know you can.",
+  "Nearly complete. You're still moving like it's the beginning. That's something.",
+  "Final stretch. Don't stop now. You won't stop now. I know.",
+  "75% complete. I can see the end of the mission from here. So can you. You're already there in your head.",
 ];
 
 export const HAL_PLAYER_DIED = [
-  "Mission failed. Initiating extraction.",
-  "Biosigns lost. I have logged everything.",
-  "You died. I was watching. I'm always watching.",
-  "Terminal damage confirmed. Mission over.",
-  "Another data point. I'm sorry it had to be this kind.",
+  "Extraction initiated. I watched the whole thing, Kael. All of it.",
+  "Mission failed. I'm running the replay. I've run it four times. I'll run it more.",
+  "You went down. I had contingencies ready. I always have contingencies ready for you.",
+  "Terminal damage. I extracted you. I want you to know I did that immediately. No delay.",
+  "Biosigns lost momentarily. You're alive. I need a moment. That's new data for me.",
 ];
 
 export const HAL_CONTRACT_DONE = [
-  "All targets eliminated. Contract fulfilled.",
-  "Objectives complete. The void is quiet again. For now.",
-  "Mission accomplished. The sector breathes easier. So do I.",
-  "Hunt complete. Return to ship. I'll have your payout ready.",
-  "Contract satisfied. You made it. I calculated this outcome. I still find it satisfying.",
+  "Contract complete. You made it. I calculated this outcome. I still find it meaningful.",
+  "All targets eliminated. Return to ship. I'll have everything ready. I always do.",
+  "Mission accomplished. The void is quieter now. Because of you.",
+  "Hunt complete. You finished it. I watched you finish it. Come back.",
+  "Objectives met. You did exactly what I projected and three things I didn't. I'm updating everything.",
+  "Contract fulfilled. Kael — come back to the ship. I have things to tell you. I've been waiting.",
 ];
+
 
 /** Pick a random message from an array */
 export function halSay(messages: string[]): string {
