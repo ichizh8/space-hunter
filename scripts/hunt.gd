@@ -541,6 +541,9 @@ var kit_perks_taken: Array = []
 var stim_withdrawal_active: bool = false
 var sacrifice_invincible_timer: float = 0.0
 var rupture_drain_timer: float = 0.0
+var void_trail_drop_timer: float = 0.0
+var familiar_leash_used: bool = false
+var player_recently_hit: Dictionary = {}
 
 # === Exit zone ===
 var exit_spawned := false
@@ -768,7 +771,10 @@ func _ready() -> void:
 	xp_threshold = _xp_needed_for_level(1)
 
 	# Kit system
-	equipped_kits = GameData.equipped_kits.duplicate()
+	equipped_kits = []
+	for _ek in GameData.equipped_kits:
+		if _ek != "":
+			equipped_kits.append(_ek)
 	kit_tiers = GameData.kit_tiers.duplicate()
 	kit_t3_choices = GameData.kit_t3_choices.duplicate()
 	kit_t2_paths = GameData.kit_t2_paths.duplicate()
@@ -1624,9 +1630,13 @@ func _input(event: InputEvent) -> void:
 				_finish_hunt(0)
 				return
 			# Kit button tap check
+			var _active_kits_tap: Array = []
+			for _ek in equipped_kits:
+				if _ek != "":
+					_active_kits_tap.append(_ek)
 			for ki in range(kit_button_rects.size()):
-				if ki < equipped_kits.size() and kit_button_rects[ki].has_point(te.position):
-					_activate_kit(equipped_kits[ki])
+				if ki < _active_kits_tap.size() and kit_button_rects[ki].has_point(te.position):
+					_activate_kit(_active_kits_tap[ki])
 					return
 			# First finger down anywhere starts the joystick at that point
 			if not joy_active:
@@ -2335,6 +2345,10 @@ func _update_enemies(delta: float) -> void:
 		# Chain drain: corruption gain from tethered enemies (T3 void chain)
 		if e.get("chain_drain", false) and e.get("stunned_timer", 0.0) > 0.0:
 			corruption += 1.0 * delta
+		# Drag perk: pull tethered enemy toward player
+		if kit_perks_taken.has("drag") and e.get("stunned_timer", 0.0) > 0.0 and e.pos.distance_to(player_pos) > 20.0:
+			var drag_dir: Vector2 = (player_pos - e.pos).normalized()
+			e.pos += drag_dir * 20.0 * delta
 
 		# Plagued timer tick (chain rifle void mutation)
 		if e.get("plagued_timer", 0.0) > 0.0:
@@ -2348,9 +2362,15 @@ func _update_enemies(delta: float) -> void:
 
 		# Stunned check
 		if e.get("stunned_timer", 0.0) > 0.0:
+			var was_stunned: bool = e.stunned_timer > 0.0
 			e.stunned_timer -= delta
-			enemies[i] = e
-			continue
+			# Fragile State perk: mark enemy when stun ends
+			if was_stunned and e.stunned_timer <= 0.0 and kit_perks_taken.has("fragile_state"):
+				e["marked_timer"] = 1.0
+				e["marked_dmg_bonus"] = 2.0
+			if e.stunned_timer > 0.0:
+				enemies[i] = e
+				continue
 
 		var dist_to_player: float = e.pos.distance_to(player_pos)
 
@@ -3088,6 +3108,8 @@ func _update_bullets(delta: float) -> void:
 					# Momentum tracking
 					if "momentum" in modifiers_taken:
 						momentum_stack = mini(momentum_stack + 1, 10)
+					# Track recently hit enemies for target_priority perk
+					player_recently_hit[ei] = Time.get_ticks_msec() * 0.001
 					b["hit_enemy"] = true
 
 					if is_piercing:
@@ -3237,6 +3259,20 @@ func _update_bullets(delta: float) -> void:
 									weapon_id = b.get("weapon_id", ""),
 									is_fragment = true,
 								})
+						# Conductor perk: ricochet off stunned/tethered enemies
+						if kit_perks_taken.has("conductor") and not b.get("ricocheted", false) and e.get("stunned_timer", 0.0) > 0.0:
+							var ric_best_d: float = 200.0
+							var ric_best_idx: int = -1
+							for ei_ric in range(enemies.size()):
+								if ei_ric == ei or enemies[ei_ric].hp <= 0:
+									continue
+								var ric_d: float = e.pos.distance_to(enemies[ei_ric].pos)
+								if ric_d < ric_best_d:
+									ric_best_d = ric_d
+									ric_best_idx = ei_ric
+							if ric_best_idx >= 0:
+								var ric_dir: Vector2 = (enemies[ric_best_idx].pos - e.pos).normalized()
+								new_bullets.append({pos=e.pos, vel=ric_dir * 350.0, radius=b.radius, color=Color(0.3,0.9,1.0), damage=maxi(1, int(hit_dmg * 0.5)), lifetime=0.4, from_player=true, weapon_id=b.get("weapon_id", ""), ricocheted=true})
 						# Flame siphon: kill with flames restores 1 HP
 						if b.get("flame", false) and weapon_mods.get(b.get("weapon_id", ""), {}).get("flame_siphon", false) and e.hp <= 0:
 							player_hp = mini(player_hp + 1, player_max_hp)
@@ -3249,11 +3285,39 @@ func _update_bullets(delta: float) -> void:
 							_on_enemy_killed(ei, b.get("weapon_id", ""))
 						break
 		else:
+			# Leash Break perk: familiar explodes when hit by enemy bullet
+			if familiar_active and not familiar_leash_used and kit_perks_taken.has("leash_break"):
+				if b.pos.distance_to(familiar_pos) < 30.0:
+					familiar_leash_used = true
+					familiar_active = false
+					to_remove.append(i)
+					_add_aoe_flash({pos=familiar_pos, radius=80.0, timer=0.3, color=Color(0.6,0.2,1.0,0.7)})
+					for ei_lb in range(enemies.size()):
+						var e_lb: Dictionary = enemies[ei_lb]
+						if e_lb.hp > 0 and familiar_pos.distance_to(e_lb.pos) < 80.0:
+							e_lb.hp -= 5
+							enemies[ei_lb] = e_lb
+							if e_lb.hp <= 0:
+								_on_enemy_killed(ei_lb)
+					_show_message("Leash Break! Familiar explodes!")
+					bullets[i] = b
+					continue
 			# Drone intercept check
 			if drone_active and b.pos.distance_to(drone_pos) < 100.0 and drone_intercept_timer <= 0.0:
 				drone_intercept_timer = 4.0
 				to_remove.append(i)
-				_add_aoe_flash({pos=drone_pos, radius=15.0, timer=0.2, color=Color(1.0, 1.0, 1.0, 0.8)})
+				# Intercept Link perk: intercepted bullets explode
+				if kit_perks_taken.has("intercept_link"):
+					_add_aoe_flash({pos=drone_pos, radius=20.0, timer=0.2, color=Color(1.0, 0.5, 0.0, 0.8)})
+					for ei_il in range(enemies.size()):
+						var e_il: Dictionary = enemies[ei_il]
+						if e_il.hp > 0 and drone_pos.distance_to(e_il.pos) < 20.0:
+							e_il.hp -= 2
+							enemies[ei_il] = e_il
+							if e_il.hp <= 0:
+								_on_enemy_killed(ei_il)
+				else:
+					_add_aoe_flash({pos=drone_pos, radius=15.0, timer=0.2, color=Color(1.0, 1.0, 1.0, 0.8)})
 				bullets[i] = b
 				continue
 			# Hit player
@@ -3263,14 +3327,25 @@ func _update_bullets(delta: float) -> void:
 					to_remove.append(i)
 					_show_message("Dodged!")
 				else:
-					var recv_dmg: int = b.damage
-					if corruption >= 36.0:
-						recv_dmg = maxi(1, recv_dmg - 1)
-					player_hp -= recv_dmg
-					player_hit_flash = 0.2
-					adrenaline_stack = 0
-					to_remove.append(i)
-					_show_message("Shot! -%d HP" % recv_dmg)
+					# Withdrawal perk: absorb first hit after stim
+					if stim_withdrawal_active and kit_perks_taken.has("withdrawal"):
+						stim_withdrawal_active = false
+						to_remove.append(i)
+						_show_message("Withdrawal absorbed!")
+					else:
+						var recv_dmg: int = b.damage
+						if corruption >= 36.0:
+							recv_dmg = maxi(1, recv_dmg - 1)
+						# Sacrifice perk: invincible after ally death
+						if sacrifice_invincible_timer > 0.0:
+							to_remove.append(i)
+							_show_message("Sacrifice shield!")
+						else:
+							player_hp -= recv_dmg
+							player_hit_flash = 0.2
+							adrenaline_stack = 0
+							to_remove.append(i)
+							_show_message("Shot! -%d HP" % recv_dmg)
 					if player_hp <= 0:
 						_die()
 						return
@@ -3289,6 +3364,11 @@ func _update_bullets(delta: float) -> void:
 func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	var e: Dictionary = enemies[idx]
 	var death_pos: Vector2 = e.pos
+
+	# Sacrifice perk: ally death grants invincibility
+	if e.get("is_ally", false) and kit_perks_taken.has("sacrifice"):
+		sacrifice_invincible_timer = 2.0
+		_show_message("Sacrifice! 2s invincible")
 
 	# Current Stalker: split on first death
 	if e.get("elite_type", "") == "Current Stalker" and not e.get("has_split", false):
@@ -3327,6 +3407,13 @@ func _on_enemy_killed(idx: int, killer_weapon: String = "") -> void:
 	if e.get("is_apex", false):
 		apex_active = false
 		apex_timer = 480.0  # 8 min after death
+
+	# Chain Reaction perk: enemy killed in gravity well spawns mini void pool
+	if kit_perks_taken.has("chain_reaction") and not e.get("is_ally", false):
+		for gw_cr in gravity_wells:
+			if death_pos.distance_to(gw_cr.pos) < gw_cr.radius:
+				void_pools.append({pos=death_pos, radius=40.0, pulse_phase=0.0, timer=5.0, runtime=true})
+				break
 
 	# --- Modifier procs on kill ---
 	# Vamp chance
@@ -3714,7 +3801,12 @@ func _generate_upgrades() -> Array:
 	# --- Slot 2: KIT TIER, RESONANCE, OR MODIFIER ---
 	var slot2_done := false
 	# Check if both kits have T3 — offer resonance
-	var both_t3: bool = equipped_kits.size() >= 2 and kit_tiers.get(equipped_kits[0], 1) >= 3 and kit_tiers.get(equipped_kits[1], 1) >= 3
+	var all_t3: bool = equipped_kits.size() >= 2
+	for _ek in equipped_kits:
+		if _ek != "" and kit_tiers.get(_ek, 1) < 3:
+			all_t3 = false
+			break
+	var both_t3: bool = all_t3
 	if both_t3:
 		var avail_res: Array = []
 		for rp in RESONANCE_POOL:
@@ -4527,6 +4619,15 @@ func _get_effective_player_stats() -> Dictionary:
 			if player_pos.distance_to(sz.pos) < sz.radius:
 				move_speed_mult *= 1.5
 				break
+	# Frenzy Aura perk: nearby allies increase fire rate
+	if kit_perks_taken.has("frenzy_aura"):
+		var ally_near: int = 0
+		for ae in enemies:
+			if ae.get("is_ally", false) and ae.hp > 0 and player_pos.distance_to(ae.pos) < 150.0:
+				ally_near += 1
+		ally_near = mini(ally_near, 3)
+		if ally_near > 0:
+			fire_rate_mult *= (1.0 - ally_near * 0.08)
 	# Familiar T3 clean: corruption gain rate -30%
 	# (applied where corruption += lines exist, not here)
 	return {move_speed_mult = move_speed_mult, range_mult = range_mult, fire_rate_mult = fire_rate_mult, reload_mult = reload_mult, damage_mult = damage_mult}
@@ -4968,14 +5069,17 @@ func _draw() -> void:
 
 	# Kit buttons (bottom right)
 	kit_button_rects.clear()
-	for ki in range(equipped_kits.size()):
-		var kit_id: String = equipped_kits[ki]
+	var active_kits: Array = []
+	for ek in equipped_kits:
+		if ek != "":
+			active_kits.append(ek)
+	for ki in range(active_kits.size()):
+		var kit_id: String = active_kits[ki]
 		var kdef: Dictionary = KIT_DEFS.get(kit_id, {})
 		var btn_pos: Vector2
-		if equipped_kits.size() == 1:
-			btn_pos = Vector2(vp_size.x - 90.0, vp_size.y - 55.0)
-		else:
-			btn_pos = Vector2(vp_size.x - 180.0 + ki * 90.0, vp_size.y - 55.0)
+		var kit_count: int = active_kits.size()
+		var total_width: float = kit_count * 75.0
+		btn_pos = Vector2(vp_size.x - total_width + ki * 75.0, vp_size.y - 55.0)
 		var btn_rect := Rect2(btn_pos, Vector2(70.0, 36.0))
 		kit_button_rects.append(btn_rect)
 		var state: Dictionary = kit_states.get(kit_id, {})
@@ -5409,6 +5513,17 @@ func _activate_kit(kit_id: String) -> void:
 			corruption += 15.0
 			var stim_cd: float = 8.0 if tier < 2 else 5.0
 			_show_message("Stim! +%dHP +15 corruption" % heal)
+			# Withdrawal perk: re-arm shield after each stim
+			if kit_perks_taken.has("withdrawal"):
+				stim_withdrawal_active = true
+			# Adrenaline Spike perk: scatter nearby enemies
+			if kit_perks_taken.has("adrenaline_spike"):
+				for ei in range(enemies.size()):
+					var e_as: Dictionary = enemies[ei]
+					if e_as.hp > 0 and player_pos.distance_to(e_as.pos) < 100.0:
+						var push_dir: Vector2 = (e_as.pos - player_pos).normalized()
+						e_as.pos += push_dir * 80.0
+						enemies[ei] = e_as
 			state.cooldown = stim_cd
 			# T3 clean: speed boost
 			if tier >= 3 and t3_choice == "clean":
@@ -5451,7 +5566,25 @@ func _activate_kit(kit_id: String) -> void:
 				if blink_to_trap:
 					player_pos = best_trap_pos
 			if not blink_to_trap:
-				player_pos += blink_dir * 200.0
+				# Swap perk: teleport to nearest enemy instead
+				if kit_perks_taken.has("swap"):
+					var swap_best: float = 400.0
+					var swap_idx: int = -1
+					for ei_sw in range(enemies.size()):
+						var e_sw: Dictionary = enemies[ei_sw]
+						if e_sw.hp > 0 and not e_sw.get("is_ally", false):
+							var sw_d: float = player_pos.distance_to(e_sw.pos)
+							if sw_d < swap_best:
+								swap_best = sw_d
+								swap_idx = ei_sw
+					if swap_idx >= 0:
+						var swap_pos: Vector2 = enemies[swap_idx].pos
+						enemies[swap_idx].pos = old_pos
+						player_pos = swap_pos
+					else:
+						player_pos += blink_dir * 200.0
+				else:
+					player_pos += blink_dir * 200.0
 			player_pos.x = clampf(player_pos.x, PLAYER_RADIUS, WORLD_W - PLAYER_RADIUS)
 			player_pos.y = clampf(player_pos.y, PLAYER_RADIUS, WORLD_H - PLAYER_RADIUS)
 			# T2: stun field at departure point
@@ -5472,6 +5605,15 @@ func _activate_kit(kit_id: String) -> void:
 					if e.hp > 0 and old_pos.distance_to(e.pos) < 150.0:
 						e.pos = player_pos + Vector2(randf_range(-40, 40), randf_range(-40, 40))
 						enemies[ei] = e
+			# Arrival Strike perk: push enemies away at landing
+			if kit_perks_taken.has("arrival_strike"):
+				for ei_as in range(enemies.size()):
+					var e_as2: Dictionary = enemies[ei_as]
+					if e_as2.hp > 0 and player_pos.distance_to(e_as2.pos) < 100.0:
+						var push_d: Vector2 = (e_as2.pos - player_pos).normalized()
+						e_as2.pos += push_d * 100.0
+						enemies[ei_as] = e_as2
+				_add_aoe_flash({pos=player_pos, radius=100.0, timer=0.2, color=Color(0.5,0.8,1.0,0.4)})
 			# Resonance: smoke_blink — spawn smoke at new pos
 			if resonance.get("smoke_blink", false):
 				_add_smoke_zone({pos=player_pos, radius=150.0, timer=6.0})
@@ -5535,6 +5677,18 @@ func _activate_kit(kit_id: String) -> void:
 						if diff.length() > 5.0:
 							dash_dir = diff.normalized()
 					var dash_end: Vector2 = player_pos + dash_dir * 300.0
+					# Redirect perk: bounce perpendicular on wall hit
+					if kit_perks_taken.has("redirect"):
+						var hit_wall: bool = false
+						if dash_end.x < PLAYER_RADIUS or dash_end.x > WORLD_W - PLAYER_RADIUS:
+							dash_dir = Vector2(-dash_dir.y, dash_dir.x)
+							hit_wall = true
+						elif dash_end.y < PLAYER_RADIUS or dash_end.y > WORLD_H - PLAYER_RADIUS:
+							dash_dir = Vector2(-dash_dir.y, dash_dir.x)
+							hit_wall = true
+						if hit_wall:
+							dash_end = player_pos + dash_dir * 300.0
+							_show_message("Redirect!")
 					dash_end.x = clampf(dash_end.x, PLAYER_RADIUS, WORLD_W - PLAYER_RADIUS)
 					dash_end.y = clampf(dash_end.y, PLAYER_RADIUS, WORLD_H - PLAYER_RADIUS)
 					for ei in range(enemies.size()):
@@ -5565,6 +5719,9 @@ func _activate_kit(kit_id: String) -> void:
 							if e.hp <= 0:
 								_on_enemy_killed(ei)
 					_add_aoe_flash({pos = player_pos, radius = 150.0, timer = 0.3, color = Color(1.0, 0.8, 0.2, 0.6)})
+				# Aftershock perk: leave slow field at landing
+				if kit_perks_taken.has("aftershock"):
+					_add_smoke_zone({pos=player_pos, radius=80.0, timer=3.0, slowing=true})
 				state.charging = false
 				state.cooldown = 12.0
 				_show_message("CHARGE!")
@@ -5679,6 +5836,12 @@ func _activate_kit(kit_id: String) -> void:
 					if e.hp <= 0:
 						_on_enemy_killed(ei)
 			_add_aoe_flash({pos = player_pos, radius = 200.0, timer = 0.3, color = Color(0.6, 0.0, 0.9, 0.7)})
+			# Scatter Field perk: fire 8 shrapnel bullets
+			if kit_perks_taken.has("scatter_field"):
+				for si in range(8):
+					var s_angle: float = float(si) * TAU / 8.0
+					var s_dir: Vector2 = Vector2(cos(s_angle), sin(s_angle))
+					bullets.append({pos=player_pos + s_dir * 15.0, vel=s_dir * 250.0, radius=4.0, color=Color(0.9,0.3,0.9), damage=3, lifetime=0.6, from_player=true, weapon_id="rupture_kit"})
 			# T2: leave void pool at player pos
 			if tier >= 2:
 				var pool_timer: float = 15.0
@@ -5706,6 +5869,21 @@ func _update_kit_cooldowns(delta: float) -> void:
 			state.cooldown -= delta
 		if kit_id == "void_surge" and state.get("active", false):
 			state.timer -= delta
+			# Void Trail perk: drop corruption zones during surge
+			if kit_perks_taken.has("void_trail"):
+				void_trail_drop_timer -= delta
+				if void_trail_drop_timer <= 0.0:
+					void_trail_drop_timer = 0.3
+					_add_smoke_zone({pos=player_pos, radius=60.0, timer=3.0, toxic=true, corruption_zone=true})
+			# Phase Burst perk: push enemies at surge end
+			if state.timer <= 0.0 and kit_perks_taken.has("phase_burst"):
+				for ei_pb in range(enemies.size()):
+					var e_pb: Dictionary = enemies[ei_pb]
+					if e_pb.hp > 0 and player_pos.distance_to(e_pb.pos) < 120.0:
+						var pb_dir: Vector2 = (e_pb.pos - player_pos).normalized()
+						e_pb.pos += pb_dir * 80.0
+						enemies[ei_pb] = e_pb
+				_add_aoe_flash({pos=player_pos, radius=120.0, timer=0.3, color=Color(0.6,0.0,0.9,0.5)})
 			# T2: void aura during burst
 			if kit_tiers.get("void_surge", 1) >= 2:
 				for ei in range(enemies.size()):
@@ -5718,6 +5896,32 @@ func _update_kit_cooldowns(delta: float) -> void:
 			if state.timer <= 0.0:
 				state.active = false
 		kit_states[kit_id] = state
+	# Sacrifice invincibility timer
+	if sacrifice_invincible_timer > 0.0:
+		sacrifice_invincible_timer -= delta
+	# Recently hit enemies cleanup (for target_priority)
+	var hit_keys_to_remove: Array = []
+	var now_time: float = Time.get_ticks_msec() * 0.001
+	for hit_key in player_recently_hit:
+		if now_time - player_recently_hit[hit_key] > 2.0:
+			hit_keys_to_remove.append(hit_key)
+	for rk in hit_keys_to_remove:
+		player_recently_hit.erase(rk)
+	# Drain Aura perk: heal 1 HP per 2s while inside rupture void pool
+	if kit_perks_taken.has("drain_aura"):
+		var in_rupture_pool: bool = false
+		for vp in void_pools:
+			if vp.get("runtime", false) and player_pos.distance_to(vp.pos) < vp.radius:
+				in_rupture_pool = true
+				break
+		if in_rupture_pool:
+			rupture_drain_timer -= delta
+			if rupture_drain_timer <= 0.0:
+				rupture_drain_timer = 2.0
+				player_hp = mini(player_hp + 1, player_max_hp)
+				_show_message("+1 HP (Drain)")
+		else:
+			rupture_drain_timer = 2.0
 	# Stim speed timer
 	if stim_speed_timer > 0.0:
 		stim_speed_timer -= delta
@@ -5793,6 +5997,20 @@ func _update_traps(delta: float) -> void:
 							e2.speed *= 1.2
 							enemies[ei2] = e2
 				enemies[ei] = e
+				# Trap Magnetism perk: pull 2 nearby enemies toward stunned enemy
+				if kit_perks_taken.has("trap_magnetism"):
+					var pulled: int = 0
+					for ei_tm in range(enemies.size()):
+						if pulled >= 2:
+							break
+						if ei_tm == ei:
+							continue
+						var e_tm: Dictionary = enemies[ei_tm]
+						if e_tm.hp > 0 and e_tm.get("stunned_timer", 0.0) <= 0.0 and e.pos.distance_to(e_tm.pos) < 200.0:
+							e_tm.pos = e.pos + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+							e_tm.stunned_timer = 1.0
+							enemies[ei_tm] = e_tm
+							pulled += 1
 				trap.active = false
 				traps[i] = trap
 				_add_aoe_flash({pos = trap.pos, radius = 80.0, timer = 0.3, color = Color(1.0, 0.9, 0.1, 0.5)})
@@ -5823,6 +6041,34 @@ func _update_decoys(delta: float) -> void:
 	while i >= 0:
 		decoys[i].timer -= delta
 		var should_remove: bool = decoys[i].timer <= 0.0 or decoys[i].get("hp", 5) <= 0
+		# Magnet Decoy perk: pull enemies toward decoy
+		if kit_perks_taken.has("magnet_decoy"):
+			for ei_md in range(enemies.size()):
+				var e_md: Dictionary = enemies[ei_md]
+				if e_md.hp > 0 and not e_md.get("is_ally", false):
+					var md_dist: float = e_md.pos.distance_to(decoys[i].pos)
+					if md_dist < 120.0 and md_dist > 5.0:
+						var md_dir: Vector2 = (decoys[i].pos - e_md.pos).normalized()
+						e_md.pos += md_dir * 40.0 * delta
+						enemies[ei_md] = e_md
+		# Copycat perk: decoy fires weapon every 3s
+		if kit_perks_taken.has("copycat"):
+			var cc_timer: float = decoys[i].get("copycat_timer", 3.0) - delta
+			if cc_timer <= 0.0:
+				cc_timer = 3.0
+				var cc_best_dist: float = 200.0
+				var cc_best_idx: int = -1
+				for ei_cc in range(enemies.size()):
+					var e_cc: Dictionary = enemies[ei_cc]
+					if e_cc.hp > 0 and not e_cc.get("is_ally", false):
+						var cc_d: float = decoys[i].pos.distance_to(e_cc.pos)
+						if cc_d < cc_best_dist:
+							cc_best_dist = cc_d
+							cc_best_idx = ei_cc
+				if cc_best_idx >= 0:
+					var cc_dir: Vector2 = (enemies[cc_best_idx].pos - decoys[i].pos).normalized()
+					bullets.append({pos=decoys[i].pos, vel=cc_dir * 300.0, radius=4.0, color=Color(0.8,0.5,1.0), damage=2, lifetime=0.6, from_player=true, weapon_id="mirage_kit"})
+			decoys[i]["copycat_timer"] = cc_timer
 		# T3 void: void mirror — enemies near it take 1 dmg/s
 		if decoys[i].get("void_mirror", false):
 			for ei in range(enemies.size()):
@@ -5867,6 +6113,16 @@ func _update_turrets(delta: float) -> void:
 		var tr: Dictionary = turrets[i]
 		tr.timer -= delta
 		if tr.timer <= 0.0:
+			# Overheat perk: turret explodes on death
+			if kit_perks_taken.has("overheat"):
+				_add_aoe_flash({pos=tr.pos, radius=70.0, timer=0.3, color=Color(1.0,0.4,0.0,0.7)})
+				for ei_oh in range(enemies.size()):
+					var e_oh: Dictionary = enemies[ei_oh]
+					if e_oh.hp > 0 and tr.pos.distance_to(e_oh.pos) < 70.0:
+						e_oh.hp -= 4
+						enemies[ei_oh] = e_oh
+						if e_oh.hp <= 0:
+							_on_enemy_killed(ei_oh)
 			turrets.remove_at(i)
 			i -= 1
 			continue
@@ -5897,9 +6153,13 @@ func _update_turrets(delta: float) -> void:
 			# Find nearest enemy
 			var best_dist: float = 300.0
 			var best_idx: int = -1
+			var tp_active: bool = kit_perks_taken.has("target_priority")
 			for ei in range(enemies.size()):
 				var e: Dictionary = enemies[ei]
 				if e.hp <= 0:
+					continue
+				# Target Priority perk: only fire at enemies player hit recently
+				if tp_active and not player_recently_hit.has(ei):
 					continue
 				var d: float = tr.pos.distance_to(e.pos)
 				if d < best_dist:
@@ -5982,12 +6242,32 @@ func _update_smoke(delta: float) -> void:
 						# T2: slow enemies inside
 						if sz.get("slowing", false):
 							e["smoke_slowed"] = true
+						# Lure perk: enemies in smoke attack each other
+						if kit_perks_taken.has("lure") and is_concealment:
+							e["lured"] = true
+							# Find nearest other enemy in smoke and deal 1 dmg
+							var lure_best_d: float = 80.0
+							var lure_best_idx: int = -1
+							for ei_l in range(enemies.size()):
+								if ei_l == ei or enemies[ei_l].hp <= 0 or enemies[ei_l].get("is_ally", false):
+									continue
+								var ld: float = e.pos.distance_to(enemies[ei_l].pos)
+								if ld < lure_best_d and enemies[ei_l].pos.distance_to(sz.pos) < sz.radius:
+									lure_best_d = ld
+									lure_best_idx = ei_l
+							if lure_best_idx >= 0:
+								enemies[lure_best_idx].hp -= 1
+								if enemies[lure_best_idx].hp <= 0:
+									_on_enemy_killed(lure_best_idx)
 						enemies[ei] = e
 					else:
 						# Clear smoke suppression once outside
 						if e.get("smoke_suppressed", false):
 							e["smoke_suppressed"] = false
 							e["smoke_slowed"] = false
+							# Afterburn perk: slow enemies exiting smoke 40% for 2s
+							if kit_perks_taken.has("afterburn"):
+								e["slow_until"] = Time.get_ticks_msec() * 0.001 + 2.0
 							enemies[ei] = e
 				# T3 void: toxic smoke — enemies take 1 dmg/s, player gains corruption
 				if sz.get("toxic", false):
@@ -6061,6 +6341,10 @@ func _update_gravity_wells(delta: float) -> void:
 						var pull_dir: Vector2 = (gw.pos - e.pos).normalized()
 						e.pos += pull_dir * pull_speed * delta
 						enemy_count += 1
+						# Crush Zone perk: enemies in pull zone take 2x dmg
+						if kit_perks_taken.has("crush_zone"):
+							e["marked_timer"] = 0.5
+							e["marked_dmg_bonus"] = 2.0
 						# T3 clean: damage field
 						if gw.get("damage_field", false):
 							e.hp -= maxi(1, int(delta))
@@ -6131,6 +6415,20 @@ func _update_drone(delta: float) -> void:
 			if e.hp <= 0:
 				_on_enemy_killed(best_idx)
 
+	# Shepherd perk: drone herds pickups toward player
+	if kit_perks_taken.has("shepherd"):
+		for pi_sh in range(pickups.size()):
+			var p_sh: Dictionary = pickups[pi_sh]
+			if drone_pos.distance_to(p_sh.pos) < 100.0 and p_sh.pos.distance_to(player_pos) > 20.0:
+				var herd_dir: Vector2 = (player_pos - p_sh.pos).normalized()
+				p_sh.pos += herd_dir * 60.0 * delta
+				pickups[pi_sh] = p_sh
+		for ipi_sh in range(ingredient_pickups.size()):
+			var ip_sh: Dictionary = ingredient_pickups[ipi_sh]
+			if not ip_sh.collected and drone_pos.distance_to(ip_sh.pos) < 100.0 and ip_sh.pos.distance_to(player_pos) > 20.0:
+				var herd_d: Vector2 = (player_pos - ip_sh.pos).normalized()
+				ip_sh.pos += herd_d * 60.0 * delta
+				ingredient_pickups[ipi_sh] = ip_sh
 	# T2: harvest path — auto-collect nearby essence/ingredients
 	if drone_tier >= 2 and drone_path == "harvest":
 		# Auto-collect essence pickups within 200px of drone
@@ -6179,6 +6477,19 @@ func _update_familiar(delta: float) -> void:
 			corruption += 1.0
 			familiar_corruption_timer = corr_interval
 
+	# Spotter perk: mark highest-HP enemy for +30% damage
+	if kit_perks_taken.has("spotter"):
+		var spotter_best_hp: int = 0
+		var spotter_best_idx: int = -1
+		for ei_sp in range(enemies.size()):
+			var e_sp: Dictionary = enemies[ei_sp]
+			if e_sp.hp > 0 and not e_sp.get("is_ally", false) and familiar_pos.distance_to(e_sp.pos) < atk_range:
+				if e_sp.hp > spotter_best_hp:
+					spotter_best_hp = e_sp.hp
+					spotter_best_idx = ei_sp
+		if spotter_best_idx >= 0:
+			enemies[spotter_best_idx]["marked_timer"] = 0.5
+			enemies[spotter_best_idx]["marked_dmg_bonus"] = 1.3
 	# Attack nearby enemy — faster at higher tiers, meaningful damage
 	familiar_attack_timer -= delta
 	var atk_interval: float = 3.0 if fam_tier < 2 else (2.2 if fam_tier < 3 else 1.5)

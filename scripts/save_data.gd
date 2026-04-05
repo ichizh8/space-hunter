@@ -17,6 +17,7 @@ var ship_upgrades: Dictionary = {
 	"mag_size": 0,      # levels 0-3, each +3 mag
 	"xp_rate": 0,       # levels 0-3, each +10% essence gain
 	"loadout_slots": 0, # levels 0-2, each +1 slot (start 4, max 6)
+	"kit_slots": 0,     # levels 0-2 (2 base + level = total kit slots)
 }
 var unlocked_weapons: Array = ["sidearm", "scatter", "lance", "baton", "dart", "entropy_cannon", "flamethrower", "sniper_carbine", "grenade_launcher", "pulse_cannon", "chain_rifle"]
 var loadout: Array = []
@@ -45,6 +46,9 @@ var reputation: Dictionary = {
 var version: int = 1
 
 const REP_THRESHOLDS: Array = [0, 50, 150, 350, 700, 1200]
+
+func max_kit_slots() -> int:
+	return 2 + ship_upgrades.get("kit_slots", 0)
 
 func get_available_weapons() -> Array:
 	var always: Array = ["sidearm", "scatter", "lance", "baton", "dart", "flamethrower", "grenade_launcher"]

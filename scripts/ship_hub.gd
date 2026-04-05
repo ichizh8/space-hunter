@@ -144,6 +144,61 @@ const ALL_KIT_IDS: Array = [
 	"familiar_kit", "pack_kit", "void_surge", "rupture_kit",
 ]
 
+const KIT_PREREQUISITES: Dictionary = {
+	"stim_pack": [],
+	"flash_trap": [],
+	"smoke_kit": [{kit="stim_pack", tier=2}],
+	"blink_kit": [{kit="flash_trap", tier=2}],
+	"charge_kit": [{kit="stim_pack", tier=2}],
+	"chain_kit": [{kit="blink_kit", tier=2}],
+	"turret_kit": [{kit="charge_kit", tier=2}],
+	"familiar_kit": [{kit="smoke_kit", tier=2}],
+	"mirage_kit": [{kit="blink_kit", tier=2}],
+	"anchor_kit": [{kit="chain_kit", tier=2}],
+	"drone_kit": [{kit="turret_kit", tier=2}],
+	"pack_kit": [{kit="familiar_kit", tier=2}],
+	"void_surge": [{kit="anchor_kit", tier=2}, {kit="chain_kit", tier=3}],
+	"rupture_kit": [{kit="pack_kit", tier=2}, {kit="familiar_kit", tier=3}],
+}
+
+const KIT_TREE_ORDER: Array = [
+	"stim_pack", "flash_trap",
+	"smoke_kit", "blink_kit", "charge_kit",
+	"chain_kit", "turret_kit", "familiar_kit", "mirage_kit",
+	"anchor_kit", "drone_kit", "pack_kit",
+	"void_surge", "rupture_kit",
+]
+
+const KIT_TREE_SECTIONS: Dictionary = {
+	"Starter": ["stim_pack", "flash_trap"],
+	"Basic": ["smoke_kit", "blink_kit", "charge_kit"],
+	"Advanced": ["chain_kit", "turret_kit", "familiar_kit", "mirage_kit"],
+	"Elite": ["anchor_kit", "drone_kit", "pack_kit"],
+	"Apex": ["void_surge", "rupture_kit"],
+}
+
+const KIT_SLOT_COSTS: Array = [200, 400]
+
+func _check_kit_prereqs(kit_id: String) -> bool:
+	var prereqs: Array = KIT_PREREQUISITES.get(kit_id, [])
+	for p in prereqs:
+		var req_kit: String = p.kit
+		var req_tier: int = p.tier
+		if not SaveManager.data.unlocked_kits.has(req_kit):
+			return false
+		if SaveManager.data.kit_tiers.get(req_kit, 0) < req_tier:
+			return false
+	return true
+
+func _get_prereq_text(kit_id: String) -> String:
+	var prereqs: Array = KIT_PREREQUISITES.get(kit_id, [])
+	if prereqs.is_empty():
+		return ""
+	var parts: Array = []
+	for p in prereqs:
+		parts.append("%s T%d" % [KIT_NAMES.get(p.kit, p.kit), p.tier])
+	return "Requires: %s" % ", ".join(parts)
+
 func _ready() -> void:
 	var margin: MarginContainer = $MarginContainer
 	var vbox: VBoxContainer = $MarginContainer/VBoxContainer
@@ -618,84 +673,122 @@ func _build_kits_list() -> void:
 	var eq: Array = SaveManager.data.equipped_kits
 	if eq.is_empty():
 		eq = ["stim_pack", "flash_trap"]
-	var slot1_name: String = KIT_NAMES.get(eq[0], eq[0]) if eq.size() > 0 else "None"
-	var slot2_name: String = KIT_NAMES.get(eq[1], eq[1]) if eq.size() > 1 else "None"
-	kits_equipped_label.text = "Slot 1: %s  |  Slot 2: %s" % [slot1_name, slot2_name]
+	var max_slots: int = SaveManager.data.max_kit_slots()
+	var slot_parts: Array = []
+	for si in range(max_slots):
+		var sn: String = KIT_NAMES.get(eq[si], "None") if si < eq.size() else "None"
+		slot_parts.append("S%d: %s" % [si + 1, sn])
+	kits_equipped_label.text = " | ".join(slot_parts)
 
-	for kit_id in ALL_KIT_IDS:
-		var owned: bool = SaveManager.data.unlocked_kits.has(kit_id)
-		var tier: int = SaveManager.data.kit_tiers.get(kit_id, 0)
-		var kit_name: String = KIT_NAMES.get(kit_id, kit_id)
-		var kit_desc: String = KIT_DESCS.get(kit_id, "")
-		var t3_choice: String = SaveManager.data.kit_t3_choices.get(kit_id, "")
+	# Kit slot upgrade button
+	var ks_level: int = SaveManager.data.ship_upgrades.get("kit_slots", 0)
+	if ks_level < 2:
+		var ks_cost: int = KIT_SLOT_COSTS[ks_level]
+		var ks_row := HBoxContainer.new()
+		ks_row.add_theme_constant_override("separation", 4)
+		var ks_lbl := Label.new()
+		ks_lbl.text = "Kit Slots: %d/%d" % [max_slots, 4]
+		ks_row.add_child(ks_lbl)
+		var ks_btn := Button.new()
+		ks_btn.text = "+1 Slot (%dcr)" % ks_cost
+		ks_btn.custom_minimum_size = Vector2(120, 36)
+		ks_btn.disabled = SaveManager.data.total_credits < ks_cost
+		ks_btn.pressed.connect(_on_buy_kit_slot.bind(ks_cost))
+		ks_row.add_child(ks_btn)
+		kits_scroll_vbox.add_child(ks_row)
+		var ks_sep := HSeparator.new()
+		kits_scroll_vbox.add_child(ks_sep)
 
-		var row := VBoxContainer.new()
-		row.add_theme_constant_override("separation", 2)
+	# Build sectioned kit list
+	for section_name in ["Starter", "Basic", "Advanced", "Elite", "Apex"]:
+		var section_kits: Array = KIT_TREE_SECTIONS[section_name]
+		var section_lbl := Label.new()
+		section_lbl.text = "--- %s ---" % section_name
+		section_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		section_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		kits_scroll_vbox.add_child(section_lbl)
 
-		# Kit name and info
-		var info_lbl := Label.new()
-		if owned:
-			info_lbl.text = "%s (T%d) - %s" % [kit_name, tier, kit_desc]
-		else:
-			info_lbl.text = "%s - %s" % [kit_name, kit_desc]
-		info_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		row.add_child(info_lbl)
+		for kit_id in section_kits:
+			var owned: bool = SaveManager.data.unlocked_kits.has(kit_id)
+			var tier: int = SaveManager.data.kit_tiers.get(kit_id, 0)
+			var kit_name: String = KIT_NAMES.get(kit_id, kit_id)
+			var kit_desc: String = KIT_DESCS.get(kit_id, "")
+			var t3_choice: String = SaveManager.data.kit_t3_choices.get(kit_id, "")
+			var prereqs_met: bool = _check_kit_prereqs(kit_id)
 
-		# Action buttons
-		var btn_row := HBoxContainer.new()
-		btn_row.add_theme_constant_override("separation", 4)
-		row.add_child(btn_row)
+			var row := VBoxContainer.new()
+			row.add_theme_constant_override("separation", 2)
 
-		if not owned:
-			var cost: int = KIT_UNLOCK_COSTS.get(kit_id, 999)
-			var unlock_btn := Button.new()
-			unlock_btn.text = "Unlock (%dcr)" % cost
-			unlock_btn.custom_minimum_size = Vector2(120, 36)
-			unlock_btn.disabled = SaveManager.data.total_credits < cost
-			unlock_btn.pressed.connect(_on_kit_unlock.bind(kit_id, cost))
-			btn_row.add_child(unlock_btn)
-		else:
-			if tier < 2:
-				var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
-				var t2_cost: int = costs[1] if costs.size() > 1 else 100
-				var t2_btn := Button.new()
-				t2_btn.text = "Upgrade T2 (%dcr)" % t2_cost
-				t2_btn.custom_minimum_size = Vector2(140, 36)
-				t2_btn.disabled = SaveManager.data.total_credits < t2_cost
-				t2_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 2, t2_cost))
-				btn_row.add_child(t2_btn)
-			elif tier == 2:
-				var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
-				var t3_cost: int = costs[2] if costs.size() > 2 else 200
-				var t3_btn := Button.new()
-				t3_btn.text = "Unlock T3 (%dcr) — path chosen in run" % t3_cost
-				t3_btn.custom_minimum_size = Vector2(220, 36)
-				t3_btn.disabled = SaveManager.data.total_credits < t3_cost
-				t3_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 3, t3_cost))
-				btn_row.add_child(t3_btn)
+			# Kit name and info
+			var info_lbl := Label.new()
+			if owned:
+				info_lbl.text = "%s (T%d) - %s" % [kit_name, tier, kit_desc]
+			elif not prereqs_met:
+				info_lbl.text = "%s [LOCKED] - %s" % [kit_name, kit_desc]
+				info_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			else:
-				var path_label: String = "(%s path)" % t3_choice.capitalize() if t3_choice != "" else "(path pending)"
-				var maxed_lbl := Label.new()
-				maxed_lbl.text = "MAXED T3 %s" % path_label
-				btn_row.add_child(maxed_lbl)
+				info_lbl.text = "%s - %s" % [kit_name, kit_desc]
+			info_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			row.add_child(info_lbl)
 
-			# Assign to slot buttons
-			var s1_btn := Button.new()
-			s1_btn.text = "Slot 1"
-			s1_btn.custom_minimum_size = Vector2(60, 36)
-			s1_btn.pressed.connect(_on_kit_assign.bind(kit_id, 0))
-			btn_row.add_child(s1_btn)
+			# Prereq text
+			if not owned and not prereqs_met:
+				var prereq_lbl := Label.new()
+				prereq_lbl.text = _get_prereq_text(kit_id)
+				prereq_lbl.add_theme_color_override("font_color", Color(0.8, 0.4, 0.3))
+				prereq_lbl.add_theme_font_size_override("font_size", 12)
+				row.add_child(prereq_lbl)
 
-			var s2_btn := Button.new()
-			s2_btn.text = "Slot 2"
-			s2_btn.custom_minimum_size = Vector2(60, 36)
-			s2_btn.pressed.connect(_on_kit_assign.bind(kit_id, 1))
-			btn_row.add_child(s2_btn)
+			# Action buttons
+			var btn_row := HBoxContainer.new()
+			btn_row.add_theme_constant_override("separation", 4)
+			row.add_child(btn_row)
 
-		var kit_sep := HSeparator.new()
-		row.add_child(kit_sep)
+			if not owned:
+				var cost: int = KIT_UNLOCK_COSTS.get(kit_id, 999)
+				var unlock_btn := Button.new()
+				unlock_btn.text = "Unlock (%dcr)" % cost
+				unlock_btn.custom_minimum_size = Vector2(120, 36)
+				unlock_btn.disabled = SaveManager.data.total_credits < cost or not prereqs_met
+				unlock_btn.pressed.connect(_on_kit_unlock.bind(kit_id, cost))
+				btn_row.add_child(unlock_btn)
+			else:
+				if tier < 2:
+					var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
+					var t2_cost: int = costs[1] if costs.size() > 1 else 100
+					var t2_btn := Button.new()
+					t2_btn.text = "Upgrade T2 (%dcr)" % t2_cost
+					t2_btn.custom_minimum_size = Vector2(140, 36)
+					t2_btn.disabled = SaveManager.data.total_credits < t2_cost
+					t2_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 2, t2_cost))
+					btn_row.add_child(t2_btn)
+				elif tier == 2:
+					var costs: Array = KIT_TIER_COSTS.get(kit_id, [0, 100, 200])
+					var t3_cost: int = costs[2] if costs.size() > 2 else 200
+					var t3_btn := Button.new()
+					t3_btn.text = "Unlock T3 (%dcr) — path chosen in run" % t3_cost
+					t3_btn.custom_minimum_size = Vector2(220, 36)
+					t3_btn.disabled = SaveManager.data.total_credits < t3_cost
+					t3_btn.pressed.connect(_on_kit_tier_upgrade.bind(kit_id, 3, t3_cost))
+					btn_row.add_child(t3_btn)
+				else:
+					var path_label: String = "(%s path)" % t3_choice.capitalize() if t3_choice != "" else "(path pending)"
+					var maxed_lbl := Label.new()
+					maxed_lbl.text = "MAXED T3 %s" % path_label
+					btn_row.add_child(maxed_lbl)
 
-		kits_scroll_vbox.add_child(row)
+				# Assign to slot buttons (dynamic based on max_slots)
+				for slot_idx in range(max_slots):
+					var s_btn := Button.new()
+					s_btn.text = "S%d" % (slot_idx + 1)
+					s_btn.custom_minimum_size = Vector2(45, 36)
+					s_btn.pressed.connect(_on_kit_assign.bind(kit_id, slot_idx))
+					btn_row.add_child(s_btn)
+
+			var kit_sep := HSeparator.new()
+			row.add_child(kit_sep)
+
+			kits_scroll_vbox.add_child(row)
 
 func _on_kit_unlock(kit_id: String, cost: int) -> void:
 	if SaveManager.data.total_credits < cost:
@@ -730,16 +823,31 @@ func _on_kit_assign(kit_id: String, slot: int) -> void:
 	var eq: Array = SaveManager.data.equipped_kits
 	if eq.is_empty():
 		eq = ["stim_pack", "flash_trap"]
-	while eq.size() < 2:
+	var max_slots: int = SaveManager.data.max_kit_slots()
+	while eq.size() < max_slots:
 		eq.append("")
-	# Avoid duplicate
-	var other_slot: int = 1 - slot
-	if eq[other_slot] == kit_id:
-		eq[other_slot] = eq[slot]
+	# Avoid duplicate: swap if kit already in another slot
+	for si in range(eq.size()):
+		if si != slot and eq[si] == kit_id:
+			eq[si] = eq[slot]
+			break
 	eq[slot] = kit_id
 	SaveManager.data.equipped_kits = eq
 	SaveManager.save_game()
 	_build_kits_list()
+
+func _on_buy_kit_slot(cost: int) -> void:
+	if SaveManager.data.total_credits < cost:
+		return
+	SaveManager.data.total_credits -= cost
+	var cur: int = SaveManager.data.ship_upgrades.get("kit_slots", 0)
+	SaveManager.data.ship_upgrades["kit_slots"] = cur + 1
+	# Expand equipped kits array
+	while SaveManager.data.equipped_kits.size() < SaveManager.data.max_kit_slots():
+		SaveManager.data.equipped_kits.append("")
+	SaveManager.save_game()
+	_build_kits_list()
+	_update_stats()
 
 func _on_buy_upgrade(upgrade_id: String, cost: int) -> void:
 	SaveManager.buy_upgrade(upgrade_id, cost)
